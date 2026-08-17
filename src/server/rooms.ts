@@ -84,6 +84,19 @@ export class RoomRegistry {
     return [...this.rooms.values()];
   }
 
+  /**
+   * Ends one session and drops it from the registry, the way the sweeper does
+   * for an idle room. Distinct from `shutdownAll`: this one really is over, so
+   * it must not come back on the next restart.
+   */
+  closeRoom(code: string): boolean {
+    const room = this.get(code);
+    if (!room) return false;
+    room.close();
+    this.rooms.delete(room.code);
+    return true;
+  }
+
   /** Rebuilds rooms from disk after a restart so a live show survives it. */
   restore(scenarios: Map<string, LoadedScenario>): number {
     const since = Date.now() - this.ttlMs;

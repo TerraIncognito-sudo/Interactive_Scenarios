@@ -18,8 +18,11 @@ import { loadLibrary, assetsOf, type ScenarioLibrary } from '../scenario/load.ts
 import {
   CreateRoomSchema,
   type CreateRoomResponse,
+  type LiveSession,
   type ScenarioListResponse,
+  type SessionListResponse,
 } from '../shared/protocol.ts';
+import type { Room } from './room.ts';
 import {
   ADMIN_COOKIE,
   buildCookie,
@@ -92,6 +95,13 @@ export async function buildServer(config: Config) {
     const protocol = forwardedProto || request.protocol || 'http';
     return `${protocol}://${host}`;
   };
+
+  /** The three links a session is driven from, built once so they cannot drift. */
+  const linksFor = (room: Room, base: string): LiveSession['urls'] => ({
+    host: `${base}/host/?room=${room.code}&token=${room.hostToken}&displayToken=${encodeURIComponent(room.displayToken)}`,
+    display: `${base}/display/?room=${room.code}&token=${room.displayToken}`,
+    join: `${base}/join/${room.code}`,
+  });
 
   const isAuthed = (request: { headers: Record<string, unknown> }): boolean => {
     const cookie = readCookie(request.headers['cookie'] as string | undefined, ADMIN_COOKIE);
@@ -194,17 +204,86 @@ export async function buildServer(config: Config) {
     const room = registry.create(loaded);
     app.log.info({ room: room.code, scenario: loaded.scenario.id }, 'Room created');
 
-    const base = baseUrlFor(request);
     return {
       code: room.code,
       hostToken: room.hostToken,
       displayToken: room.displayToken,
-      urls: {
-        host: `${base}/host/?room=${room.code}&token=${room.hostToken}`,
-        display: `${base}/display/?room=${room.code}&token=${room.displayToken}`,
-        join: `${base}/join/${room.code}`,
-      },
+      urls: linksFor(room, baseUrlFor(request)),
     };
+  });
+
+  // ---------------------------------------------------------------------------
+  // Session control
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Every live session, with its links.
+   *
+   * Admin-only, and not merely for tidiness: the response carries host and
+   * display tokens, which exist nowhere else once the creating tab is gone.
+   * That is the point — it is what makes a lost host console recoverable — but
+   * it means this endpoint hands over full control of every running show.
+   */
+  app.get('/api/rooms', async (request, reply): Promise<SessionListResponse | undefined> => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to view sessions' });
+      return undefined;
+    }
+
+    const base = baseUrlFor(request);
+    const sessions: LiveSession[] = registry
+      .list()
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+      .map((room) => ({
+        code: room.code,
+        scenario: { id: room.loaded.scenario.id, title: room.loaded.scenario.title },
+        phase: room.phase,
+        nodeId: room.state.nodeId,
+        beat: room.state.beat,
+        displayReady: room.displayReady,
+        presence: { displays: room.displayCount, players: room.playerCount },
+        pollEndsAt: room.state.phase === 'polling' ? room.state.poll?.endsAt : undefined,
+        createdAt: room.createdAt,
+        lastActivityAt: room.lastActivityAt,
+        urls: linksFor(room, base),
+      }));
+
+    return { sessions, serverNow: Date.now() };
+  });
+
+  /** Ends a session for good. It will not come back after a restart. */
+  app.post<{ Params: { code: string } }>('/api/rooms/:code/close', async (request, reply) => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to end a session' });
+      return undefined;
+    }
+    if (!registry.closeRoom(request.params.code)) {
+      reply.code(404).send({ error: 'No such room' });
+      return undefined;
+    }
+    app.log.info({ room: request.params.code.toUpperCase() }, 'Room closed from admin');
+    return { ok: true };
+  });
+
+  /**
+   * Rewinds a session to the top without ending it.
+   *
+   * The room code, tokens and connected clients all survive, so a rehearsal can
+   * be reset without asking a room full of people to rescan a new QR code.
+   */
+  app.post<{ Params: { code: string } }>('/api/rooms/:code/reset', async (request, reply) => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to reset a session' });
+      return undefined;
+    }
+    const room = registry.get(request.params.code);
+    if (!room) {
+      reply.code(404).send({ error: 'No such room' });
+      return undefined;
+    }
+    room.handleCommand({ name: 'reset' });
+    app.log.info({ room: room.code }, 'Room reset from admin');
+    return { ok: true, phase: room.phase };
   });
 
   /** Re-reads scenario folders without a restart, for authoring iteration. */
@@ -245,13 +324,21 @@ export async function buildServer(config: Config) {
 
     // The root belongs to the audience. Almost everyone who reaches this
     // server is here to join a session, not to run one, so the landing page
-    // is the join screen and the launcher lives at /new behind the password.
+    // is the join screen and the controls live at /admin behind the password.
     app.get('/', async (_request, reply) => reply.sendFile('player/index.html'));
 
     // /join/CODE is a client-side route; serve the player app for any code.
     app.get('/join/:code', async (_request, reply) => reply.sendFile('player/index.html'));
 
-    app.get('/new', async (_request, reply) => reply.sendFile('new/index.html'));
+    app.get('/admin', async (_request, reply) => reply.sendFile('admin/index.html'));
+
+    // /new was the original name. Kept as a redirect because it is written down
+    // in notes and browser histories that this rename cannot reach.
+    //
+    // 302 rather than 301 on purpose: a permanent redirect is cached by the
+    // browser indefinitely, so if /new ever needs to mean something else, every
+    // machine that visited it once would keep going to /admin regardless.
+    app.get('/new', async (_request, reply) => reply.redirect('/admin', 302));
   } else {
     app.log.warn(
       `Client bundle not found at ${config.clientDir} — run "npm run build" to serve the UI`,
@@ -290,7 +377,7 @@ async function main(): Promise<void> {
     const url = config.publicUrl ?? `http://${lan ?? 'localhost'}:${config.port}`;
 
     console.log('\n  LOCAL FALLBACK MODE\n');
-    console.log(`  Open this to start:  ${url}`);
+    console.log(`  Open this to start:  ${url}/admin`);
     console.log(`  Audience joins at:   ${url}/join/<CODE>\n`);
     console.log(await QRCode.toString(url, { type: 'terminal', small: true }));
     console.log(`  Everyone must be on the same network as ${lan ?? 'this machine'}.`);
@@ -311,7 +398,7 @@ async function main(): Promise<void> {
   } else {
     const shown = config.publicUrl ?? `http://${lan ?? 'localhost'}:${config.port}`;
     app.log.info(`Audience join page   ${shown}/`);
-    app.log.info(`Start a session at   ${shown}/new`);
+    app.log.info(`Admin console at     ${shown}/admin`);
     if (!config.publicUrl) {
       app.log.info('PUBLIC_URL is not set; links are derived from each request');
     }
@@ -322,7 +409,7 @@ async function main(): Promise<void> {
   if (config.adminPasswordGenerated) {
     console.log('\n  ADMIN PASSWORD (generated — set ADMIN_PASSWORD to choose your own)\n');
     console.log(`      ${config.adminPassword}\n`);
-    console.log('  Needed once, at /new, to create sessions.\n');
+    console.log('  Needed once, at /admin, to run sessions.\n');
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {

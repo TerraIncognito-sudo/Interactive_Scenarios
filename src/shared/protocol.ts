@@ -206,6 +206,34 @@ export type ScenarioListResponse = {
   failures: { dir: string; message: string; problems: string[] }[];
 };
 
+/**
+ * One running session, as the admin page sees it.
+ *
+ * This carries the host and display tokens, which is the whole point: a host
+ * link lost to a closed tab or a flat phone currently strands a live show, and
+ * the tokens exist nowhere else. It is why the endpoint is admin-only.
+ */
+export type LiveSession = {
+  code: string;
+  scenario: { id: string; title: string };
+  phase: 'lobby' | 'running' | 'paused' | 'finished';
+  /** Where the story currently stands, for recognising a session at a glance. */
+  nodeId: string;
+  beat: number;
+  displayReady: boolean;
+  presence: { displays: number; players: number };
+  /** Voting deadline in ms since epoch, when a poll is open. */
+  pollEndsAt?: number;
+  createdAt: number;
+  lastActivityAt: number;
+  urls: { host: string; display: string; join: string };
+};
+
+export type SessionListResponse = {
+  sessions: LiveSession[];
+  serverNow: number;
+};
+
 /** Safe JSON parse + validate for an inbound frame. */
 export function parseClientMessage(raw: string): ClientMessage | undefined {
   if (raw.length > 8192) return undefined;

@@ -15,11 +15,11 @@ export default defineConfig({
     rollupOptions: {
       input: {
         // No root index.html: the server routes / to the player app, so the
-        // landing page is the audience join screen rather than the launcher.
+        // landing page is the audience join screen rather than the admin one.
         display: client('display', 'index.html'),
         host: client('host', 'index.html'),
         player: client('player', 'index.html'),
-        new: client('new', 'index.html'),
+        admin: client('admin', 'index.html'),
       },
     },
   },

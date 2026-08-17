@@ -7,7 +7,7 @@ services:
     ports:
       - '8880:8880'
     environment:
-      # Password for /new, where sessions are created. Leave unset and one is
+      # Password for /admin, where sessions are run. Leave unset and one is
       # generated and printed at startup (see: docker compose logs).
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Usually leave this alone: links are derived from the address each

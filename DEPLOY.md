@@ -22,23 +22,25 @@ Confirm it came up:
 curl -s http://localhost:8880/api/health
 ```
 
-From another machine on the LAN, the session launcher is at
-`http://192.168.1.149:8880/`.
+From another machine on the LAN, the admin console is at
+`http://192.168.1.149:8880/admin`.
 
 ## Pages
 
 | Path | Who | Notes |
 |---|---|---|
 | `/` | the audience | Join screen — enter a room code |
-| `/new` | you | Create a session; asks for the host password |
-| `/display/?room=…&token=…` | the projector | Handed out by `/new` |
-| `/host/?room=…&token=…` | you | Handed out by `/new` |
+| `/admin` | you | Run sessions; asks for the host password |
+| `/display/?room=…&token=…` | the projector | Handed out by `/admin` |
+| `/host/?room=…&token=…` | you | Handed out by `/admin` |
+
+`/new` redirects to `/admin`, so older links still work.
 
 ## The host password
 
-`/new` and `POST /api/rooms` require `ADMIN_PASSWORD`, so a stranger who finds
-the server cannot spawn sessions. If you do not set one, a readable password is
-generated at startup and printed in the log:
+`/admin` and the session endpoints require `ADMIN_PASSWORD`, so a stranger who
+finds the server cannot spawn or interfere with sessions. If you do not set one,
+a readable password is generated at startup and printed in the log:
 
 ```bash
 docker compose logs interactive-scenario | grep -A3 "ADMIN PASSWORD"
@@ -99,7 +101,7 @@ WebSockets pass through Cloudflare on all plans, which this depends on entirely.
 |---|---|---|
 | `PORT` | `8880` | |
 | `PUBLIC_URL` | derived from the request | Only needed when the audience's address differs from the one the server sees |
-| `ADMIN_PASSWORD` | generated | Gates `/new`; printed at startup when unset |
+| `ADMIN_PASSWORD` | generated | Gates `/admin`; printed at startup when unset |
 | `DATA_DIR` | `/data` | SQLite; mount a volume so a restart does not end a live show |
 | `SCENARIOS_DIR` | `./scenarios` | Mounted read-only by compose |
 | `ROOM_TTL_MINUTES` | `240` | Idle rooms are swept after this |

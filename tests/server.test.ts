@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { buildServer } from '../src/server/index.ts';
 import type { Config } from '../src/server/config.ts';
-import type { PlayerState, Snapshot } from '../src/shared/protocol.ts';
+import type { PlayerState, SessionListResponse, Snapshot } from '../src/shared/protocol.ts';
 
 type App = Awaited<ReturnType<typeof buildServer>>;
 
@@ -149,6 +149,20 @@ async function joinPlayer(code: string, deviceId: string): Promise<Client> {
   client.send({ type: 'hello', role: 'player', room: code, deviceId });
   await client.next(isPlayerState);
   return client;
+}
+
+/**
+ * Retries until the callback returns something, for state that settles a beat
+ * after the request that caused it — socket presence, mainly.
+ */
+async function pollUntil<T>(attempt: () => Promise<T | undefined>, timeoutMs = 4000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await attempt();
+    if (result !== undefined) return result;
+    if (Date.now() > deadline) throw new Error('Timed out waiting for server state');
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }
 
 /** Drives a room to its open poll and returns the host client. */
@@ -615,5 +629,122 @@ describe('load', () => {
 
     for (const player of players) player.close();
     host.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('the admin session list', () => {
+  test('is not readable without the password', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`);
+    // It hands out host tokens, so an open one would let a stranger drive
+    // every running show.
+    assert.equal(response.status, 401);
+  });
+
+  test('lists a running session with the links needed to recover it', async () => {
+    const room = await createRoom();
+
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      headers: { 'x-admin-password': TEST_PASSWORD },
+    });
+    assert.equal(response.status, 200);
+    const { sessions } = (await response.json()) as SessionListResponse;
+
+    const found = sessions.find((s) => s.code === room.code);
+    assert.ok(found, 'the room just created should appear in the list');
+    assert.equal(found.scenario.id, 'quick');
+    assert.equal(found.phase, 'lobby');
+    // The recovery case: the tokens are here, or a lost host console is fatal.
+    assert.match(found.urls.host, new RegExp(`room=${room.code}&token=${room.hostToken}`));
+    assert.match(found.urls.display, new RegExp(`token=${room.displayToken}`));
+    assert.equal(found.urls.join, `${baseUrl}/join/${room.code}`);
+  });
+
+  test('reports the current node and who is connected', async () => {
+    // slowpoll, not quick: its poll window outlives the assertions, so the
+    // test is not racing the story to the next node.
+    const room = await createRoom('slowpoll');
+    const host = await runToPoll(room.code, room.hostToken);
+    const player = await joinPlayer(room.code, 'device-admin-1');
+
+    // Presence is reported off live sockets, so give the joins a beat to land.
+    const found = await pollUntil(async () => {
+      const response = await fetch(`${baseUrl}/api/rooms`, {
+        headers: { 'x-admin-password': TEST_PASSWORD },
+      });
+      const { sessions } = (await response.json()) as SessionListResponse;
+      const session = sessions.find((s) => s.code === room.code);
+      return session?.presence.players === 1 ? session : undefined;
+    });
+
+    assert.equal(found.phase, 'running');
+    assert.equal(found.nodeId, 'vote');
+    assert.ok(found.pollEndsAt !== undefined, 'an open poll should report its deadline');
+
+    player.close();
+    host.close();
+  });
+});
+
+describe('admin session control', () => {
+  test('restart rewinds a running session without ending it', async () => {
+    const room = await createRoom('slowpoll');
+    const host = await runToPoll(room.code, room.hostToken);
+
+    const response = await fetch(`${baseUrl}/api/rooms/${room.code}/reset`, {
+      method: 'POST',
+      headers: { 'x-admin-password': TEST_PASSWORD },
+    });
+    assert.equal(response.status, 200);
+
+    // The host stays connected and simply sees the show back at the top —
+    // which is the point: a rehearsal resets without a new QR code.
+    const back = await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'lobby');
+    assert.equal(back.phase, 'lobby');
+
+    host.send({ type: 'command', command: { name: 'start' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue');
+    host.close();
+  });
+
+  test('ending a session disconnects everyone and frees the code', async () => {
+    const room = await createRoom();
+    const host = await joinHost(room.code, room.hostToken);
+
+    const response = await fetch(`${baseUrl}/api/rooms/${room.code}/close`, {
+      method: 'POST',
+      headers: { 'x-admin-password': TEST_PASSWORD },
+    });
+    assert.equal(response.status, 200);
+
+    const closed = await host.next<any>((m) => m?.type === 'error' && m.code === 'roomClosed');
+    assert.equal(closed.fatal, true);
+
+    const list = await fetch(`${baseUrl}/api/rooms`, {
+      headers: { 'x-admin-password': TEST_PASSWORD },
+    });
+    const { sessions } = (await list.json()) as SessionListResponse;
+    assert.equal(sessions.some((s) => s.code === room.code), false);
+
+    host.close();
+  });
+
+  test('both controls require the password', async () => {
+    const room = await createRoom();
+    for (const action of ['reset', 'close']) {
+      const response = await fetch(`${baseUrl}/api/rooms/${room.code}/${action}`, {
+        method: 'POST',
+      });
+      assert.equal(response.status, 401, `${action} must not be open to strangers`);
+    }
+  });
+
+  test('an unknown room code is a 404, not a crash', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms/ZZZZZZ/close`, {
+      method: 'POST',
+      headers: { 'x-admin-password': TEST_PASSWORD },
+    });
+    assert.equal(response.status, 404);
   });
 });
