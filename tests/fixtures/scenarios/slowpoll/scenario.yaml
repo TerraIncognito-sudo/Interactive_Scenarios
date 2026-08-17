@@ -1,0 +1,34 @@
+# A scenario whose poll window outlives a server restart, for recovery tests.
+id: slowpoll
+title: Slow Poll
+start: open
+
+settings:
+  minLineSeconds: 0.05
+  maxLineSeconds: 0.2
+  wordsPerMinute: 600
+
+nodes:
+  - id: open
+    type: dialogue
+    lines: [{ text: Begin, hold: 0.05 }]
+    next: vote
+
+  - id: vote
+    type: poll
+    question: Which way?
+    duration: 600
+    options:
+      - { key: left, label: Left, next: finish_left }
+      - { key: right, label: Right, next: finish_right }
+    default: right
+    set:
+      path: $winner
+
+  - id: finish_left
+    type: end
+    text: Went left.
+
+  - id: finish_right
+    type: end
+    text: Went right.

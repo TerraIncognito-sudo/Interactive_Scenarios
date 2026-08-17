@@ -176,7 +176,9 @@ export async function buildServer(config: Config) {
 
   app.addHook('onClose', async () => {
     registry.stopSweeper();
-    registry.closeAll();
+    // Shut down rather than close: the process is stopping, the shows are not.
+    // State is already persisted, so the next process resumes them.
+    registry.shutdownAll();
     store.close();
   });
 

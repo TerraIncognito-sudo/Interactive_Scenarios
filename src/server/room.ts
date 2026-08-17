@@ -82,6 +82,25 @@ export class Room {
     this.createdAt = options.now;
     this.lastActivityAt = options.now;
     this.state = options.state ?? initialState(options.loaded.scenario);
+
+    // A room restored from disk mid-poll has state but no ballot box. Without
+    // this, it would silently refuse every vote and then resolve to the
+    // default, discarding votes already recorded before the restart.
+    if (this.state.phase === 'polling') this.rehydrateBox(this.state.nodeId);
+  }
+
+  /**
+   * Builds the ballot box for a poll node and replays any votes already stored,
+   * so opening a poll and recovering one take the same path.
+   */
+  private rehydrateBox(nodeId: string): void {
+    const node = this.loaded.scenario.nodes.find((n) => n.id === nodeId);
+    if (node?.type !== 'poll') return;
+
+    this.box = new BallotBox(node.options.map((o) => o.key));
+    for (const row of this.store.votesFor(this.code, node.id)) {
+      this.box.cast(row.device_id, row.option_key, row.at);
+    }
   }
 
   private get scenario() {
@@ -299,14 +318,7 @@ export class Room {
     // Entering a poll node stamps its deadline and opens a fresh ballot box.
     if (next.phase === 'polling' && next.nodeId !== before.nodeId) {
       next = openPoll(this.scenario, next, Date.now());
-      const node = this.scenario.nodes.find((n) => n.id === next.nodeId);
-      if (node?.type === 'poll') {
-        this.box = new BallotBox(node.options.map((o) => o.key));
-        // Restore any votes already recorded, so a restart mid-poll is lossless.
-        for (const row of this.store.votesFor(this.code, node.id)) {
-          this.box.cast(row.device_id, row.option_key, row.at);
-        }
-      }
+      this.rehydrateBox(next.nodeId);
     } else if (next.phase !== 'polling') {
       this.box = undefined;
     }
@@ -483,6 +495,7 @@ export class Room {
     this.broadcast();
   }
 
+  /** Ends the session for good. The room will not come back after a restart. */
   close(): void {
     this.closed = true;
     this.clearTimer();
@@ -490,6 +503,20 @@ export class Room {
     for (const sub of this.subscribers) {
       sub.send({ type: 'error', code: 'roomClosed', message: 'This room has closed.', fatal: true });
     }
+    this.subscribers.clear();
+  }
+
+  /**
+   * Releases the room because the *process* is stopping, not because the show
+   * is over.
+   *
+   * The distinction matters: marking the room closed here would mean a
+   * container restart or a SIGTERM silently destroyed every live session,
+   * which is precisely the failure this system is supposed to absorb. Clients
+   * reconnect on their own and the room is restored from disk.
+   */
+  shutdown(): void {
+    this.clearTimer();
     this.subscribers.clear();
   }
 }

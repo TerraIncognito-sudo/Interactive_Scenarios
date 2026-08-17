@@ -141,8 +141,18 @@ export class RoomRegistry {
     return closed;
   }
 
+  /** Ends every session permanently. Rooms will not survive a restart. */
   closeAll(): void {
     for (const room of this.rooms.values()) room.close();
+    this.rooms.clear();
+  }
+
+  /**
+   * Releases rooms because the process is stopping. Rooms stay open in the
+   * database so the next process can pick a live show back up.
+   */
+  shutdownAll(): void {
+    for (const room of this.rooms.values()) room.shutdown();
     this.rooms.clear();
   }
 }
