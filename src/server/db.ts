@@ -15,6 +15,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 export type RoomRow = {
   code: string;
@@ -87,9 +88,29 @@ export class Store {
         payload  TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_events_room ON events (room, id);
       CREATE INDEX IF NOT EXISTS idx_votes_room ON votes (room, node_id);
     `);
+  }
+
+  /**
+   * A stable secret for signing admin cookies. Persisted so an operator does
+   * not get logged out every time the container restarts.
+   */
+  secret(): string {
+    const row = this.db.prepare(`SELECT value FROM settings WHERE key = 'secret'`).get() as
+      | { value: string }
+      | undefined;
+    if (row) return row.value;
+
+    const value = randomBytes(32).toString('base64url');
+    this.db.prepare(`INSERT INTO settings (key, value) VALUES ('secret', ?)`).run(value);
+    return value;
   }
 
   createRoom(row: Omit<RoomRow, 'closed'>): void {

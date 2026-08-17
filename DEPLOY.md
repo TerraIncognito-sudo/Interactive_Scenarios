@@ -25,12 +25,43 @@ curl -s http://localhost:8880/api/health
 From another machine on the LAN, the session launcher is at
 `http://192.168.1.149:8880/`.
 
+## Pages
+
+| Path | Who | Notes |
+|---|---|---|
+| `/` | the audience | Join screen — enter a room code |
+| `/new` | you | Create a session; asks for the host password |
+| `/display/?room=…&token=…` | the projector | Handed out by `/new` |
+| `/host/?room=…&token=…` | you | Handed out by `/new` |
+
+## The host password
+
+`/new` and `POST /api/rooms` require `ADMIN_PASSWORD`, so a stranger who finds
+the server cannot spawn sessions. If you do not set one, a readable password is
+generated at startup and printed in the log:
+
+```bash
+docker compose logs interactive-scenario | grep -A3 "ADMIN PASSWORD"
+```
+
+Set your own in `docker-compose.yml` or a `.env` beside it:
+
+```bash
+ADMIN_PASSWORD=choose-something docker compose up -d
+```
+
+The sign-in cookie is signed with a secret stored in the database, so it
+survives restarts and you are not asked to log in again after every redeploy.
+
 ## Pointing scurrycat.ca at it
 
-`PUBLIC_URL` is the one setting that matters here. It is the base URL encoded
-into the QR code the audience scans, so it has to be a hostname their phones
-can actually resolve — not the container's address, and not the LAN IP if they
-are on cell data.
+**You usually do not need `PUBLIC_URL`.** Links are derived from the address
+each request arrives on: browse to `http://192.168.1.149:8880` and you get LAN
+links back; reach it through Cloudflare and you get `scurrycat.ca` links,
+because the proxy forwards `X-Forwarded-Host` and `X-Forwarded-Proto`.
+
+Set `PUBLIC_URL` only when the address the audience uses differs from the one
+the server can see — a proxy that rewrites Host, for instance.
 
 ### Cloudflare Tunnel (recommended)
 
@@ -60,7 +91,8 @@ WebSockets pass through Cloudflare on all plans, which this depends on entirely.
 | Variable | Default | Notes |
 |---|---|---|
 | `PORT` | `8880` | |
-| `PUBLIC_URL` | derived | **Set this in production.** Base URL in the join QR code |
+| `PUBLIC_URL` | derived from the request | Only needed when the audience's address differs from the one the server sees |
+| `ADMIN_PASSWORD` | generated | Gates `/new`; printed at startup when unset |
 | `DATA_DIR` | `/data` | SQLite; mount a volume so a restart does not end a live show |
 | `SCENARIOS_DIR` | `./scenarios` | Mounted read-only by compose |
 | `ROOM_TTL_MINUTES` | `240` | Idle rooms are swept after this |

@@ -289,7 +289,10 @@ export class Room {
     if (this.state.phase === 'polling') {
       const endsAt = this.state.poll?.endsAt ?? now;
       this.beatDeadline = endsAt;
-      this.timer = setTimeout(() => this.closePoll(), Math.max(0, endsAt - now));
+      this.timer = setTimeout(
+        () => this.guard(() => this.closePoll()),
+        Math.max(0, endsAt - now),
+      );
       return;
     }
 
@@ -299,8 +302,37 @@ export class Room {
     if (beat.kind !== 'dialogue' && beat.kind !== 'pause') return;
 
     this.beatDeadline = now + beat.durationMs;
-    this.timer = setTimeout(() => this.onBeatElapsed(), beat.durationMs);
+    this.timer = setTimeout(() => this.guard(() => this.onBeatElapsed()), beat.durationMs);
   }
+
+  /**
+   * Runs a clock callback without letting it take the process down.
+   *
+   * An exception thrown inside setTimeout is uncaught, and an uncaught
+   * exception exits Node — so one malformed scenario node could kill every
+   * other room on the server mid-show. The room stalls instead, which the host
+   * can rescue with skip or an override.
+   */
+  private guard(work: () => void): void {
+    try {
+      work();
+    } catch (error) {
+      this.onError?.(error, this.code, this.state.nodeId);
+      for (const sub of this.subscribers) {
+        if (sub.role === 'host') {
+          sub.send({
+            type: 'error',
+            code: 'internal',
+            message: `The show stalled at "${this.state.nodeId}": ${(error as Error).message}`,
+            fatal: false,
+          });
+        }
+      }
+    }
+  }
+
+  /** Set by the server so stalls reach the log rather than vanishing. */
+  onError: ((error: unknown, room: string, nodeId: string) => void) | undefined;
 
   private onBeatElapsed(): void {
     this.apply({ type: 'advance' });

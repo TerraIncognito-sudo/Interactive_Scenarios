@@ -6,7 +6,7 @@
  * link goes on the projector and which one stays in their pocket.
  */
 
-import type { CreateRoomResponse, ScenarioListResponse } from '../shared/protocol.ts';
+import type { CreateRoomResponse, ScenarioListResponse } from '../../shared/protocol.ts';
 
 const el = <T extends HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -25,6 +25,12 @@ async function createRoom(scenarioId: string, button: HTMLButtonElement): Promis
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ scenarioId }),
     });
+    if (response.status === 401) {
+      // The cookie expired while the page sat open.
+      show('login');
+      el('login-error').textContent = 'Your session expired. Sign in again.';
+      return;
+    }
     if (!response.ok) throw new Error(`Server said ${response.status}`);
 
     const room = (await response.json()) as CreateRoomResponse;
@@ -47,6 +53,31 @@ async function createRoom(scenarioId: string, button: HTMLButtonElement): Promis
       button.querySelector('.scenario-meta')!.textContent = original;
     }
   }
+}
+
+function show(which: 'login' | 'launcher'): void {
+  el('view-login').hidden = which !== 'login';
+  el('view-launcher').hidden = which !== 'launcher';
+}
+
+async function signIn(password: string): Promise<void> {
+  const error = el('login-error');
+  error.textContent = '';
+
+  const response = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+
+  if (!response.ok) {
+    error.textContent =
+      response.status === 401 ? 'That password is not right.' : `Sign-in failed (${response.status}).`;
+    return;
+  }
+
+  show('launcher');
+  await load();
 }
 
 async function load(): Promise<void> {
@@ -120,4 +151,33 @@ async function load(): Promise<void> {
   }
 }
 
-void load();
+el('login-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  void signIn(el<HTMLInputElement>('password').value);
+});
+
+el('logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  el<HTMLInputElement>('password').value = '';
+  show('login');
+});
+
+/** Decide which screen to show before painting, so neither flashes. */
+async function boot(): Promise<void> {
+  try {
+    const { authenticated } = (await (await fetch('/api/session')).json()) as {
+      authenticated: boolean;
+    };
+    if (authenticated) {
+      show('launcher');
+      await load();
+      return;
+    }
+  } catch {
+    /* fall through to the sign-in screen */
+  }
+  show('login');
+  el<HTMLInputElement>('password').focus();
+}
+
+void boot();

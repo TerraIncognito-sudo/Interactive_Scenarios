@@ -24,6 +24,7 @@ let baseUrl: string;
 let wsUrl: string;
 let dataDir: string;
 
+const TEST_PASSWORD = 'test-password';
 const fixtures = join(import.meta.dirname, 'fixtures', 'scenarios');
 
 before(async () => {
@@ -35,9 +36,12 @@ before(async () => {
     dataDir,
     scenariosDir: fixtures,
     clientDir: join(dataDir, 'no-client'),
-    publicUrl: 'http://test.local',
+    // Unset, so link generation is exercised the way it runs in production.
+    publicUrl: undefined,
     local: false,
     roomTtlMs: 60_000,
+    adminPassword: TEST_PASSWORD,
+    adminPasswordGenerated: false,
   };
   app = await buildServer(config);
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -119,7 +123,7 @@ function connect(): Promise<Client> {
 async function createRoom(scenarioId = 'quick') {
   const response = await fetch(`${baseUrl}/api/rooms`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
     body: JSON.stringify({ scenarioId }),
   });
   assert.equal(response.status, 200);
@@ -156,6 +160,120 @@ async function runToPoll(code: string, hostToken: string): Promise<Client> {
 }
 
 // ---------------------------------------------------------------------------
+
+describe('creating a session is gated', () => {
+  test('an unauthenticated request cannot create a room', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scenarioId: 'quick' }),
+    });
+    assert.equal(response.status, 401, 'strangers must not be able to spawn sessions');
+  });
+
+  test('a wrong password is rejected', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-password': 'wrong' },
+      body: JSON.stringify({ scenarioId: 'quick' }),
+    });
+    assert.equal(response.status, 401);
+  });
+
+  test('logging in returns a cookie that works for creating rooms', async () => {
+    const bad = await fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: 'not-it' }),
+    });
+    assert.equal(bad.status, 401);
+
+    const login = await fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: TEST_PASSWORD }),
+    });
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? '';
+    assert.match(cookie, /^scenario_admin=/);
+
+    const created = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ scenarioId: 'quick' }),
+    });
+    assert.equal(created.status, 200);
+
+    const session = await (await fetch(`${baseUrl}/api/session`, { headers: { cookie } })).json();
+    assert.equal((session as { authenticated: boolean }).authenticated, true);
+  });
+
+  test('a forged cookie is rejected', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: 'scenario_admin=eyJhIjoxfQ.deadbeef',
+      },
+      body: JSON.stringify({ scenarioId: 'quick' }),
+    });
+    assert.equal(response.status, 401);
+  });
+
+  test('reloading scenarios is gated too', async () => {
+    const response = await fetch(`${baseUrl}/api/reload`, { method: 'POST' });
+    assert.equal(response.status, 401);
+  });
+
+  test('the audience still needs nothing to see the join page or vote', async () => {
+    // Gating session creation must not gate participation.
+    const scenarios = await fetch(`${baseUrl}/api/scenarios`);
+    assert.equal(scenarios.status, 200);
+    const health = await fetch(`${baseUrl}/api/health`);
+    assert.equal(health.status, 200);
+  });
+});
+
+describe('link generation', () => {
+  test('links follow the address the request arrived on', async () => {
+    // The old behaviour fell back to localhost regardless of how the server
+    // was reached, producing links that looked valid but pointed at the
+    // operator's own machine. Here baseUrl is 127.0.0.1:<ephemeral port>, so
+    // matching it proves the base is derived from the request rather than
+    // from a fixed default.
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
+      body: JSON.stringify({ scenarioId: 'quick' }),
+    });
+    const room = (await response.json()) as { urls: Record<string, string> };
+
+    for (const [name, url] of Object.entries(room.urls)) {
+      assert.ok(
+        url.startsWith(`${baseUrl}/`),
+        `${name} link should start with ${baseUrl}, got ${url}`,
+      );
+      assert.ok(!url.includes('localhost'), `${name} link must not fall back to localhost`);
+    }
+  });
+
+  test('a proxy that forwards its own host and scheme is honoured', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-admin-password': TEST_PASSWORD,
+        'x-forwarded-host': 'scurrycat.ca',
+        'x-forwarded-proto': 'https',
+      },
+      body: JSON.stringify({ scenarioId: 'quick' }),
+    });
+    const room = (await response.json()) as { urls: Record<string, string> };
+    const join = room.urls.join ?? '';
+    assert.ok(join.startsWith('https://scurrycat.ca/join/'), join);
+  });
+});
 
 describe('room access control', () => {
   test('the room code alone lets you vote but not drive', async () => {

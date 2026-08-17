@@ -13,6 +13,8 @@ export class RoomRegistry {
   private readonly store: Store;
   private readonly ttlMs: number;
   private sweeper: ReturnType<typeof setInterval> | undefined;
+  /** Reports a stalled room, so a clock failure reaches the log. */
+  onRoomError: ((error: unknown, room: string, nodeId: string) => void) | undefined;
 
   constructor(store: Store, ttlMs: number) {
     this.store = store;
@@ -48,6 +50,7 @@ export class RoomRegistry {
       updated_at: now,
     });
 
+    room.onError = (error, roomCode, nodeId) => this.onRoomError?.(error, roomCode, nodeId);
     this.rooms.set(code, room);
     return room;
   }
@@ -108,6 +111,7 @@ export class RoomRegistry {
         state,
       });
       room.lastActivityAt = row.updated_at;
+      room.onError = (error, roomCode, nodeId) => this.onRoomError?.(error, roomCode, nodeId);
 
       this.rooms.set(row.code, room);
       room.resumeClock();

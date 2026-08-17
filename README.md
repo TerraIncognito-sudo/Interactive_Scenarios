@@ -22,6 +22,8 @@ One server holds authoritative state; three browser surfaces render it.
 
 | Surface | Who | Needs |
 |---|---|---|
+| `/` | the audience | nothing — it's the join screen |
+| `/new` | whoever runs the session | host password |
 | `/display` | the projector | display token |
 | `/host` | whoever runs the session | host token |
 | `/join/CODE` | the audience, on phones | room code only |
@@ -116,13 +118,15 @@ variable, so the same process runs in both places.
 |---|---|---|
 | `PORT` | `8880` | Rare enough to avoid collisions, still on Cloudflare's proxyable HTTP port list |
 | `HOST` | `0.0.0.0` | |
-| `PUBLIC_URL` | derived | Base URL encoded into the join QR code — must be what a phone can actually reach |
+| `PUBLIC_URL` | derived from the request | Only needed when the audience's address differs from the one the server sees |
+| `ADMIN_PASSWORD` | generated | Gates session creation at `/new` |
 | `DATA_DIR` | `./data` | SQLite lives here |
 | `SCENARIOS_DIR` | `./scenarios` | |
 | `ROOM_TTL_MINUTES` | `240` | Idle rooms are swept after this |
 
-`PUBLIC_URL` matters: the QR code has to encode a hostname the audience's phones can
-resolve, which is not the container's internal address.
+Links are derived from the address each request arrives on, so browsing to a LAN IP
+gives LAN links and a Cloudflare-proxied request gives public ones. `PUBLIC_URL` is
+an override for the rare case where those differ.
 
 ## Running it
 
@@ -136,8 +140,12 @@ npm run build
 npm start
 ```
 
-Open `http://localhost:8880/`, pick a scenario, and you get three links: the display
-for the projector, the host console for your phone, and a join code for the audience.
+`http://localhost:8880/` is the audience join screen. To run a session, go to
+`/new` — it asks for the host password, then hands you three links: the display for
+the projector, the host console for your phone, and a code the audience joins with.
+
+Set the password with `ADMIN_PASSWORD`. Leave it unset and a readable one is
+generated and printed at startup, so the server is never accidentally left open.
 
 ### Offline fallback
 
@@ -160,11 +168,12 @@ See [DEPLOY.md](DEPLOY.md).
 
 Working end to end: scenario authoring and validation, the story engine, the room
 server, all three client surfaces, live voting with automatic branching, host
-overrides, and the offline fallback. 87 tests, including a run with fifty
-simultaneous voters.
+overrides, password-gated session creation, recovery from a server restart
+mid-show, and the offline fallback. 97 tests, including a run with fifty
+simultaneous voters and a full restart with votes already cast.
 
-Not built yet: crash-recovery replay after a server restart mid-show is persisted
-but not yet exercised by a test, and there is no visual scenario editor.
+Not built yet: a visual scenario editor, and the demo scenario ships without
+artwork, so scenes render as gradients.
 
 ## License
 

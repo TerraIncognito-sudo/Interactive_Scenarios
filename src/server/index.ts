@@ -20,6 +20,15 @@ import {
   type CreateRoomResponse,
   type ScenarioListResponse,
 } from '../shared/protocol.ts';
+import {
+  ADMIN_COOKIE,
+  buildCookie,
+  clearCookie,
+  issueToken,
+  readCookie,
+  safeEqual,
+  verifyToken,
+} from './auth.ts';
 
 export async function buildServer(config: Config) {
   const app = Fastify({
@@ -48,6 +57,10 @@ export async function buildServer(config: Config) {
     }
   }
 
+  registry.onRoomError = (error, room, nodeId) => {
+    app.log.error({ room, nodeId, err: error }, 'Room clock stalled');
+  };
+
   const restored = registry.restore(library.scenarios);
   if (restored > 0) app.log.info(`Restored ${restored} live room(s) after restart`);
   registry.startSweeper();
@@ -56,12 +69,72 @@ export async function buildServer(config: Config) {
   // REST
   // ---------------------------------------------------------------------------
 
+  const secret = store.secret();
+
+  /**
+   * The base URL for links we hand out.
+   *
+   * Derived from the request unless explicitly overridden, so browsing to
+   * http://192.168.1.149:8880 yields links back to that same address. The old
+   * behaviour — falling back to localhost — produced links that looked valid
+   * and pointed at the operator's own machine.
+   */
+  const baseUrlFor = (request: { protocol: string; headers: Record<string, unknown> }): string => {
+    if (config.publicUrl) return config.publicUrl;
+
+    const forwardedHost = String(request.headers['x-forwarded-host'] ?? '')
+      .split(',')[0]
+      ?.trim();
+    const forwardedProto = String(request.headers['x-forwarded-proto'] ?? '')
+      .split(',')[0]
+      ?.trim();
+    const host = forwardedHost || String(request.headers['host'] ?? '') || 'localhost';
+    const protocol = forwardedProto || request.protocol || 'http';
+    return `${protocol}://${host}`;
+  };
+
+  const isAuthed = (request: { headers: Record<string, unknown> }): boolean => {
+    const cookie = readCookie(request.headers['cookie'] as string | undefined, ADMIN_COOKIE);
+    if (verifyToken(cookie, secret)) return true;
+
+    // Also accept the password directly, so scripts and curl can create rooms.
+    const header = request.headers['x-admin-password'];
+    return typeof header === 'string' && safeEqual(header, config.adminPassword);
+  };
+
   app.get('/api/health', async () => ({
     ok: true,
     scenarios: library.scenarios.size,
     rooms: registry.list().length,
     uptime: Math.round(process.uptime()),
   }));
+
+  // ---------------------------------------------------------------------------
+  // Auth
+  // ---------------------------------------------------------------------------
+
+  app.get('/api/session', async (request) => ({ authenticated: isAuthed(request) }));
+
+  app.post('/api/login', async (request, reply) => {
+    const body = request.body as { password?: unknown } | undefined;
+    const password = typeof body?.password === 'string' ? body.password : '';
+
+    if (!safeEqual(password, config.adminPassword)) {
+      // A uniform small delay blunts trivial online guessing without pretending
+      // this is more than a rudimentary gate.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return reply.code(401).send({ error: 'Incorrect password' });
+    }
+
+    const secureCookie = baseUrlFor(request).startsWith('https://');
+    reply.header('set-cookie', buildCookie(ADMIN_COOKIE, issueToken(secret), secureCookie));
+    return { ok: true };
+  });
+
+  app.post('/api/logout', async (_request, reply) => {
+    reply.header('set-cookie', clearCookie(ADMIN_COOKIE));
+    return { ok: true };
+  });
 
   app.get('/api/scenarios', async (): Promise<ScenarioListResponse> => ({
     scenarios: [...library.scenarios.values()].map(({ scenario }) => ({
@@ -101,6 +174,11 @@ export async function buildServer(config: Config) {
   );
 
   app.post('/api/rooms', async (request, reply): Promise<CreateRoomResponse | undefined> => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to create a session' });
+      return undefined;
+    }
+
     const parsed = CreateRoomSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.code(400).send({ error: 'Expected { scenarioId }' });
@@ -116,7 +194,7 @@ export async function buildServer(config: Config) {
     const room = registry.create(loaded);
     app.log.info({ room: room.code, scenario: loaded.scenario.id }, 'Room created');
 
-    const base = config.publicUrl;
+    const base = baseUrlFor(request);
     return {
       code: room.code,
       hostToken: room.hostToken,
@@ -130,7 +208,11 @@ export async function buildServer(config: Config) {
   });
 
   /** Re-reads scenario folders without a restart, for authoring iteration. */
-  app.post('/api/reload', async () => {
+  app.post('/api/reload', async (request, reply) => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to reload scenarios' });
+      return undefined;
+    }
     library = await loadLibrary(config.scenariosDir);
     return {
       scenarios: library.scenarios.size,
@@ -161,8 +243,15 @@ export async function buildServer(config: Config) {
       decorateReply: true,
     });
 
+    // The root belongs to the audience. Almost everyone who reaches this
+    // server is here to join a session, not to run one, so the landing page
+    // is the join screen and the launcher lives at /new behind the password.
+    app.get('/', async (_request, reply) => reply.sendFile('player/index.html'));
+
     // /join/CODE is a client-side route; serve the player app for any code.
     app.get('/join/:code', async (_request, reply) => reply.sendFile('player/index.html'));
+
+    app.get('/new', async (_request, reply) => reply.sendFile('new/index.html'));
   } else {
     app.log.warn(
       `Client bundle not found at ${config.clientDir} — run "npm run build" to serve the UI`,
@@ -198,7 +287,7 @@ async function main(): Promise<void> {
     // host console handy — so print everything needed to run a show from the
     // terminal alone, including a QR the room can scan off the laptop screen.
     const { default: QRCode } = await import('qrcode');
-    const url = config.publicUrl;
+    const url = config.publicUrl ?? `http://${lan ?? 'localhost'}:${config.port}`;
 
     console.log('\n  LOCAL FALLBACK MODE\n');
     console.log(`  Open this to start:  ${url}`);
@@ -220,8 +309,20 @@ async function main(): Promise<void> {
     }
     console.log();
   } else {
-    app.log.info(`Public URL   ${config.publicUrl}`);
-    if (lan) app.log.info(`LAN URL      http://${lan}:${config.port}`);
+    const shown = config.publicUrl ?? `http://${lan ?? 'localhost'}:${config.port}`;
+    app.log.info(`Audience join page   ${shown}/`);
+    app.log.info(`Start a session at   ${shown}/new`);
+    if (!config.publicUrl) {
+      app.log.info('PUBLIC_URL is not set; links are derived from each request');
+    }
+  }
+
+  // Printed rather than logged, so it is legible in `docker logs` even at a
+  // raised log level. A generated password is useless if nobody can find it.
+  if (config.adminPasswordGenerated) {
+    console.log('\n  ADMIN PASSWORD (generated — set ADMIN_PASSWORD to choose your own)\n');
+    console.log(`      ${config.adminPassword}\n`);
+    console.log('  Needed once, at /new, to create sessions.\n');
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {

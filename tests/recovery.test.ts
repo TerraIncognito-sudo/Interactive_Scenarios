@@ -18,6 +18,7 @@ import type { Config } from '../src/server/config.ts';
 import type { PlayerState, Snapshot } from '../src/shared/protocol.ts';
 
 let dataDir: string;
+const TEST_PASSWORD = 'test-password';
 const fixtures = join(import.meta.dirname, 'fixtures', 'scenarios');
 
 before(() => {
@@ -45,6 +46,8 @@ function configFor(): Config {
     publicUrl: 'http://test.local',
     local: false,
     roomTtlMs: 60_000,
+    adminPassword: TEST_PASSWORD,
+    adminPasswordGenerated: false,
   };
 }
 
@@ -134,7 +137,7 @@ describe('surviving a server restart', () => {
 
     const created = await fetch(`${first.baseUrl}/api/rooms`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
       body: JSON.stringify({ scenarioId: 'slowpoll' }),
     });
     assert.equal(created.status, 200);
@@ -212,7 +215,7 @@ describe('surviving a server restart', () => {
     const first = await startServer();
     const created = await fetch(`${first.baseUrl}/api/rooms`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
       body: JSON.stringify({ scenarioId: 'slowpoll' }),
     });
     const room = (await created.json()) as { code: string; hostToken: string };

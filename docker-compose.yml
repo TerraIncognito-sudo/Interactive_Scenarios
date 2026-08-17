@@ -7,9 +7,13 @@ services:
     ports:
       - '8880:8880'
     environment:
-      # The base URL encoded into the join QR code. This must be what an
-      # audience phone can actually resolve — not the container's address.
-      # Set to https://scurrycat.ca once the tunnel or port-forward is up.
+      # Password for /new, where sessions are created. Leave unset and one is
+      # generated and printed at startup (see: docker compose logs).
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Usually leave this alone: links are derived from the address each
+      # request arrives on, so browsing to the LAN IP gives LAN links and a
+      # Cloudflare-proxied request gives scurrycat.ca links. Only set it when
+      # the audience's address differs from the one the server can see.
       PUBLIC_URL: ${PUBLIC_URL:-}
       ROOM_TTL_MINUTES: ${ROOM_TTL_MINUTES:-240}
       LOG_LEVEL: ${LOG_LEVEL:-info}

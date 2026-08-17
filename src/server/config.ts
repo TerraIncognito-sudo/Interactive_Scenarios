@@ -9,6 +9,7 @@
 
 import { join, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
+import { randomBytes } from 'node:crypto';
 
 export type Config = {
   port: number;
@@ -20,14 +21,27 @@ export type Config = {
   /** Built client assets. */
   clientDir: string;
   /**
-   * Base URL encoded into the join QR code. Must be what an audience phone can
-   * actually reach — a public hostname in production, a LAN IP in local mode.
+   * Explicit override for the base URL in generated links.
+   *
+   * Left undefined, links are derived from the incoming request instead, which
+   * is right almost always: browse to http://192.168.1.149:8880 and you get
+   * links back to that same address. Only set this when the address the
+   * audience uses differs from the one the server sees — behind a proxy that
+   * does not forward Host, for example.
    */
-  publicUrl: string;
+  publicUrl: string | undefined;
   /** True when started with --local: bind all interfaces, advertise LAN IP. */
   local: boolean;
   /** Idle rooms are swept after this long. */
   roomTtlMs: number;
+  /**
+   * Gate on creating sessions, so a stranger who finds the server cannot spawn
+   * rooms. Generated and logged at startup when unset, rather than defaulting
+   * to open.
+   */
+  adminPassword: string;
+  /** True when the password was generated rather than configured. */
+  adminPasswordGenerated: boolean;
 };
 
 /**
@@ -91,6 +105,22 @@ export function lanAddress(): string | undefined {
   return lanCandidates()[0]?.address;
 }
 
+/**
+ * A readable throwaway password for when ADMIN_PASSWORD is not configured.
+ * Words rather than hex, because the operator has to type it on a phone.
+ */
+function generatePassword(): string {
+  const words = [
+    'amber', 'basalt', 'cedar', 'dusk', 'ember', 'fathom', 'garnet', 'harbor',
+    'indigo', 'juniper', 'kestrel', 'lantern', 'marrow', 'nimbus', 'onyx',
+    'pillar', 'quarry', 'rivet', 'summit', 'tundra', 'umber', 'vellum',
+    'willow', 'yarrow', 'zephyr',
+  ];
+  const bytes = randomBytes(3);
+  const pick = (i: number): string => words[bytes[i]! % words.length]!;
+  return `${pick(0)}-${pick(1)}-${pick(2)}`;
+}
+
 function intFromEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return fallback;
@@ -111,13 +141,21 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): Config {
   const port = intFromEnv('PORT', 8880);
   const host = process.env.HOST ?? (local ? '0.0.0.0' : '0.0.0.0');
 
-  let publicUrl = process.env.PUBLIC_URL?.replace(/\/+$/, '');
-  if (!publicUrl) {
-    const advertised = local ? (lanAddress() ?? 'localhost') : 'localhost';
-    publicUrl = `http://${advertised}:${port}`;
+  // An empty PUBLIC_URL used to fall back to localhost, which is the worst
+  // possible default: links looked valid and pointed at the operator's own
+  // machine rather than the server. Undefined now means "derive from the
+  // request", and only local mode fixes an address up front.
+  let publicUrl = process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined;
+  if (!publicUrl && local) {
+    publicUrl = `http://${lanAddress() ?? 'localhost'}:${port}`;
   }
 
+  const configuredPassword = process.env.ADMIN_PASSWORD?.trim();
+  const adminPassword = configuredPassword || generatePassword();
+
   return {
+    adminPassword,
+    adminPasswordGenerated: !configuredPassword,
     port,
     host,
     dataDir: resolve(process.env.DATA_DIR ?? join(root, 'data')),

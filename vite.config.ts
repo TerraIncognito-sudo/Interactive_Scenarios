@@ -14,10 +14,12 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       input: {
-        index: client('index.html'),
+        // No root index.html: the server routes / to the player app, so the
+        // landing page is the audience join screen rather than the launcher.
         display: client('display', 'index.html'),
         host: client('host', 'index.html'),
         player: client('player', 'index.html'),
+        new: client('new', 'index.html'),
       },
     },
   },
