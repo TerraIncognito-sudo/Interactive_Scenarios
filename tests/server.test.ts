@@ -1,0 +1,501 @@
+/**
+ * End-to-end integration over real WebSockets.
+ *
+ * This is the risk milestone in test form: prove that votes arriving from
+ * separate connections actually drive the story to a different ending, that
+ * the room code alone cannot drive the show, and that a poll nobody votes in
+ * still moves on.
+ */
+
+import { test, describe, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { WebSocket } from 'ws';
+import { buildServer } from '../src/server/index.ts';
+import type { Config } from '../src/server/config.ts';
+import type { PlayerState, Snapshot } from '../src/shared/protocol.ts';
+
+type App = Awaited<ReturnType<typeof buildServer>>;
+
+let app: App;
+let baseUrl: string;
+let wsUrl: string;
+let dataDir: string;
+
+const fixtures = join(import.meta.dirname, 'fixtures', 'scenarios');
+
+before(async () => {
+  process.env.LOG_LEVEL = 'silent';
+  dataDir = mkdtempSync(join(tmpdir(), 'interactive-scenario-test-'));
+  const config: Config = {
+    port: 0,
+    host: '127.0.0.1',
+    dataDir,
+    scenariosDir: fixtures,
+    clientDir: join(dataDir, 'no-client'),
+    publicUrl: 'http://test.local',
+    local: false,
+    roomTtlMs: 60_000,
+  };
+  app = await buildServer(config);
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const address = app.server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  baseUrl = `http://127.0.0.1:${port}`;
+  wsUrl = `ws://127.0.0.1:${port}/ws`;
+});
+
+after(async () => {
+  await app?.close();
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type Client = {
+  socket: WebSocket;
+  messages: unknown[];
+  /** Waits for the first message matching a predicate, with a timeout. */
+  next<T>(match: (m: any) => boolean, timeoutMs?: number): Promise<T>;
+  send(message: unknown): void;
+  close(): void;
+};
+
+function connect(): Promise<Client> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(wsUrl);
+    const messages: unknown[] = [];
+    const waiters: { match: (m: any) => boolean; resolve: (v: any) => void }[] = [];
+
+    socket.on('message', (raw) => {
+      const message = JSON.parse(raw.toString());
+      messages.push(message);
+      for (let i = waiters.length - 1; i >= 0; i--) {
+        if (waiters[i]!.match(message)) {
+          waiters[i]!.resolve(message);
+          waiters.splice(i, 1);
+        }
+      }
+    });
+
+    socket.on('error', reject);
+    socket.on('open', () =>
+      resolve({
+        socket,
+        messages,
+        next<T>(match: (m: any) => boolean, timeoutMs = 4000): Promise<T> {
+          const existing = messages.find((m) => match(m));
+          if (existing) return Promise.resolve(existing as T);
+          return new Promise<T>((res, rej) => {
+            const timer = setTimeout(
+              () =>
+                rej(
+                  new Error(
+                    `Timed out. Saw: ${messages.map((m: any) => m.type).join(', ') || '(none)'}`,
+                  ),
+                ),
+              timeoutMs,
+            );
+            waiters.push({
+              match,
+              resolve: (v) => {
+                clearTimeout(timer);
+                res(v);
+              },
+            });
+          });
+        },
+        send: (message) => socket.send(JSON.stringify(message)),
+        close: () => socket.close(),
+      }),
+    );
+  });
+}
+
+async function createRoom(scenarioId = 'quick') {
+  const response = await fetch(`${baseUrl}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scenarioId }),
+  });
+  assert.equal(response.status, 200);
+  return (await response.json()) as {
+    code: string;
+    hostToken: string;
+    displayToken: string;
+  };
+}
+
+const isSnapshot = (m: any): m is Snapshot => m?.type === 'snapshot';
+const isPlayerState = (m: any): m is PlayerState => m?.type === 'playerState';
+
+async function joinHost(code: string, token: string): Promise<Client> {
+  const client = await connect();
+  client.send({ type: 'hello', role: 'host', room: code, token });
+  await client.next(isSnapshot);
+  return client;
+}
+
+async function joinPlayer(code: string, deviceId: string): Promise<Client> {
+  const client = await connect();
+  client.send({ type: 'hello', role: 'player', room: code, deviceId });
+  await client.next(isPlayerState);
+  return client;
+}
+
+/** Drives a room to its open poll and returns the host client. */
+async function runToPoll(code: string, hostToken: string): Promise<Client> {
+  const host = await joinHost(code, hostToken);
+  host.send({ type: 'command', command: { name: 'start' } });
+  await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo?.kind === 'poll');
+  return host;
+}
+
+// ---------------------------------------------------------------------------
+
+describe('room access control', () => {
+  test('the room code alone lets you vote but not drive', async () => {
+    const room = await createRoom();
+
+    const player = await connect();
+    player.send({ type: 'hello', role: 'player', room: room.code, deviceId: 'device-aaaaaaa' });
+    const state = await player.next<PlayerState>(isPlayerState);
+    assert.equal(state.type, 'playerState');
+    player.close();
+
+    // Same code, host role, no token.
+    const impostor = await connect();
+    impostor.send({ type: 'hello', role: 'host', room: room.code });
+    const error = await impostor.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+    impostor.close();
+  });
+
+  test('a wrong token is rejected', async () => {
+    const room = await createRoom();
+    const client = await connect();
+    client.send({ type: 'hello', role: 'display', room: room.code, token: 'not-the-token' });
+    const error = await client.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+    client.close();
+  });
+
+  test('a well-formed but unknown room code is rejected', async () => {
+    const client = await connect();
+    // Valid alphabet, so it passes schema validation and reaches the lookup.
+    client.send({ type: 'hello', role: 'player', room: 'ABCDEF', deviceId: 'device-aaaaaaa' });
+    const error = await client.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badRoom');
+    client.close();
+  });
+
+  test('a code using letters excluded from the alphabet never reaches lookup', async () => {
+    // Z, O, I and S are excluded because they misread off a projector.
+    const client = await connect();
+    client.send({ type: 'hello', role: 'player', room: 'ZZZZZZ', deviceId: 'device-aaaaaaa' });
+    const error = await client.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badMessage');
+    client.close();
+  });
+
+  test('malformed frames are rejected without dropping the connection', async () => {
+    const client = await connect();
+    client.socket.send('this is not json');
+    const error = await client.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badMessage');
+    assert.equal(error.fatal, false);
+    assert.equal(client.socket.readyState, WebSocket.OPEN);
+    client.close();
+  });
+
+  test('commands are refused before a hello', async () => {
+    const client = await connect();
+    client.send({ type: 'command', command: { name: 'start' } });
+    const error = await client.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badMessage');
+    client.close();
+  });
+
+  test('the full scenario needs a token, so the audience cannot read ahead', async () => {
+    const room = await createRoom();
+
+    const denied = await fetch(`${baseUrl}/api/rooms/${room.code}/scenario`);
+    assert.equal(denied.status, 403);
+
+    const allowed = await fetch(
+      `${baseUrl}/api/rooms/${room.code}/scenario?token=${room.displayToken}`,
+    );
+    assert.equal(allowed.status, 200);
+    const body = (await allowed.json()) as any;
+    assert.equal(body.scenario.id, 'quick');
+    assert.ok(Array.isArray(body.assets));
+  });
+});
+
+describe('a show driven by audience votes', () => {
+  test('votes decide which branch the story takes', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    const a = await joinPlayer(room.code, 'device-aaaaaaa');
+    const b = await joinPlayer(room.code, 'device-bbbbbbb');
+    const c = await joinPlayer(room.code, 'device-ccccccc');
+
+    a.send({ type: 'vote', optionKey: 'left' });
+    b.send({ type: 'vote', optionKey: 'left' });
+    c.send({ type: 'vote', optionKey: 'right' });
+
+    // Host sees the live tally before the poll closes.
+    const tallied = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && (m.tally?.voters ?? 0) === 3,
+    );
+    assert.deepEqual(tallied.tally?.counts, { left: 2, right: 1 });
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+
+    const finished = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.phase === 'finished',
+    );
+    assert.equal(finished.beatInfo.kind, 'end');
+    assert.equal(
+      finished.beatInfo.kind === 'end' && finished.beatInfo.text,
+      'Went left.',
+      'the majority choice must decide the ending',
+    );
+    assert.equal(finished.lastResult?.winner, 'left');
+    assert.equal(finished.lastResult?.total, 3);
+
+    for (const client of [host, a, b, c]) client.close();
+  });
+
+  test('one device counts once, however many times it votes', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+    const player = await joinPlayer(room.code, 'device-repeat1');
+
+    for (let i = 0; i < 5; i++) player.send({ type: 'vote', optionKey: 'left' });
+    player.send({ type: 'vote', optionKey: 'right' });
+
+    const snapshot = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && (m.tally?.counts?.right ?? 0) === 1,
+    );
+    assert.equal(snapshot.tally?.voters, 1, 'one device is one voter');
+    assert.deepEqual(snapshot.tally?.counts, { left: 0, right: 1 }, 'last vote wins');
+
+    host.close();
+    player.close();
+  });
+
+  test('a player reconnecting sees their own choice restored', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    const first = await joinPlayer(room.code, 'device-sticky1');
+    first.send({ type: 'vote', optionKey: 'left' });
+    await first.next<PlayerState>((m) => isPlayerState(m) && m.choice === 'left');
+    first.close();
+
+    const again = await joinPlayer(room.code, 'device-sticky1');
+    const restored = await again.next<PlayerState>((m) => isPlayerState(m) && !!m.poll);
+    assert.equal(restored.choice, 'left');
+
+    host.close();
+    again.close();
+  });
+
+  test('a poll nobody votes in takes the default and the show continues', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    // The fixture's poll window is 1s; let it expire with no votes at all.
+    const finished = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.phase === 'finished',
+      6000,
+    );
+    assert.equal(finished.lastResult?.usedDefault, true);
+    assert.equal(finished.lastResult?.winner, 'right');
+    assert.equal(
+      finished.beatInfo.kind === 'end' && finished.beatInfo.text,
+      'Went right.',
+      'the declared default must decide it',
+    );
+
+    host.close();
+  });
+
+  test('players are never sent the story, only their own poll', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+    const player = await joinPlayer(room.code, 'device-nosecret');
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'finished');
+
+    // Give the broadcast a moment to arrive, then confirm nothing leaked.
+    await new Promise((r) => setTimeout(r, 150));
+    assert.ok(
+      player.messages.every((m: any) => m.type === 'playerState'),
+      `players must only receive playerState, saw: ${player.messages
+        .map((m: any) => m.type)
+        .join(', ')}`,
+    );
+
+    host.close();
+    player.close();
+  });
+
+  test('a player cannot send host commands', async () => {
+    const room = await createRoom();
+    const player = await joinPlayer(room.code, 'device-notahost');
+    player.send({ type: 'command', command: { name: 'start' } });
+    const error = await player.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+    player.close();
+  });
+});
+
+describe('host overrides', () => {
+  test('forceBranch overrides the tally', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    const player = await joinPlayer(room.code, 'device-override');
+    player.send({ type: 'vote', optionKey: 'left' });
+    await host.next<Snapshot>((m) => isSnapshot(m) && (m.tally?.voters ?? 0) === 1);
+
+    host.send({
+      type: 'command',
+      command: { name: 'forceBranch', optionKey: 'right' },
+    });
+
+    const finished = await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'finished');
+    assert.equal(finished.lastResult?.winner, 'right', 'the override must win over the vote');
+    assert.equal(finished.beatInfo.kind === 'end' && finished.beatInfo.text, 'Went right.');
+
+    host.close();
+    player.close();
+  });
+
+  test('extendPoll pushes the deadline out', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    const before = await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'poll');
+    const originalEnd = before.beatInfo.kind === 'poll' ? before.beatInfo.endsAt : 0;
+
+    host.send({ type: 'command', command: { name: 'extendPoll', seconds: 30 } });
+    const after = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'poll' && m.beatInfo.endsAt > originalEnd,
+    );
+    const extendedEnd = after.beatInfo.kind === 'poll' ? after.beatInfo.endsAt : 0;
+    assert.equal(extendedEnd - originalEnd, 30_000);
+
+    host.close();
+  });
+
+  test('pause stops the clock and resume restarts it', async () => {
+    const room = await createRoom();
+    const host = await joinHost(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'start' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'running');
+
+    host.send({ type: 'command', command: { name: 'pause' } });
+    const paused = await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'paused');
+    const frozenBeat = paused.beat;
+
+    await new Promise((r) => setTimeout(r, 400));
+    const stillPaused = host.messages.filter(isSnapshot).at(-1)!;
+    assert.equal(stillPaused.beat, frozenBeat, 'a paused show must not advance');
+
+    host.send({ type: 'command', command: { name: 'resume' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.beat > frozenBeat);
+
+    host.close();
+  });
+
+  test('reset returns a finished show to the lobby', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'finished');
+
+    host.send({ type: 'command', command: { name: 'reset' } });
+    const lobby = await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'lobby');
+    assert.equal(lobby.beatInfo.kind, 'idle');
+
+    host.close();
+  });
+});
+
+describe('presence and readiness', () => {
+  test('the host sees display and player counts', async () => {
+    const room = await createRoom();
+    const host = await joinHost(room.code, room.hostToken);
+
+    const display = await connect();
+    display.send({
+      type: 'hello',
+      role: 'display',
+      room: room.code,
+      token: room.displayToken,
+    });
+    await display.next(isSnapshot);
+
+    const withDisplay = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.presence.displays === 1,
+    );
+    assert.equal(withDisplay.presence.displays, 1);
+    assert.equal(withDisplay.displayReady, false, 'assets are not loaded yet');
+
+    display.send({ type: 'displayReady' });
+    const ready = await host.next<Snapshot>((m) => isSnapshot(m) && m.displayReady);
+    assert.equal(ready.displayReady, true);
+
+    const player = await joinPlayer(room.code, 'device-presence');
+    const withPlayer = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.presence.players === 1,
+    );
+    assert.equal(withPlayer.presence.players, 1);
+
+    player.close();
+    display.close();
+    host.close();
+  });
+});
+
+describe('load', () => {
+  test('fifty simultaneous voters are tallied exactly once each', async () => {
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    const players = await Promise.all(
+      Array.from({ length: 50 }, (_, i) =>
+        joinPlayer(room.code, `device-load-${String(i).padStart(4, '0')}`),
+      ),
+    );
+
+    // A realistic burst: everyone taps at once.
+    players.forEach((player, i) => {
+      player.send({ type: 'vote', optionKey: i < 30 ? 'left' : 'right' });
+    });
+
+    const tallied = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && (m.tally?.voters ?? 0) === 50,
+      8000,
+    );
+    assert.deepEqual(tallied.tally?.counts, { left: 30, right: 20 });
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    const finished = await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'finished');
+    assert.equal(finished.lastResult?.total, 50);
+    assert.equal(finished.lastResult?.winner, 'left');
+
+    for (const player of players) player.close();
+    host.close();
+  });
+});

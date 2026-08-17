@@ -155,7 +155,8 @@ describe('polls and branching', () => {
     state = closePollWith(state, {});
 
     assert.equal(state.nodeId, 'went_right'); // default: right
-    assert.equal(state.lastPollResult?.usedDefault, true);
+    assert.equal(state.lastPoll?.result.usedDefault, true);
+    assert.equal(state.lastPoll?.nodeId, 'vote', 'result must remember which poll it came from');
     assert.equal(state.phase, 'playing');
   });
 

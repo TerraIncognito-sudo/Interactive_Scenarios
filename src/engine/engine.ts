@@ -33,8 +33,12 @@ export type RunState = {
     /** ms since epoch, server clock. */
     endsAt: number;
   };
-  /** Result of the most recently closed poll, for the display's reveal. */
-  lastPollResult?: PollResult;
+  /**
+   * The most recently closed poll, for the display's result reveal. Carries its
+   * own node id because by the time this exists the show has already moved on
+   * to whichever node the vote selected.
+   */
+  lastPoll?: { nodeId: string; result: PollResult };
 };
 
 export type EngineEvent =
@@ -183,7 +187,7 @@ export function reduce(scenario: Scenario, state: RunState, event: EngineEvent):
       const withVars: RunState = {
         ...state,
         vars: { ...state.vars, ...variablesFrom(node, event.result) },
-        lastPollResult: event.result,
+        lastPoll: { nodeId: node.id, result: event.result },
         poll: undefined,
       };
       return enterNode(scenario, withVars, option.next);

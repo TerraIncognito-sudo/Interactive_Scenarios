@@ -1,0 +1,63 @@
+# A deliberately fast scenario for integration tests: short holds and short
+# poll windows so a full run takes milliseconds rather than minutes.
+id: quick
+title: Quick
+start: open
+
+settings:
+  minLineSeconds: 0.05
+  maxLineSeconds: 0.2
+  wordsPerMinute: 600
+
+characters:
+  ada:
+    name: Ada
+    color: '#4FC3F7'
+
+scenes:
+  room: {}
+
+nodes:
+  - id: open
+    type: dialogue
+    scene: room
+    lines:
+      - { who: ada, text: One, hold: 0.05 }
+      - { who: ada, text: Two, hold: 0.05 }
+    next: vote
+
+  - id: vote
+    type: poll
+    question: Which way?
+    duration: 1
+    options:
+      - { key: left, label: Left, next: went_left }
+      - { key: right, label: Right, next: went_right }
+    default: right
+    set:
+      path: $winner
+
+  - id: went_left
+    type: dialogue
+    lines: [{ text: Left, hold: 0.05 }]
+    next: decide
+
+  - id: went_right
+    type: dialogue
+    lines: [{ text: Right, hold: 0.05 }]
+    next: decide
+
+  - id: decide
+    type: branch
+    when:
+      - if: path == 'left'
+        next: finish_left
+    else: finish_right
+
+  - id: finish_left
+    type: end
+    text: Went left.
+
+  - id: finish_right
+    type: end
+    text: Went right.
