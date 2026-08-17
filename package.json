@@ -12,6 +12,7 @@
     "dev": "node --watch src/server/index.ts",
     "start": "node src/server/index.ts",
     "local": "node src/server/index.ts --local",
+    "editor": "node tools/editor/server.ts",
     "build": "vite build",
     "test": "node --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",

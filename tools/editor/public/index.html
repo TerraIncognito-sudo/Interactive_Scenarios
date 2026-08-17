@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scenario editor</title>
+    <link rel="stylesheet" href="./editor.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <span class="brand">Scenario editor</span>
+
+      <select id="picker" aria-label="Scenario"></select>
+
+      <span class="status" id="status">…</span>
+
+      <span class="spacer"></span>
+
+      <span class="dirty" id="dirty" hidden>unsaved</span>
+      <button id="revert" type="button" class="ghost">Revert</button>
+      <button id="save" type="button" class="primary">Save</button>
+    </header>
+
+    <main class="split">
+      <!-- Source ------------------------------------------------------- -->
+      <section class="pane source-pane">
+        <div class="pane-head">
+          <h2>scenario.yaml</h2>
+          <span class="hint" id="source-path"></span>
+        </div>
+        <textarea
+          id="source"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          wrap="off"
+          aria-label="Scenario source"
+        ></textarea>
+      </section>
+
+      <!-- Analysis ----------------------------------------------------- -->
+      <section class="pane">
+        <div class="tabs" role="tablist">
+          <button class="tab" data-tab="nodes" role="tab" aria-selected="true">Nodes</button>
+          <button class="tab" data-tab="vars" role="tab" aria-selected="false">Variables</button>
+          <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
+        </div>
+
+        <div class="tab-body">
+          <div class="problems" id="problems" hidden></div>
+
+          <div class="tab-panel" id="panel-nodes">
+            <p class="overview" id="overview"></p>
+            <ul class="nodes" id="nodes"></ul>
+          </div>
+
+          <div class="tab-panel" id="panel-vars" hidden>
+            <p class="hint">
+              Variables are the story's memory. A poll writes one, and a later branch reads
+              it — that's how a vote can still matter three scenes on.
+            </p>
+            <ul class="vars" id="vars"></ul>
+          </div>
+
+          <div class="tab-panel" id="panel-sim" hidden>
+            <p class="hint">
+              Pick how each vote goes and run the whole story. A poll left on
+              <em>no votes</em> resolves through its <code>default</code> — the path that is
+              hardest to rehearse and worst to get wrong live.
+            </p>
+            <div class="choices" id="choices"></div>
+            <button id="run" type="button" class="primary">Run through</button>
+            <div class="trace" id="trace"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

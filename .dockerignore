@@ -5,6 +5,9 @@ data
 .gitignore
 .github
 tests
+# The editor is a desk tool that writes to scenarios/. It has no authentication
+# and no business being inside the image that faces an audience.
+tools
 *.md
 !README.md
 .env

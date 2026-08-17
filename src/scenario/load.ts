@@ -38,6 +38,47 @@ function formatZodError(error: z.ZodError): string[] {
   });
 }
 
+export type ParseResult =
+  | { ok: true; scenario: Scenario; warnings: CheckResult['warnings'] }
+  | { ok: false; message: string; problems: string[] };
+
+/**
+ * YAML text to a validated scenario.
+ *
+ * Split out from file loading so the editor can validate text that is still
+ * being typed and has never been saved. Both paths must apply exactly the same
+ * rules, or the editor would bless a scenario the server then refuses.
+ */
+export function parseScenarioSource(raw: string): ParseResult {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch (err) {
+    return { ok: false, message: `Invalid YAML: ${(err as Error).message}`, problems: [] };
+  }
+
+  const result = ScenarioSchema.safeParse(parsed);
+  if (!result.success) {
+    return {
+      ok: false,
+      message: 'Scenario does not match the expected format',
+      problems: formatZodError(result.error),
+    };
+  }
+
+  const scenario = result.data;
+  const checks = checkScenario(scenario);
+  if (checks.errors.length > 0) {
+    return {
+      ok: false,
+      message: 'Scenario graph is invalid',
+      problems: checks.errors.map((e) => `${e.nodeId ? `[${e.nodeId}] ` : ''}${e.message}`),
+    };
+  }
+
+  return { ok: true, scenario, warnings: checks.warnings };
+}
+
 /** Parses and fully validates a single scenario.yaml. */
 export async function loadScenarioFile(file: string, dir: string): Promise<LoadedScenario> {
   let raw: string;
@@ -47,33 +88,12 @@ export async function loadScenarioFile(file: string, dir: string): Promise<Loade
     throw new ScenarioLoadError(`Could not read ${file}: ${(err as Error).message}`, file);
   }
 
-  let parsed: unknown;
-  try {
-    parsed = parseYaml(raw);
-  } catch (err) {
-    throw new ScenarioLoadError(`Invalid YAML: ${(err as Error).message}`, file);
+  const result = parseScenarioSource(raw);
+  if (!result.ok) {
+    throw new ScenarioLoadError(result.message, file, result.problems);
   }
 
-  const result = ScenarioSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new ScenarioLoadError(
-      `Scenario does not match the expected format`,
-      file,
-      formatZodError(result.error),
-    );
-  }
-
-  const scenario = result.data;
-  const checks = checkScenario(scenario);
-  if (checks.errors.length > 0) {
-    throw new ScenarioLoadError(
-      `Scenario graph is invalid`,
-      file,
-      checks.errors.map((e) => `${e.nodeId ? `[${e.nodeId}] ` : ''}${e.message}`),
-    );
-  }
-
-  return { scenario, dir, warnings: checks.warnings };
+  return { scenario: result.scenario, dir, warnings: result.warnings };
 }
 
 /** Loads the scenario in a given folder (expects scenario.yaml inside). */
