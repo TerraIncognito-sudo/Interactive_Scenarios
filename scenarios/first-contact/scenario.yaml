@@ -1,0 +1,205 @@
+id: first-contact
+title: First Contact
+description: >
+  A reference scenario exercising every node type. Two audience votes, with the
+  second ending branching on what the room chose the first time.
+
+start: intro
+
+settings:
+  wordsPerMinute: 160
+  minLineSeconds: 2
+  maxLineSeconds: 14
+  charsPerSecond: 45
+
+characters:
+  ada:
+    name: Dr. Ada Chen
+    color: '#4FC3F7'
+    # sprite: ada.png
+  rook:
+    name: Cmdr. Rook
+    color: '#FF8A65'
+    # sprite: rook.png
+
+scenes:
+  bridge: {}
+  # bridge: { background: bridge.jpg, music: ambient.mp3 }
+  airlock: {}
+  epilogue: {}
+
+nodes:
+  - id: intro
+    type: dialogue
+    scene: bridge
+    lines:
+      - text: Eleven months out from Kepler Station, the array picks up something that should not be there.
+      - who: ada
+        text: The signal repeats every four point two seconds. Same interval, every time.
+      - who: rook
+        text: Could be a pulsar. Could be our own echo coming back at us.
+      - who: ada
+        text: It carries a prime sequence, Commander. Two, three, five, seven, eleven. Pulsars do not count.
+      - who: rook
+        text: Then somebody is counting at us.
+        hold: 4
+    next: vote_approach
+
+  - id: vote_approach
+    type: poll
+    scene: airlock
+    question: The crew has ninety seconds of transmission window. What do they do?
+    prompt: Vote on your phone — the story follows the room.
+    duration: 120
+    options:
+      - key: reply
+        label: Broadcast a reply
+        next: path_reply
+      - key: silent
+        label: Maintain radio silence
+        next: path_silent
+      - key: listen
+        label: Move closer and listen
+        next: path_listen
+    default: silent
+    tiebreak: random
+    set:
+      approach: $winner
+      approach_label: $winnerLabel
+
+  - id: path_reply
+    type: dialogue
+    scene: airlock
+    lines:
+      - who: ada
+        text: I am sending the sequence back. Same interval, one prime further.
+      - who: rook
+        text: You just told something we cannot see that we are awake and we can count.
+      - who: ada
+        text: I told it we are listening. Those are not the same thing.
+    next: the_answer
+
+  - id: path_silent
+    type: dialogue
+    scene: airlock
+    lines:
+      - who: rook
+        text: We log it. We do not answer it. Not until we know what answering costs.
+      - who: ada
+        text: And if the window closes and it never repeats?
+      - who: rook
+        text: Then we were never the ones it was calling.
+        hold: 4
+    next: the_answer
+
+  - id: path_listen
+    type: dialogue
+    scene: airlock
+    lines:
+      - who: rook
+        text: Helm, close the gap. Quietly. Nobody transmits anything.
+      - who: ada
+        text: Commander, at this range the array will resolve structure. If there is structure.
+      - who: rook
+        text: That is exactly what worries me.
+    next: the_answer
+
+  - id: the_answer
+    type: dialogue
+    scene: airlock
+    lines:
+      - text: The interval changes.
+      - who: ada
+        text: Four point two seconds became two point one. It halved. It is responding to us.
+      - who: rook
+        text: To us, or to the fact that we exist?
+    next: hold_beat
+
+  - id: hold_beat
+    type: pause
+    scene: airlock
+    duration: 4
+    text: The signal halves again.
+    next: vote_disclose
+
+  - id: vote_disclose
+    type: poll
+    scene: airlock
+    question: Kepler Station is eleven months away and has no idea. Who gets told?
+    duration: 120
+    options:
+      - key: everyone
+        label: Broadcast to everyone
+        next: ending_branch
+      - key: command
+        label: Command channel only
+        next: ending_branch
+      - key: nobody
+        label: Tell nobody yet
+        next: ending_branch
+    default: command
+    tiebreak: first
+    set:
+      disclosure: $winner
+
+  # Branch nodes read variables set by earlier polls, so the ending can
+  # reflect the room's first choice as well as its most recent one.
+  - id: ending_branch
+    type: branch
+    when:
+      - if: approach == 'reply' && disclosure == 'everyone'
+        next: ending_open
+      - if: approach == 'silent' && disclosure == 'nobody'
+        next: ending_closed
+      - if: disclosure == 'nobody'
+        next: ending_quiet
+    else: ending_measured
+
+  - id: ending_open
+    type: dialogue
+    scene: epilogue
+    lines:
+      - text: They answered it, and then they told everyone they had.
+      - who: ada
+        text: Whatever happens next, it happens to all of us at once. That was the point.
+      - who: rook
+        text: I hope you are right, Doctor. I genuinely do.
+    next: finish
+
+  - id: ending_closed
+    type: dialogue
+    scene: epilogue
+    lines:
+      - text: They said nothing, to the signal and to anyone else.
+      - who: rook
+        text: Log it, seal it, and let the next crew decide with better instruments.
+      - who: ada
+        text: The next crew will not know to look. That is what sealing it means.
+    next: finish
+
+  - id: ending_quiet
+    type: dialogue
+    scene: epilogue
+    lines:
+      - text: They acted, and then they kept it to themselves.
+      - who: ada
+        text: We made a choice on behalf of nine billion people who were not consulted.
+      - who: rook
+        text: That is the job. It has always been the job.
+    next: finish
+
+  - id: ending_measured
+    type: dialogue
+    scene: epilogue
+    lines:
+      - text: They took the middle path, the way crews usually do.
+      - who: rook
+        text: Command will convene a panel. The panel will convene a subcommittee.
+      - who: ada
+        text: And the signal will keep halving, whether or not anyone is ready.
+    next: finish
+
+  - id: finish
+    type: end
+    scene: epilogue
+    text: What would your crew have done?

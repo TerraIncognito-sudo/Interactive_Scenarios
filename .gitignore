@@ -1,0 +1,15 @@
+node_modules/
+dist/
+data/
+*.log
+
+.env
+.env.local
+.env.*.local
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+.vite/
+coverage/
