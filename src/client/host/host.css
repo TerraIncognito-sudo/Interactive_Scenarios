@@ -1,0 +1,306 @@
+/* The operator console.
+   Usable on a phone in a dark room, one-handed, without looking closely.
+   Every control is a real touch target and destructive ones are visually
+   separated from the ones you press during a show. */
+
+.host-body {
+  min-height: 100dvh;
+}
+
+.console {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.3rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.show-title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.room-chip {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.room-chip-label {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.room-chip-code {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.stat {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 0.25rem;
+}
+
+.stat-value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.stat-value.good {
+  color: var(--good);
+}
+
+.stat-value.warn {
+  color: var(--accent-warm);
+}
+
+.now {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+}
+
+.now-text {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.now-meta {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------ live vote -- */
+
+.live {
+  background: linear-gradient(180deg, rgba(79, 195, 247, 0.08), rgba(79, 195, 247, 0.02));
+  border: 1px solid rgba(79, 195, 247, 0.28);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+}
+
+.live[hidden] {
+  display: none;
+}
+
+.live-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.live-clock {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-clock.urgent {
+  color: var(--accent-warm);
+}
+
+.tally {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tally-row {
+  position: relative;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.95rem;
+}
+
+.tally-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: rgba(79, 195, 247, 0.24);
+  transition: width 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tally-row.leading .tally-fill {
+  background: rgba(94, 201, 138, 0.28);
+}
+
+.tally-label {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.tally-count {
+  position: relative;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.override {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.override-label {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.override-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.override-buttons button {
+  font-size: 0.9rem;
+  padding: 0.55rem 0.8rem;
+}
+
+/* ------------------------------------------------------------- controls -- */
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.control-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.6rem;
+}
+
+.controls button {
+  min-height: 54px;
+  font-size: 1rem;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06080d;
+  font-weight: 700;
+}
+
+.primary:hover:not(:disabled) {
+  background: #6bcffa;
+  border-color: #6bcffa;
+}
+
+.wide {
+  min-height: 62px !important;
+  font-size: 1.1rem !important;
+}
+
+.danger {
+  margin-top: 0.75rem;
+  border-color: rgba(239, 90, 90, 0.4);
+  color: #ff9b9b;
+  min-height: 46px !important;
+  font-size: 0.9rem !important;
+}
+
+.danger:hover:not(:disabled) {
+  background: rgba(239, 90, 90, 0.12);
+  border-color: rgba(239, 90, 90, 0.6);
+}
+
+/* ---------------------------------------------------------------- links -- */
+
+.links {
+  border-top: 1px solid var(--line);
+  padding-top: 1.25rem;
+}
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.link-row > span {
+  flex: 0 0 4.5rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.link-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+}
+
+.link-row button {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.warn {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: var(--accent-warm);
+}
+
+.warn[hidden] {
+  display: none;
+}

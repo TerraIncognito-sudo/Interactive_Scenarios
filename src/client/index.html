@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Interactive Scenario</title>
+    <link rel="stylesheet" href="./shared/base.css" />
+    <link rel="stylesheet" href="./launcher.css" />
+  </head>
+  <body class="launcher-body">
+    <main class="launcher">
+      <header>
+        <p class="eyebrow">Interactive Scenario</p>
+        <h1>Start a session</h1>
+        <p class="lede">
+          Pick a scenario. You'll get a link for the projector, a console to run the show
+          from, and a code the audience joins with.
+        </p>
+      </header>
+
+      <ul class="scenarios" id="scenarios">
+        <li class="empty">Loading scenarios…</li>
+      </ul>
+
+      <section class="created" id="created" hidden>
+        <p class="eyebrow">Session ready</p>
+        <p class="code" id="created-code">------</p>
+        <div class="actions">
+          <a class="action primary" id="open-display" target="_blank" rel="noopener">
+            Open display
+            <span>on the projector screen</span>
+          </a>
+          <a class="action" id="open-host" target="_blank" rel="noopener">
+            Open host console
+            <span>keep this on your phone</span>
+          </a>
+        </div>
+        <p class="join-line">Audience joins at <strong id="created-join"></strong></p>
+        <p class="note">
+          Open the display first and let it finish loading before you start the show.
+        </p>
+      </section>
+
+      <section class="failures" id="failures" hidden>
+        <p class="eyebrow">Scenarios that failed to load</p>
+        <ul id="failure-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="./launcher.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>Vote — Interactive Scenario</title>
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="./player.css" />
+  </head>
+  <body class="player-body">
+    <div class="conn" data-status="connecting" id="conn">connecting</div>
+
+    <main class="phone">
+      <!-- Entering a code by hand, when someone cannot scan the QR -->
+      <section class="card" id="view-join">
+        <h1 class="title">Join the session</h1>
+        <p class="sub">Enter the code shown on screen.</p>
+        <form id="join-form">
+          <input
+            id="code-input"
+            class="code-input"
+            inputmode="text"
+            autocapitalize="characters"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="6"
+            placeholder="ABC123"
+            aria-label="Room code"
+          />
+          <button type="submit" class="primary">Join</button>
+        </form>
+        <p class="error" id="join-error"></p>
+      </section>
+
+      <!-- Connected, nothing to vote on yet -->
+      <section class="card centered" id="view-waiting" hidden>
+        <div class="pulse-dot"></div>
+        <h1 class="title">You're in</h1>
+        <p class="sub">Keep this open. Your choices will appear here.</p>
+        <p class="room-tag" id="waiting-room"></p>
+      </section>
+
+      <!-- An open poll -->
+      <section class="card" id="view-poll" hidden>
+        <div class="poll-timer">
+          <div class="timer-bar" id="timer-bar"></div>
+        </div>
+        <h1 class="question" id="question"></h1>
+        <p class="sub" id="prompt"></p>
+        <div class="options" id="options"></div>
+        <p class="hint" id="hint">Tap to choose. You can change your mind until time runs out.</p>
+      </section>
+
+      <!-- Vote locked in, poll closed -->
+      <section class="card centered" id="view-locked" hidden>
+        <div class="tick">✓</div>
+        <h1 class="title">Vote counted</h1>
+        <p class="sub" id="locked-choice"></p>
+        <p class="hint">Watch the screen.</p>
+      </section>
+
+      <section class="card centered" id="view-error" hidden>
+        <h1 class="title">Can't join</h1>
+        <p class="sub" id="error-text"></p>
+      </section>
+    </main>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

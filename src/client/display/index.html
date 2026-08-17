@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Display — Interactive Scenario</title>
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="./display.css" />
+  </head>
+  <body class="display-body">
+    <div class="conn" data-status="connecting" id="conn">connecting</div>
+
+    <!-- Fixed 1920x1080 design surface, scaled by JS to fit any projector. -->
+    <div class="stage-wrap" id="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="scene" id="scene"></div>
+        <div class="vignette"></div>
+
+        <!-- Lobby -->
+        <section class="panel lobby" id="view-lobby">
+          <div class="lobby-inner">
+            <p class="eyebrow">Ready when you are</p>
+            <h1 class="lobby-title" id="lobby-title">Interactive Scenario</h1>
+            <p class="lobby-sub" id="lobby-sub"></p>
+            <div class="join-block">
+              <img class="qr" id="lobby-qr" alt="QR code to join the session" />
+              <div class="join-text">
+                <p class="join-label">Join from your phone</p>
+                <p class="join-url" id="lobby-url"></p>
+                <p class="join-label">Room code</p>
+                <p class="room-code" id="lobby-code">------</p>
+              </div>
+            </div>
+            <p class="asset-state" id="asset-state"></p>
+          </div>
+        </section>
+
+        <!-- Dialogue -->
+        <section class="panel dialogue" id="view-dialogue" hidden>
+          <div class="portrait" id="portrait" hidden><img id="portrait-img" alt="" /></div>
+          <div class="dialogue-box">
+            <div class="nameplate" id="nameplate" hidden></div>
+            <p class="line" id="line"></p>
+          </div>
+        </section>
+
+        <!-- Pause beat -->
+        <section class="panel beat" id="view-pause" hidden>
+          <p class="beat-text" id="pause-text"></p>
+        </section>
+
+        <!-- Poll -->
+        <section class="panel poll" id="view-poll" hidden>
+          <div class="poll-head">
+            <h2 class="poll-question" id="poll-question"></h2>
+            <p class="poll-prompt" id="poll-prompt"></p>
+          </div>
+
+          <div class="poll-body">
+            <ul class="bars" id="poll-bars"></ul>
+
+            <aside class="poll-aside">
+              <img class="qr qr-small" id="poll-qr" alt="QR code to join the vote" />
+              <p class="join-url small" id="poll-url"></p>
+              <p class="room-code small" id="poll-code">------</p>
+              <div class="countdown">
+                <svg viewBox="0 0 120 120" class="ring">
+                  <circle class="ring-track" cx="60" cy="60" r="52" />
+                  <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52" />
+                </svg>
+                <span class="countdown-num" id="countdown">--</span>
+              </div>
+              <p class="voters" id="voters">0 voting</p>
+            </aside>
+          </div>
+        </section>
+
+        <!-- Result reveal -->
+        <section class="panel result" id="view-result" hidden>
+          <p class="eyebrow">The room decided</p>
+          <h2 class="result-label" id="result-label"></h2>
+          <p class="result-detail" id="result-detail"></p>
+        </section>
+
+        <!-- Ending -->
+        <section class="panel ending" id="view-end" hidden>
+          <p class="ending-text" id="end-text"></p>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
