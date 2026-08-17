@@ -124,11 +124,47 @@ variable, so the same process runs in both places.
 `PUBLIC_URL` matters: the QR code has to encode a hostname the audience's phones can
 resolve, which is not the container's internal address.
 
+## Running it
+
+Build the client once, then start the server:
+
+```bash
+npm run build
+```
+
+```bash
+npm start
+```
+
+Open `http://localhost:8880/`, pick a scenario, and you get three links: the display
+for the projector, the host console for your phone, and a join code for the audience.
+
+### Offline fallback
+
+If a venue's connection is dead, the same server runs on the presenting laptop and
+the audience joins over the room's wifi:
+
+```bash
+npm run local
+```
+
+It prints a QR code in the terminal and picks the LAN address phones are most likely
+to reach — virtual adapters from VPNs, WSL and Docker are ranked out of the way,
+since a QR pointing at one of those is unreachable from the room.
+
+### Deploying
+
+See [DEPLOY.md](DEPLOY.md).
+
 ## Status
 
-Under construction. Working today: scenario schema, loader, graph validator, the pure
-story engine, and vote resolution — all covered by tests. The server, clients and
-deployment are next.
+Working end to end: scenario authoring and validation, the story engine, the room
+server, all three client surfaces, live voting with automatic branching, host
+overrides, and the offline fallback. 87 tests, including a run with fifty
+simultaneous voters.
+
+Not built yet: crash-recovery replay after a server restart mid-show is persisted
+but not yet exercised by a test, and there is no visual scenario editor.
 
 ## License
 

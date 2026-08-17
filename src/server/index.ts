@@ -10,7 +10,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConfig, lanAddress, type Config } from './config.ts';
+import { loadConfig, lanAddress, lanCandidates, type Config } from './config.ts';
 import { Store } from './db.ts';
 import { RoomRegistry } from './rooms.ts';
 import { attachWebSocketServer } from './ws.ts';
@@ -190,9 +190,37 @@ async function main(): Promise<void> {
   await app.listen({ port: config.port, host: config.host });
 
   const lan = lanAddress();
-  app.log.info(`Public URL   ${config.publicUrl}`);
-  if (lan) app.log.info(`LAN URL      http://${lan}:${config.port}`);
-  if (config.local) app.log.info('Running in LOCAL FALLBACK mode');
+
+  if (config.local) {
+    // Fallback mode is used when the venue's internet is dead and there is no
+    // host console handy — so print everything needed to run a show from the
+    // terminal alone, including a QR the room can scan off the laptop screen.
+    const { default: QRCode } = await import('qrcode');
+    const url = config.publicUrl;
+
+    console.log('\n  LOCAL FALLBACK MODE\n');
+    console.log(`  Open this to start:  ${url}`);
+    console.log(`  Audience joins at:   ${url}/join/<CODE>\n`);
+    console.log(await QRCode.toString(url, { type: 'terminal', small: true }));
+    console.log(`  Everyone must be on the same network as ${lan ?? 'this machine'}.`);
+
+    // Interface choice is a guess, and a wrong QR code is only discovered when
+    // a room of people cannot join. Show the alternatives so it can be
+    // corrected in seconds with PUBLIC_URL rather than debugged live.
+    const others = lanCandidates().filter((c) => c.address !== lan);
+    if (others.length > 0) {
+      console.log(`\n  Other addresses on this machine:`);
+      for (const candidate of others) {
+        console.log(`    http://${candidate.address}:${config.port}  (${candidate.iface})`);
+      }
+      console.log(`  If phones cannot reach the address above, restart with:`);
+      console.log(`    PUBLIC_URL=http://<the right one>:${config.port} npm run local`);
+    }
+    console.log();
+  } else {
+    app.log.info(`Public URL   ${config.publicUrl}`);
+    if (lan) app.log.info(`LAN URL      http://${lan}:${config.port}`);
+  }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {

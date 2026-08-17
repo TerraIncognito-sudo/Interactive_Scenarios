@@ -30,14 +30,65 @@ export type Config = {
   roomTtlMs: number;
 };
 
-/** First non-internal IPv4 address, used to advertise a reachable LAN URL. */
-export function lanAddress(): string | undefined {
-  for (const addresses of Object.values(networkInterfaces())) {
+/**
+ * Picking the address to put in a QR code.
+ *
+ * Taking the first non-internal IPv4 is wrong on any real machine: WSL, Docker,
+ * Hyper-V and VPN adapters all present private addresses that an audience phone
+ * cannot reach, and they frequently sort first. Handing a room a QR code
+ * pointing at 10.5.0.2 is exactly the kind of failure this project exists to
+ * avoid, so candidates are ranked rather than guessed.
+ */
+
+const VIRTUAL_INTERFACE =
+  /(wsl|docker|hyper-?v|vethernet|vmware|virtualbox|vbox|tailscale|zerotier|radmin|nordlynx|wireguard|openvpn|proton|mullvad|utun|tun\d|tap\d|loopback|bluetooth)/i;
+
+export type LanCandidate = {
+  address: string;
+  iface: string;
+  score: number;
+};
+
+type InterfaceMap = Record<string, { family: string; address: string; internal: boolean }[] | undefined>;
+
+/** Ranking split out from the OS call so it can be tested against real-world shapes. */
+export function rankCandidates(interfaces: InterfaceMap): LanCandidate[] {
+  const candidates: LanCandidate[] = [];
+
+  for (const [iface, addresses] of Object.entries(interfaces)) {
     for (const address of addresses ?? []) {
-      if (address.family === 'IPv4' && !address.internal) return address.address;
+      if (address.family !== 'IPv4' || address.internal) continue;
+
+      let score = 0;
+      // Home and office LANs are overwhelmingly 192.168/16, which is also the
+      // range a venue's guest wifi is most likely to hand out.
+      if (address.address.startsWith('192.168.')) score += 100;
+      else if (/^172\.(1[6-9]|2\d|3[01])\./.test(address.address)) score += 60;
+      else if (address.address.startsWith('10.')) score += 40;
+
+      // Link-local means DHCP failed; it is never the right answer.
+      if (address.address.startsWith('169.254.')) score -= 200;
+      if (VIRTUAL_INTERFACE.test(iface)) score -= 150;
+
+      candidates.push({ address: address.address, iface, score });
     }
   }
-  return undefined;
+
+  // Ties keep declaration order, so the result is stable across restarts.
+  return candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => b.candidate.score - a.candidate.score || a.index - b.index)
+    .map(({ candidate }) => candidate);
+}
+
+/** Every usable IPv4 address on this machine, best first. */
+export function lanCandidates(): LanCandidate[] {
+  return rankCandidates(networkInterfaces() as InterfaceMap);
+}
+
+/** Best guess at the address an audience phone can actually reach. */
+export function lanAddress(): string | undefined {
+  return lanCandidates()[0]?.address;
 }
 
 function intFromEnv(name: string, fallback: number): number {

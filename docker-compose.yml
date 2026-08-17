@@ -1,0 +1,24 @@
+services:
+  interactive-scenario:
+    build: .
+    image: interactive-scenario:latest
+    container_name: interactive-scenario
+    restart: unless-stopped
+    ports:
+      - '8880:8880'
+    environment:
+      # The base URL encoded into the join QR code. This must be what an
+      # audience phone can actually resolve — not the container's address.
+      # Set to https://scurrycat.ca once the tunnel or port-forward is up.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      ROOM_TTL_MINUTES: ${ROOM_TTL_MINUTES:-240}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # SQLite. Survives restarts so a live show is not lost to a redeploy.
+      - scenario-data:/data
+      # Scenarios are content, not code: mount them and you can add or edit a
+      # scenario without rebuilding the image. Call POST /api/reload after.
+      - ./scenarios:/app/scenarios:ro
+
+volumes:
+  scenario-data:
