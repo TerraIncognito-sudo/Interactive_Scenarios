@@ -44,10 +44,17 @@ generated at startup and printed in the log:
 docker compose logs interactive-scenario | grep -A3 "ADMIN PASSWORD"
 ```
 
-Set your own in `docker-compose.yml` or a `.env` beside it:
+Set your own by copying the sample and editing it — compose reads `.env`
+automatically, and it is gitignored so the password stays out of the repo:
 
 ```bash
-ADMIN_PASSWORD=choose-something docker compose up -d
+cp .env.sample .env
+```
+
+Then edit `ADMIN_PASSWORD` and restart:
+
+```bash
+docker compose up -d
 ```
 
 The sign-in cookie is signed with a secret stored in the database, so it

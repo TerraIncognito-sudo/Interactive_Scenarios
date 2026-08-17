@@ -106,6 +106,26 @@ export function lanAddress(): string | undefined {
 }
 
 /**
+ * Accepts a bare hostname for PUBLIC_URL and supplies the scheme.
+ *
+ * `PUBLIC_URL=interact.example.com` is the obvious thing to write and the
+ * wrong thing to emit: without a scheme it is a relative path, so every link
+ * would resolve against the current page instead of the site. Rather than
+ * hand out broken links, assume https for a hostname and http for something
+ * that is plainly a LAN address.
+ */
+export function normalizePublicUrl(raw: string | undefined): string | undefined {
+  const value = raw?.trim().replace(/\/+$/, '');
+  if (!value) return undefined;
+  if (/^https?:\/\//i.test(value)) return value;
+
+  const isLocal =
+    /^(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?$/i.test(value) ||
+    /^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(value);
+  return `${isLocal ? 'http' : 'https'}://${value}`;
+}
+
+/**
  * A readable throwaway password for when ADMIN_PASSWORD is not configured.
  * Words rather than hex, because the operator has to type it on a phone.
  */
@@ -145,7 +165,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): Config {
   // possible default: links looked valid and pointed at the operator's own
   // machine rather than the server. Undefined now means "derive from the
   // request", and only local mode fixes an address up front.
-  let publicUrl = process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined;
+  let publicUrl = normalizePublicUrl(process.env.PUBLIC_URL);
   if (!publicUrl && local) {
     publicUrl = `http://${lanAddress() ?? 'localhost'}:${port}`;
   }

@@ -1,6 +1,34 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { rankCandidates } from '../src/server/config.ts';
+import { rankCandidates, normalizePublicUrl } from '../src/server/config.ts';
+
+describe('PUBLIC_URL normalisation', () => {
+  test('supplies https for a bare hostname', () => {
+    // Writing the hostname alone is the obvious mistake, and without a scheme
+    // every generated link would be relative rather than absolute.
+    assert.equal(normalizePublicUrl('interact.scurrycat.ca'), 'https://interact.scurrycat.ca');
+  });
+
+  test('leaves an explicit scheme alone', () => {
+    assert.equal(normalizePublicUrl('https://a.example'), 'https://a.example');
+    assert.equal(normalizePublicUrl('http://a.example:8880'), 'http://a.example:8880');
+  });
+
+  test('assumes http for a LAN address or localhost', () => {
+    assert.equal(normalizePublicUrl('192.168.1.149:8880'), 'http://192.168.1.149:8880');
+    assert.equal(normalizePublicUrl('localhost:8880'), 'http://localhost:8880');
+  });
+
+  test('strips trailing slashes so links do not double up', () => {
+    assert.equal(normalizePublicUrl('https://a.example//'), 'https://a.example');
+  });
+
+  test('treats empty or missing as unset, so links follow the request', () => {
+    assert.equal(normalizePublicUrl(undefined), undefined);
+    assert.equal(normalizePublicUrl(''), undefined);
+    assert.equal(normalizePublicUrl('   '), undefined);
+  });
+});
 
 const ipv4 = (address: string, internal = false) => ({ family: 'IPv4', address, internal });
 
