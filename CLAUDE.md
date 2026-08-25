@@ -116,6 +116,13 @@ scenario splits it into the lines the display shows, so reading the storyboard b
 one line's words in another line's clip. The storyboard contributes the *Delivery:* note and
 nothing else — matched by speaker, since one note covers every line split out of its block.
 
+**Anything the pipeline needs done to a project, the editor does.** If a scenario has to be
+hand-edited or a script run once to get an asset onto the board, the ecosystem has a hole in it
+and the two halves will drift. Declaring `voice:` on every line is `wireVoice` in
+`tools/editor/wire.ts`; removing a recipe the scenario stopped referencing is `pruneOrphans`.
+Both are buttons, both are idempotent, and both edit by source offset rather than by
+re-serialising, so the author's comments and hand-wrapped folded scalars survive.
+
 **The machine never rewrites `project.yaml` wholesale.** It is the author's file, full of
 hand-tuned prompts and comments recording why. Field edits go through YAML's document API
 (`tools/editor/projects.ts`); parsing to an object and re-serialising strips every comment in

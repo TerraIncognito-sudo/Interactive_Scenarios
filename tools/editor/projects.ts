@@ -40,6 +40,7 @@ import {
 } from './project.ts';
 import { buildOverview, type Overview } from './sections.ts';
 import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
+import { wireVoiceInto, type WiredLine } from './wire.ts';
 import { looksSynced, within, workspace } from './workspace.ts';
 
 /** Asset keys are filenames, never paths. */
@@ -476,6 +477,83 @@ export async function saveScenarioSource(name: string, source: string): Promise<
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));
   await writeAtomic(pathsOf(file, project).scenario, source);
+}
+
+/**
+ * Removes recipes for files the scenario no longer references.
+ *
+ * The project file must never contain an asset the scenario does not ask for:
+ * a recipe nothing plays is GPU hours and disk spent on nothing, and it hides
+ * real gaps inside a long list. Renaming a file in the scenario leaves its old
+ * recipe behind, so the editor has to be able to take one away as well as add
+ * one — otherwise the only way to clean up is to hand-edit the file, which is
+ * how the two halves start disagreeing.
+ *
+ * Deliberately a separate, explicit action rather than something sync does on
+ * its own. A row can hold an afternoon of tuning, and losing it to a rename
+ * nobody meant to make is not a trade the machine gets to choose.
+ */
+export async function pruneOrphans(name: string): Promise<{ removed: string[] }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const source = await readFile(file, 'utf8').catch(() => {
+    throw new ProjectError('Set this project up for asset work first');
+  });
+
+  const { overview } = await openProject(name);
+  if (overview.orphans.length === 0) return { removed: [] };
+
+  const doc = parseDocument(source);
+  for (const orphan of overview.orphans) doc.deleteIn(['assets', orphan]);
+  await writeAtomic(file, doc.toString());
+
+  return { removed: [...overview.orphans] };
+}
+
+export type VoiceWiring = {
+  wired: WiredLine[];
+  untouched: number;
+};
+
+/**
+ * Declares a `voice:` clip on every spoken line that has none.
+ *
+ * The scenario is the manifest, so nothing exists to generate or track until
+ * the scenario says it does — which makes this the first step of the pipeline
+ * rather than a chore preceding it. Doing it outside the editor is how a
+ * scenario and a project file start disagreeing about what the show is made of.
+ *
+ * The new source is validated before it is written. A wiring that would not
+ * load is a bug in this file, and the author's scenario is not the place to
+ * find out about it.
+ */
+export async function wireVoice(name: string): Promise<VoiceWiring> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to wire');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const storyboard = project.storyboard
+    ? await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined)
+    : undefined;
+  const shots = storyboard ? parseStoryboard(storyboard).shots : [];
+
+  const result = wireVoiceInto(source, parsed.scenario, shots);
+  if (result.wired.length === 0) return { wired: [], untouched: result.untouched };
+
+  const check = parseScenarioSource(result.source);
+  if (!check.ok) {
+    throw new ProjectError('Wiring voice would have broken the scenario', check.problems);
+  }
+
+  await writeAtomic(paths.scenario, result.source);
+  return { wired: result.wired, untouched: result.untouched };
 }
 
 /**

@@ -919,6 +919,23 @@ textarea.prompt:focus {
   min-height: 0;
 }
 
+/*
+ * Actions that change the scenario rather than a recipe. They sit above the
+ * board because that is what they change: declaring a clip is what puts a row
+ * on the list in the first place.
+ */
+.board-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  flex-wrap: wrap;
+}
+
+.board-bar .hint {
+  font-size: 0.75rem;
+}
+
 .story-bar {
   display: flex;
   align-items: center;

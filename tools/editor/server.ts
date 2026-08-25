@@ -26,6 +26,8 @@ import {
   saveStoryboardSource,
   selectTake,
   syncFromStoryboard,
+  pruneOrphans,
+  wireVoice,
 } from './projects.ts';
 import {
   browse,
@@ -270,6 +272,16 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'init' && request.method === 'POST') {
         return sendJson(response, 200, await initProject(name));
+      }
+
+      if (action === 'prune' && request.method === 'POST') {
+        const result = await pruneOrphans(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'voice' && request.method === 'POST') {
+        const result = await wireVoice(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 
       if (action === 'sync' && request.method === 'POST') {

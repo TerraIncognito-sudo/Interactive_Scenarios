@@ -23,6 +23,7 @@ import {
   LedgerSchema,
 } from '../tools/editor/project.ts';
 import { buildOverview } from '../tools/editor/sections.ts';
+import { wireVoiceInto } from '../tools/editor/wire.ts';
 import { parseStoryboard, proposeAssets } from '../tools/editor/storyboard.ts';
 import { scaffoldFromStoryboard } from '../tools/editor/scaffold.ts';
 
@@ -890,6 +891,69 @@ describe('the workspace', () => {
     }
   });
 
+  test('pruning removes recipes the scenario stopped referencing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'is-ws-'));
+    try {
+      const dir = join(root, 'demo');
+      mkdirSync(dir, { recursive: true });
+
+      writeFileSync(
+        join(dir, 'scenario.yaml'),
+        [
+          'id: x',
+          'title: X',
+          'start: a',
+          'scenes: { room: { background: kept.jpg } }',
+          'nodes:',
+          '  - { id: a, type: end, scene: room }',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      // `renamed.jpg` is what a rename leaves behind: a recipe for a file the
+      // scenario no longer asks for. Generating it would be GPU hours spent on
+      // something nothing plays.
+      writeFileSync(
+        join(dir, 'project.yaml'),
+        [
+          '# The author owns this file.',
+          'project: demo',
+          'scenario: scenario.yaml',
+          'publish: assets',
+          'assets:',
+          '  kept.jpg:',
+          '    prompt: still referenced',
+          '  renamed.jpg:',
+          '    prompt: left behind by a rename',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      process.env.EDITOR_CONFIG_DIR = join(root, '.config');
+      const { setWorkspace } = await import('../tools/editor/workspace.ts');
+      const { pruneOrphans, openProject } = await import('../tools/editor/projects.ts');
+      await setWorkspace(root);
+
+      const before = await openProject('demo');
+      assert.deepEqual(before.overview.orphans, ['renamed.jpg']);
+
+      const result = await pruneOrphans('demo');
+      assert.deepEqual(result.removed, ['renamed.jpg']);
+
+      const after = readFileSync(join(dir, 'project.yaml'), 'utf8');
+      assert.doesNotMatch(after, /renamed\.jpg/);
+      assert.match(after, /still referenced/);
+      // Removing a row is still a surgical edit: the comments stay.
+      assert.match(after, /# The author owns this file\./);
+      assert.deepEqual((await openProject('demo')).overview.orphans, []);
+    } finally {
+      delete process.env.EDITOR_CONFIG_DIR;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('a voice row speaks the scenario line, not the storyboard blockquote', async () => {
     const root = mkdtempSync(join(tmpdir(), 'is-ws-'));
     try {
@@ -974,5 +1038,122 @@ describe('the workspace', () => {
       delete process.env.EDITOR_CONFIG_DIR;
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('wiring voice onto a scenario', () => {
+  const SOURCE = [
+    '# Why this show is paced the way it is.',
+    'id: x',
+    'title: X',
+    'start: a1_jetty',
+    'characters: { narr: { name: Narr }, tran: { name: Tran } }',
+    'scenes: { halifax: {} }',
+    'nodes:',
+    '  # The cold open. Two lines, because one would not breathe.',
+    '  - id: a1_jetty',
+    '    type: dialogue',
+    '    scene: halifax',
+    '    lines:',
+    '      - who: narr',
+    '        text: >-',
+    '          Zero four hundred, Halifax. The pier is busy the way it always',
+    '          is before a ship sails.',
+    '      - who: narr',
+    '        text: Fuel lines. Weather brief.',
+    '        hold: 5',
+    '      - { who: tran, text: Link is good. }',
+    '    next: z',
+    '  - { id: z, type: end }',
+    '',
+  ].join('\n');
+
+  const shots = parseStoryboard(
+    ['### Shot A.1 — Cold open', '**Hold:** 8 s · **Scene:** `halifax`', ''].join('\n'),
+  ).shots;
+
+  function wire(source: string) {
+    const parsed = parseScenarioSource(source);
+    assert.ok(parsed.ok, parsed.ok ? '' : parsed.message);
+    return wireVoiceInto(source, parsed.scenario, shots);
+  }
+
+  test('every spoken line gets a clip and the hold a clip requires', () => {
+    const result = wire(SOURCE);
+    assert.deepEqual(
+      result.wired.map((w) => w.file),
+      ['narr-a1-01.mp3', 'narr-a1-02.mp3', 'tran-a1-01.mp3'],
+    );
+
+    // Nothing on the server opens the audio file, so a voiced line without a
+    // hold is a narrator cut off mid-sentence in front of a room.
+    const parsed = parseScenarioSource(result.source);
+    assert.ok(parsed.ok, parsed.ok ? '' : parsed.message);
+    const node = parsed.scenario.nodes[0]!;
+    assert.equal(node.type, 'dialogue');
+    if (node.type !== 'dialogue') return;
+    for (const line of node.lines) {
+      assert.ok(line.voice, 'every line has a clip');
+      assert.ok(line.hold !== undefined, `${line.voice} has a hold`);
+    }
+    // The line that already declared its own hold keeps it.
+    assert.equal(node.lines[1]!.hold, 5);
+  });
+
+  test('the author s file is only ever inserted into', () => {
+    const result = wire(SOURCE);
+    const before = SOURCE.split('\n');
+    const after = result.source.split('\n');
+
+    // Every original line survives in order, comments and hand-wrapped folded
+    // scalars included. Re-serialising the document would reflow all of them
+    // and bury the change under rewrapped prose.
+    // The inline line is the one exception: a flow map is extended in place,
+    // which is checked separately below.
+    let cursor = 0;
+    for (const line of before.filter((l) => !l.includes('{ who: tran'))) {
+      const found = after.indexOf(line, cursor);
+      assert.notEqual(found, -1, `lost line: ${JSON.stringify(line)}`);
+      cursor = found + 1;
+    }
+    assert.match(result.source, /# The cold open\./);
+    assert.match(result.source, /# Why this show is paced/);
+    // Two new keys on the first line, one on the second, and none on the
+    // inline third, which grew sideways.
+    assert.equal(after.length, before.length + 3);
+  });
+
+  test('a line written inline stays inline', () => {
+    // `{ who: tran, text: … }` is how a short line is often written, and a
+    // newline inserted into a flow map is not YAML at all.
+    assert.match(wire(SOURCE).source, /\{ who: tran, text: Link is good\., hold: \d+, voice: tran-a1-01\.mp3 \}/);
+  });
+
+  test('pressing it twice changes nothing the second time', () => {
+    const once = wire(SOURCE);
+    const twice = wire(once.source);
+    assert.deepEqual(twice.wired, []);
+    assert.equal(twice.untouched, 3);
+    assert.equal(twice.source, once.source);
+  });
+
+  test('numbering continues from what the scenario already uses', () => {
+    // A half-wired scenario is the normal case: a line gets added to a node
+    // that was wired last week. Restarting at 01 would collide with a clip
+    // that already exists on disk.
+    const partial = SOURCE.replace(
+      '      - who: narr\n        text: Fuel lines. Weather brief.\n        hold: 5',
+      '      - who: narr\n        text: Fuel lines. Weather brief.\n        hold: 5\n        voice: narr-a1-07.mp3',
+    );
+    const result = wire(partial);
+    assert.deepEqual(
+      result.wired.map((w) => w.file),
+      ['narr-a1-08.mp3', 'tran-a1-01.mp3'],
+    );
+  });
+
+  test('a node the storyboard never numbered falls back to its own id', () => {
+    const orphaned = SOURCE.replace(/a1_jetty/g, 'p1_defend');
+    assert.equal(wire(orphaned).wired[0]!.file, 'narr-p1-defend-01.mp3');
   });
 });

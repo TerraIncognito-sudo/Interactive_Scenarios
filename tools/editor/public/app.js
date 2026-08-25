@@ -8,7 +8,14 @@
  */
 
 import { $, h } from './dom.js';
-import { initAssets, refreshAssets, setProjects, seedFromStoryboard } from './assets.js';
+import {
+  initAssets,
+  refreshAssets,
+  setProjects,
+  seedFromStoryboard,
+  wireVoice,
+  pruneOrphans,
+} from './assets.js';
 import { initPicker, openPicker } from './picker.js';
 
 const state = {
@@ -504,6 +511,31 @@ $('story-save').addEventListener('click', () => {
     state.storySaved = source;
     setStatus('ok', 'storyboard saved');
     await refreshAssets();
+  })();
+});
+
+$('wire-voice').addEventListener('click', () => {
+  void (async () => {
+    const result = await wireVoice();
+    if (!result) return;
+    // Reported as clips, not lines: a clip is the thing that now has to be
+    // made, and the number is what the voice section just grew by.
+    const n = result.wired.length;
+    setStatus(
+      n > 0 ? 'ok' : 'warn',
+      n > 0
+        ? `declared ${n} voice clip${n === 1 ? '' : 's'} in scenario.yaml`
+        : 'every spoken line already has a clip',
+    );
+  })();
+});
+
+$('prune').addEventListener('click', () => {
+  void (async () => {
+    const result = await pruneOrphans();
+    if (!result) return;
+    const n = result.removed.length;
+    setStatus(n > 0 ? 'ok' : 'warn', n > 0 ? `removed ${n} orphaned recipe${n === 1 ? '' : 's'}` : 'nothing orphaned');
   })();
 });
 

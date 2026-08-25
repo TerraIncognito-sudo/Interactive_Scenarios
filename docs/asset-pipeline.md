@@ -296,12 +296,34 @@ list. So adding an asset always means adding the field to `scenario.yaml` first 
 editor does for you from three places:
 
 - the **scenario tab**, editing YAML directly
+- **Declare voice clips**, which gives every spoken line a `voice:` file and the `hold:` a
+  voiced line requires — a scenario with ninety lines is not one anybody types out by hand
 - the **canvas**, by dropping a new layer box into a frame (see below)
 - a section's **add row**, which writes the field and then opens the new row
 
 Assets present in the project but absent from `assetsOf()` are shown as **unreferenced**, with a
-one-click cleanup. Assets in `assetsOf()` but absent from the project appear as **missing** with
-an empty prompt. Neither state can hide.
+one-click cleanup — **Remove orphaned recipes**, which appears only when something is orphaned.
+Assets in `assetsOf()` but absent from the project appear as **missing** with an empty prompt.
+Neither state can hide.
+
+Pruning is a separate, explicit action rather than something sync does on its own: a row can
+hold an afternoon of tuning, and losing it to a rename nobody meant to make is not a trade the
+machine gets to choose.
+
+### Editing the author's file
+
+Both of these write to files a person wrote and will read again — `scenario.yaml` full of
+comments recording why a beat is the length it is, and hand-wrapped folded scalars. Parsing to
+an object and re-serialising reflows every one of those and buries the change under rewrapped
+prose, so edits are computed from the parsed document's source offsets and applied to the text.
+Insertions only; nothing else on the page moves. A block map takes a new line, a flow map
+(`{ who: narr, text: … }`) takes a comma before its brace, and both spellings appear in real
+scenarios so both are handled rather than normalised into one.
+
+They are also idempotent. Pressing **Declare voice clips** twice does nothing the second time,
+and numbering continues from what the scenario already uses rather than restarting at `01` —
+a half-wired scenario is the normal case, and a collision would name a clip that already exists
+on disk. That difference is what makes it a button rather than a script.
 
 ---
 

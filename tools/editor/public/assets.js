@@ -121,6 +121,34 @@ export async function seedFromStoryboard() {
   return result;
 }
 
+/**
+ * Declares a clip on every spoken line the scenario has not given one.
+ *
+ * This writes to `scenario.yaml`, not to the project file — the scenario is the
+ * manifest, so nothing can be generated or tracked until it says the file
+ * exists. Doing it anywhere but here is how the two start disagreeing.
+ */
+export async function wireVoice() {
+  if (!state.name) return null;
+  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/voice`, {
+    method: 'POST',
+  });
+  state.data = result.project;
+  render();
+  return result;
+}
+
+/** Drops recipes for files the scenario no longer references. */
+export async function pruneOrphans() {
+  if (!state.name) return null;
+  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/prune`, {
+    method: 'POST',
+  });
+  state.data = result.project;
+  render();
+  return result;
+}
+
 async function selectTake(asset, take) {
   state.data = await api(`/api/projects/${encodeURIComponent(state.name)}/select`, {
     method: 'POST',
@@ -136,6 +164,7 @@ async function selectTake(asset, take) {
 
 function renderError(message) {
   $('totals').hidden = true;
+  $('board-bar').hidden = true;
   $('sections').replaceChildren(h('p', { class: 'empty' }, message));
 }
 
@@ -314,6 +343,7 @@ function render() {
 
   if (!state.data) {
     totals.hidden = true;
+    $('board-bar').hidden = true;
     container.replaceChildren(
       h('p', { class: 'empty' }, 'No project open.'),
     );
@@ -321,6 +351,15 @@ function render() {
   }
 
   const { overview, paths } = state.data;
+
+  // Pruning is destructive and only ever the right answer when there is
+  // something orphaned, so the button appears only when it applies.
+  $('board-bar').hidden = state.data.projectSource === undefined;
+  $('prune').hidden = overview.orphans.length === 0;
+  $('prune').textContent =
+    overview.orphans.length === 1
+      ? 'Remove 1 orphaned recipe'
+      : `Remove ${overview.orphans.length} orphaned recipes`;
 
   totals.hidden = false;
   totals.replaceChildren(
