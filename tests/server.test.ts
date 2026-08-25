@@ -368,6 +368,66 @@ describe('room access control', () => {
   });
 });
 
+describe('media reaches the projector', () => {
+  test('the prefetch list includes voice clips and scene video', async () => {
+    const room = await createRoom('media');
+    const response = await fetch(
+      `${baseUrl}/api/rooms/${room.code}/scenario?token=${room.displayToken}`,
+    );
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { assets: string[] };
+
+    // The display blocks on this list before reporting ready, so anything
+    // missing from it is an asset that streams in live in front of the room.
+    assert.deepEqual(body.assets.sort(), [
+      'harbour.jpg',
+      'harbour.mp3',
+      'harbour.mp4',
+      'open-1.mp3',
+    ]);
+  });
+
+  test('a snapshot carries the line voice and the scene video', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+
+    const first = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 0,
+    );
+
+    assert.equal(first.beatInfo.kind === 'dialogue' && first.beatInfo.voice, 'open-1.mp3');
+    assert.equal(first.scene?.id, 'harbour');
+    assert.equal(first.scene?.video, 'harbour.mp4');
+    assert.equal(
+      first.scene?.background,
+      'harbour.jpg',
+      'the still has to travel with the clip — it is the poster frame',
+    );
+
+    host.close();
+  });
+
+  test('a line with no voice says so, rather than inheriting the last one', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+
+    const second = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 1,
+    );
+    assert.equal(second.beatInfo.kind === 'dialogue' && second.beatInfo.voice, undefined);
+
+    // Scene is sticky, so the clip stays until a node names a different scene.
+    const later = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.scene?.id === 'quiet',
+    );
+    assert.equal(later.scene?.video, undefined, 'a scene without a clip must clear it');
+
+    host.close();
+  });
+});
+
 describe('a show driven by audience votes', () => {
   test('votes decide which branch the story takes', async () => {
     const room = await createRoom();

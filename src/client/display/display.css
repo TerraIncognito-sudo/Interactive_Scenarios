@@ -15,30 +15,77 @@
   place-items: center;
 }
 
+/* The quiet default that makes a scene without artwork still read as a place.
+   It lives on the stage rather than on `.scene` so that it also shows through
+   when a scene *declares* a background that has not been made yet: the image
+   layer above is simply transparent until the file exists. A scenario in
+   production says what art it needs long before the art arrives. */
 .stage {
   position: relative;
   width: 1920px;
   height: 1080px;
   transform-origin: center center;
   overflow: hidden;
-  background: var(--bg-sunken);
+  background-color: #0a0d14;
+  background-image:
+    radial-gradient(1200px 700px at 22% 18%, rgba(79, 195, 247, 0.16), transparent 62%),
+    radial-gradient(1000px 800px at 82% 78%, rgba(255, 138, 101, 0.12), transparent 60%),
+    linear-gradient(168deg, #10141d 0%, #080a10 100%);
 }
 
+/* Transparent where there is no artwork, so the stage's gradient shows through
+   — including when the file is declared but not yet made. */
 .scene {
   position: absolute;
   inset: 0;
-  background-color: #0a0d14;
   background-size: cover;
   background-position: center;
   transition: opacity 700ms ease, background-image 700ms ease;
 }
 
-/* A quiet default so a scene without artwork still reads as a place. */
-.scene:not([style*='url']) {
-  background-image:
-    radial-gradient(1200px 700px at 22% 18%, rgba(79, 195, 247, 0.16), transparent 62%),
-    radial-gradient(1000px 800px at 82% 78%, rgba(255, 138, 101, 0.12), transparent 60%),
-    linear-gradient(168deg, #10141d 0%, #080a10 100%);
+/* Motion for a scene, painted over the still. `object-fit: cover` matches the
+   background's `background-size: cover`, so a clip and its poster frame line
+   up rather than jumping at the moment the video starts. */
+.scene-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.scene-video[hidden] {
+  display: none;
+}
+
+/* Deliberately hard to miss: a silent show is a broken show, and the operator
+   has seconds to notice before the first line is spoken over nothing. */
+.audio-gate {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 0.7rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent, #4fc3f7);
+  background: rgba(10, 12, 18, 0.92);
+  color: var(--text, #e8ecf4);
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  animation: fade-in 420ms ease both;
+}
+
+.audio-gate[hidden] {
+  display: none;
+}
+
+/* The projector normally hides the cursor; it has to come back to be clicked. */
+.display-body:has(.audio-gate:not([hidden])) {
+  cursor: default;
 }
 
 .vignette {

@@ -10,10 +10,18 @@
   <body class="display-body">
     <div class="conn" data-status="connecting" id="conn">connecting</div>
 
+    <!-- Browsers refuse audible playback until the page has been interacted
+         with, and nobody clicks a projector. Without this the show runs mute
+         and there is nothing on screen to say why. -->
+    <button class="audio-gate" id="audio-gate" hidden>Click to enable sound</button>
+
     <!-- Fixed 1920x1080 design surface, scaled by JS to fit any projector. -->
     <div class="stage-wrap" id="stage-wrap">
       <div class="stage" id="stage">
         <div class="scene" id="scene"></div>
+        <!-- Sits over the still background, which acts as its poster frame.
+             Muted and inline so autoplay policy never blocks it. -->
+        <video class="scene-video" id="scene-video" muted playsinline loop hidden></video>
         <div class="vignette"></div>
 
         <!-- Lobby -->
