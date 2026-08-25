@@ -1369,6 +1369,162 @@ describe('wiring voice onto a scenario', () => {
   });
 });
 
+/**
+ * A line nobody is credited with still has to be spoken.
+ *
+ * The fiction notice that opens a show, a title card, a line the display shows
+ * without a nameplate: real work, and the only beat in a finished show that
+ * would come out silent, because nothing upstream had a voice to give it.
+ */
+describe('the voice of a line with no nameplate', () => {
+  const uncredited = ScenarioSchema.parse({
+    id: 'x',
+    title: 'X',
+    start: 'a',
+    characters: { narr: { name: 'Narrator' } },
+    scenes: {},
+    nodes: [
+      {
+        id: 'a',
+        type: 'dialogue',
+        lines: [
+          { text: 'Every ship, unit, person and system in what follows is invented.', hold: 6 },
+          {
+            text: 'Nothing here depicts real capability, doctrine, or rules of engagement.',
+            hold: 7,
+          },
+          { who: 'narr', text: 'Zero four hundred, Halifax.', hold: 3 },
+        ],
+        next: 'z',
+      },
+      { id: 'z', type: 'end', text: 'Done' },
+    ],
+  });
+
+  test('wiring names its clips for the narration voice, not for a character', () => {
+    const result = wireVoiceInto(
+      [
+        'id: x',
+        'title: X',
+        'start: a',
+        'characters: { narr: { name: Narrator } }',
+        'scenes: {}',
+        'nodes:',
+        '  - id: a',
+        '    type: dialogue',
+        '    lines:',
+        '      - { text: Every ship in what follows is invented. }',
+        '      - { who: narr, text: Zero four hundred. }',
+        '    next: z',
+        '  - { id: z, type: end }',
+        '',
+      ].join('\n'),
+      ScenarioSchema.parse({
+        id: 'x',
+        title: 'X',
+        start: 'a',
+        characters: { narr: { name: 'Narrator' } },
+        scenes: {},
+        nodes: [
+          {
+            id: 'a',
+            type: 'dialogue',
+            lines: [
+              { text: 'Every ship in what follows is invented.' },
+              { who: 'narr', text: 'Zero four hundred.' },
+            ],
+            next: 'z',
+          },
+          { id: 'z', type: 'end', text: 'Done' },
+        ],
+      }),
+      [],
+    );
+    // `vo`, not `narr`: attributing it to the narrator to get a voice would put
+    // that character's name on screen under a legal disclaimer.
+    assert.deepEqual(
+      result.wired.map((w) => w.file),
+      ['voice/vo-a-01.mp3', 'voice/narr-a-01.mp3'],
+    );
+  });
+
+  test('seeding gives the row a voice, so it can actually be generated', () => {
+    const withClips = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      characters: { narr: { name: 'Narrator' } },
+      scenes: {},
+      nodes: [
+        {
+          id: 'a',
+          type: 'dialogue',
+          lines: [
+            { text: 'Invented.', hold: 6, voice: 'voice/vo-a-01.mp3' },
+            { who: 'narr', text: 'Zero four hundred.', hold: 3, voice: 'voice/narr-a-01.mp3' },
+          ],
+          next: 'z',
+        },
+        { id: 'z', type: 'end', text: 'Done' },
+      ],
+    });
+
+    const rows = seedRowsFor(withClips, []).rows;
+    const uncreditedRow = rows.find((row) => row.file === 'voice/vo-a-01.mp3');
+    assert.equal(uncreditedRow?.voice, 'vo', 'a row with no voice refuses to generate');
+    assert.equal(rows.find((row) => row.file === 'voice/narr-a-01.mp3')?.voice, 'narr');
+  });
+
+  test('a reference clip for it is read from the lines nobody is credited with', async () => {
+    const { referenceTextFor } = await import('../tools/editor/generate.ts');
+    const text = referenceTextFor(uncredited, 'vo')!;
+    assert.match(text, /^Every ship, unit, person/);
+    // Matching by name would find nothing at all, and refuse to record a clip
+    // for a voice that plainly has work to do.
+    assert.ok(!text.includes('Zero four hundred'), 'took a credited line');
+    assert.match(referenceTextFor(uncredited, 'narr')!, /Zero four hundred/);
+  });
+
+  test('it appears in the cast under a name that says what it is', async () => {
+    const { buildOverview } = await import('../tools/editor/sections.ts');
+    const { ProjectSchema, pathsOf, EMPTY_LEDGER } = await import('../tools/editor/project.ts');
+    const withClips = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      characters: { narr: { name: 'Narrator' } },
+      scenes: {},
+      nodes: [
+        {
+          id: 'a',
+          type: 'dialogue',
+          lines: [{ text: 'Invented.', hold: 6, voice: 'voice/vo-a-01.mp3' }],
+          next: 'z',
+        },
+        { id: 'z', type: 'end', text: 'Done' },
+      ],
+    });
+    const proj = ProjectSchema.parse({
+      project: 'x',
+      scenario: 'scenario.yaml',
+      publish: 'assets',
+      assets: { 'voice/vo-a-01.mp3': { text: 'Invented.', voice: 'vo' } },
+    });
+
+    const overview = await buildOverview(
+      withClips,
+      proj,
+      structuredClone(EMPTY_LEDGER),
+      pathsOf(join(tmpdir(), 'nowhere', 'project.yaml'), proj),
+    );
+    const member = overview.cast.find((entry) => entry.id === 'vo');
+    assert.equal(member?.name, 'Narration — no nameplate');
+    assert.equal(member?.lines, 1);
+    // Uncast, which is the state the panel exists to make impossible to miss.
+    assert.equal(member?.reference, undefined);
+  });
+});
+
 describe('the editor cannot reach the live server', () => {
   /**
    * The editor used to serve `/api/scenarios`, including a PUT that wrote

@@ -392,6 +392,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
 import { assetReferencesOf } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
+import { NARRATION_VOICE } from './project.ts';
 
 export type SeedRow = {
   /** A filename the scenario actually references. Never an invented one. */
@@ -560,7 +561,10 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
       const spoken = lineIn(nodeById, origin.node, origin.line);
       if (!spoken) continue;
       row.text = spoken.text;
-      row.voice = spoken.who;
+      // A line with no `who:` still has to be spoken. Left undefined the row
+      // reaches the generator with no voice to use and refuses — which is how
+      // a fiction notice ends up as the only silent beat in a finished show.
+      row.voice = spoken.who ?? NARRATION_VOICE;
       row.source.node = origin.node;
       row.source.line = origin.line;
       const note = shot ? deliveryFor(shot, spoken.who) : undefined;

@@ -99,6 +99,21 @@ export const VoiceSchema = z.strictObject({
 
 export type Voice = z.infer<typeof VoiceSchema>;
 
+/**
+ * The voice of a line with no `who:`.
+ *
+ * Some lines are narration with no nameplate — a fiction notice, a title card,
+ * a line the display shows without attributing to anyone. They still have to be
+ * spoken, and they still need a voice, but attributing them to a character to
+ * get one would put that character's name on screen under a legal disclaimer.
+ *
+ * So they are cast like anybody else, under an id that is deliberately not a
+ * character. It appears in the cast panel with however many lines it has, and
+ * it can be a different voice from the narrator or the same one — that is the
+ * author's call, and having somewhere to make it is the point.
+ */
+export const NARRATION_VOICE = 'vo';
+
 export const ReferenceImageSchema = z.strictObject({
   file: z.string().min(1),
   /** How hard to hold the reference. The storyboard's character sheets use 0.35. */

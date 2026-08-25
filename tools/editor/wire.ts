@@ -24,6 +24,7 @@
 import { parseDocument, isMap, isSeq } from 'yaml';
 import { lineDuration, type Scenario } from '../../src/scenario/schema.ts';
 import { filed, shotForNode, shotSlug, shotsByNode, type StoryboardShot } from './storyboard.ts';
+import { NARRATION_VOICE } from './project.ts';
 import { applyEdits, indentOf, insertionFor, type Edit } from './yaml-edit.ts';
 
 export type WiredLine = {
@@ -134,7 +135,7 @@ export function wireVoiceInto(
       if (!file) {
         // An unattributed line is narration with no nameplate, and `vo` says
         // that rather than pretending it belongs to the narrator character.
-        const key = `${line.who ?? 'vo'}-${slug}`;
+        const key = `${line.who ?? NARRATION_VOICE}-${slug}`;
         const n = (used.get(key) ?? 0) + 1;
         used.set(key, n);
         file = filed('voice', `${key}-${String(n).padStart(2, '0')}.mp3`);

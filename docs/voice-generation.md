@@ -184,6 +184,12 @@ the network.
 Pick a model in the Voice section's dropdown. A **cast panel** appears above the rows:
 every character in the scenario who speaks, with how many lines they have.
 
+One entry may not be a character: **Narration — no nameplate**, id `vo`. Some lines have no
+`who:` — a fiction notice, a title card, anything the display shows without attributing it to
+anybody. They still have to be spoken, and giving them a character to get a voice would put
+that character's name on screen under a legal disclaimer. So they are cast here like anyone
+else, and whether that is the same voice as the narrator or a different one is your call.
+
 ### With Kokoro — pick from the list
 
 Each character gets a dropdown of about thirty voices. Choose one and that character is

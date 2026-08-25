@@ -26,6 +26,7 @@ import { lineDuration, type Scenario } from '../../src/scenario/schema.ts';
 import type { AssetSection } from '../../src/scenario/load.ts';
 import {
   fromProject,
+  NARRATION_VOICE,
   recipeHash,
   resolveRecipe,
   takesDir,
@@ -286,7 +287,11 @@ export function referenceTextFor(scenario: Scenario, who: string): string | unde
   for (const node of scenario.nodes) {
     if (node.type !== 'dialogue') continue;
     for (const line of node.lines) {
-      if (line.who !== who) continue;
+      // The narration voice speaks the lines nobody is credited with, so its
+      // own lines are the ones with no `who:` at all. Matching it by name would
+      // find nothing and refuse to record a clip for a voice that has work.
+      const speaker = line.who ?? NARRATION_VOICE;
+      if (speaker !== who) continue;
       const text = line.text.trim();
       if (!text) continue;
       said.push(text);

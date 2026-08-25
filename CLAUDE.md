@@ -163,6 +163,14 @@ who wanted to hear a line read aloud.
 to other machines and is opened a year later, so it names a model (`chatterbox`) while the
 editor's own config holds the path. The same reasoning as the workspace, for the same reason.
 
+**A line with no `who:` is still somebody's to read.** Narration with no nameplate — a fiction
+notice, a title card — is cast under `NARRATION_VOICE` (`vo` in `project.ts`), an id that is
+deliberately not a character, because attributing the line to one to give it a voice would put
+that name on screen under a legal disclaimer. `wire.ts` already named those clips `vo-…`; seeding
+sets the row's `voice:` to match, `referenceTextFor` reads its lines as the ones with no `who`,
+and the cast panel labels it. Miss any of those and the fiction notice is the one silent beat in
+a finished show — which is exactly how it was found.
+
 **A character's voice is part of every line they speak.** `resolveRecipe` folds the cast's
 reference clip and direction into the recipe, so re-recording a reference marks all ninety
 of that character's clips stale. Left out, the hash would say finished about clips made from

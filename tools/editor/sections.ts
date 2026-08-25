@@ -26,6 +26,7 @@ import {
 import type { Scenario } from '../../src/scenario/schema.ts';
 import {
   fromProject,
+  NARRATION_VOICE,
   recipeHash,
   resolveRecipe,
   takesDir,
@@ -247,7 +248,11 @@ async function buildCast(
     const reference = voice?.reference;
     cast.push({
       id,
-      name: scenario.characters[id]?.name ?? id,
+      // Not a character, so `characters` has no name for it. Saying so beats a
+      // row labelled `vo` that an author has to work out from its line count.
+      name:
+        scenario.characters[id]?.name ??
+        (id === NARRATION_VOICE ? 'Narration — no nameplate' : id),
       lines: tally.lines,
       ready: tally.ready,
       reference,
