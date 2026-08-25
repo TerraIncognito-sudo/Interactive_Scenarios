@@ -65,6 +65,32 @@ const sectionShape = Object.fromEntries(
 
 export const SectionsSchema = z.strictObject(sectionShape);
 
+/**
+ * A character's voice: how every line they speak is produced.
+ *
+ * Kept here rather than on each line because a cast member is one voice across
+ * ninety lines. It is the same argument as a section's `style` — one edit has
+ * to change all of them, and all of them have to go stale when it does.
+ *
+ * The character ids are the scenario's own. Nothing here invents a cast: a
+ * voice with no matching character is reported, because it is either a typo or
+ * a leftover from a line that was cut.
+ */
+export const VoiceSchema = z.strictObject({
+  /**
+   * A few seconds of clean speech for a model that clones. Relative to the
+   * project, so the recording travels with the show that uses it.
+   */
+  reference: z.string().min(1).optional(),
+  /** Direction, for a model that takes it. "Tired, precise, never raises her voice." */
+  direction: z.string().optional(),
+  /** Per-voice generation settings, layered over the section's defaults. */
+  params: ParamsSchema.prefault({}),
+  notes: z.string().optional(),
+});
+
+export type Voice = z.infer<typeof VoiceSchema>;
+
 export const ReferenceImageSchema = z.strictObject({
   file: z.string().min(1),
   /** How hard to hold the reference. The storyboard's character sheets use 0.35. */
@@ -112,6 +138,8 @@ export const ProjectSchema = z.strictObject({
   publish: z.string().min(1),
   generated: z.string().min(1).default('generated'),
   sections: SectionsSchema.prefault({}),
+  /** Keyed by character id, as `scenario.yaml` spells it. */
+  voices: z.record(z.string().min(1), VoiceSchema).prefault({}),
   assets: z.record(z.string().min(1), AssetRowSchema).prefault({}),
 });
 
@@ -213,6 +241,16 @@ export type Recipe = {
   params: Params;
   text?: string;
   voice?: string;
+  /**
+   * The character's voice, folded in rather than referred to.
+   *
+   * A recipe has to contain everything that decides what comes out, or the
+   * hash cannot do its job. Naming the voice and leaving its settings outside
+   * would mean re-recording a character's reference clip left every line they
+   * speak looking finished.
+   */
+  reference?: string;
+  direction?: string;
   model: { backend: string; file?: string };
 };
 
@@ -223,15 +261,21 @@ export function resolveRecipe(
 ): Recipe {
   const row = project.assets[file] ?? AssetRowSchema.parse({});
   const model = project.sections[section];
+  const voice = row.voice ? project.voices[row.voice] : undefined;
   return {
     section,
     prompt: row.prompt ?? '',
     negative: row.negative ?? model?.negative ?? '',
     style: model?.style ?? '',
     refs: row.refs,
-    params: { ...(model?.defaults ?? {}), ...row.params },
+    // Widest first: the section is how this kind of asset is made, the voice is
+    // how this character sounds, the row is this one clip. Each may correct the
+    // one above it.
+    params: { ...(model?.defaults ?? {}), ...(voice?.params ?? {}), ...row.params },
     text: row.text,
     voice: row.voice,
+    reference: voice?.reference,
+    direction: voice?.direction,
     model: { backend: model?.backend ?? 'manual', file: model?.file },
   };
 }

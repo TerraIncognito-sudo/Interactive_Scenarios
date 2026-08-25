@@ -967,3 +967,163 @@ textarea.prompt:focus {
   outline: none;
   border-color: var(--accent);
 }
+
+/* --------------------------------------------------------------------------
+   Generation: the models strip, the cast, and per-row actions.
+   -------------------------------------------------------------------------- */
+
+.models-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  font-size: 0.85rem;
+}
+
+.models-label {
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+}
+
+.models-root {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+/* An unset root is not an error — it is the next thing to do. */
+.models-root.unset {
+  color: var(--accent-warm);
+}
+
+.models-state {
+  color: var(--good);
+  font-size: 0.8rem;
+}
+
+.section-picker {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+}
+
+.section-note {
+  color: var(--text-faint);
+  font-size: 0.8rem;
+}
+
+.cast-panel {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-sunken);
+}
+
+.cast-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.cast {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg-raised);
+  padding: 0.55rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* A cloning model with nothing to clone gives the whole cast one voice, and
+   does it silently. This is the warning that has to survive being ignored. */
+.cast-warn {
+  border-color: var(--accent-warm);
+}
+
+.cast-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.cast-id {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.cast-count {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.cast-ref {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.cast-file {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.cast-file.gone {
+  color: var(--bad);
+}
+
+.cast-none {
+  font-size: 0.78rem;
+  color: var(--accent-warm);
+  flex: 1;
+}
+
+.cast-direction {
+  width: 100%;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.8rem;
+}
+
+.asset-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+button.small {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.picker-row.file .picker-name {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.picker-size {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.78rem;
+}

@@ -26,6 +26,14 @@ board. Add `--strict` for a pre-show check, where a missing file *is* an error.
 npm run build
 ```
 
+```bash
+npm run voice:check
+```
+
+Proves the voice sidecar end to end — uv, Python, the bridge, and MP3 encoding — without a
+model. Add `-- chatterbox` once one is installed. See
+[docs/voice-generation.md](docs/voice-generation.md).
+
 `npm start` runs the server, `npm run local` runs it in laptop-fallback mode, `npm run dev`
 watches, `npm run editor` starts the scenario editor on 8890. **Never leave a dev server
 running** — one was left on port 8880 once and served a stale page to the user's browser
@@ -123,6 +131,30 @@ scenario splits it into the lines the display shows, so reading the storyboard b
 one line's words in another line's clip. The storyboard contributes the *Delivery:* note and
 nothing else — matched by speaker, since one note covers every line split out of its block.
 
+**The game server never learns about Python.** The sidecar in `tools/voice/` belongs to the
+editor, which runs at a desk for weeks; the show runs from a container holding no models at
+all. Generation deps must never reach `package.json`'s runtime path or the Dockerfile — a
+projector that needed three gigabytes of CUDA wheels to read a YAML file is a projector that
+does not start.
+
+**A model process talks over a pipe, never a socket.** A pipe dies with its parent, so a
+force-quit editor cannot strand a process holding sixteen gigabytes of VRAM — the failure
+whose only apparent cure is a reboot. It also avoids a Windows firewall prompt for someone
+who wanted to hear a line read aloud.
+
+**Where models live is the machine's business, not the project's.** `project.yaml` travels
+to other machines and is opened a year later, so it names a model (`chatterbox`) while the
+editor's own config holds the path. The same reasoning as the workspace, for the same reason.
+
+**A character's voice is part of every line they speak.** `resolveRecipe` folds the cast's
+reference clip and direction into the recipe, so re-recording a reference marks all ninety
+of that character's clips stale. Left out, the hash would say finished about clips made from
+a voice that no longer exists.
+
+**Generating never publishes, and never steals a selection.** A take is added; the published
+file changes only when someone presses Publish. Re-rolling has to be free or nobody does it,
+and then the first acceptable reading of every line is the one that ships.
+
 **Anything the pipeline needs done to a project, the editor does.** If a scenario has to be
 hand-edited or a script run once to get an asset onto the board, the ecosystem has a hole in it
 and the two halves will drift. Declaring `voice:` on every line is `wireVoice` in
@@ -158,6 +190,9 @@ the file the first time anyone touches a text box. A test guards this.
 | `src/server/` | Fastify, rooms, WebSocket, SQLite, admin auth |
 | `src/client/` | `display/` projector, `host/` console, `player/` phone, `admin/` console |
 | `tools/editor/` | The scenario editor — a separate local process, not part of the server |
+| `tools/editor/models.ts` | Which generators exist and whether this machine has their weights |
+| `tools/editor/sidecar.ts` | Owning a generator process; stdio JSON, one request at a time |
+| `tools/voice/` | The text-to-speech sidecar. Python, uv-managed, editor-only |
 | `tools/editor/workspace.ts` | Which folder holds the projects, and the server-side folder picker |
 | `tools/editor/project.ts` | Asset projects: `project.yaml` (author-owned) + `.ledger.json` (machine-owned) |
 | `tools/editor/sections.ts` | The status board — scenario, recipes, ledger and disk reconciled |

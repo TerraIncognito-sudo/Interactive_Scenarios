@@ -13,3 +13,12 @@ desktop.ini
 
 .vite/
 coverage/
+
+# The voice sidecar's environment normally lives outside this tree entirely
+# (see tools/voice/env.ts — the repo is in OneDrive and torch is gigabytes),
+# but ignore the default location too in case anyone runs uv by hand. uv
+# rebuilds it from uv.lock, which is committed: the lock is what pins a
+# Blackwell-capable CUDA torch.
+tools/voice/.venv/
+__pycache__/
+*.pyc

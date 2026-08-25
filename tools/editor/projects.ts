@@ -24,9 +24,9 @@
 
 import { readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import { parseDocument, Scalar, stringify as stringifyYaml } from 'yaml';
-import { parseScenarioSource } from '../../src/scenario/load.ts';
+import { parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
 import {
   loadLedger,
   loadProject,
@@ -41,8 +41,15 @@ import {
 import { buildOverview, type Overview } from './sections.ts';
 import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
 import { migrateShotsInto, type ShotMigration } from './shots.ts';
+import {
+  generateAsset,
+  publishAsset,
+  GenerateError,
+  type GeneratedTake,
+  type Published,
+} from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
-import { looksSynced, within, workspace } from './workspace.ts';
+import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
 
 /**
  * A value on its way into `project.yaml`, in the block style a person would
@@ -449,6 +456,82 @@ export async function syncFromStoryboard(name: string): Promise<StoryboardSync> 
 // Editing
 // ---------------------------------------------------------------------------
 
+/**
+ * Stores a path the way the rest of the project file does: relative when it is
+ * inside the project, absolute when it is not.
+ *
+ * The picker deals in absolute paths because the server has to open the file.
+ * Writing that straight into `project.yaml` would pin a character's voice to
+ * one machine's directory layout, and the folder is meant to be copyable — the
+ * reference clip is part of the show, not part of this computer.
+ */
+function portablePath(dir: string, value: string): string {
+  if (!value) return value;
+  const resolved = resolve(value);
+  if (!within(dir, resolved)) return value;
+  // Forward slashes: this file is read on machines that are not this one.
+  return relative(dir, resolved).split(sep).join('/');
+}
+
+/**
+ * Rewrites one field of one character's voice.
+ *
+ * Separate from `editAssetField` because a voice is not an asset: it produces
+ * no file of its own, and it is shared by every line the character speaks.
+ * Editing it makes all of those stale at once, which is the whole reason it
+ * lives in one place rather than on ninety rows.
+ */
+export async function editVoiceField(
+  name: string,
+  edit: { voice: string; field: 'reference' | 'direction' | 'notes'; value: string },
+): Promise<void> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  if (!/^[A-Za-z0-9_-]+$/.test(edit.voice)) throw new ProjectError('Bad character id');
+  if (edit.field === 'reference') edit = { ...edit, value: portablePath(dir, edit.value) };
+
+  const source = await readFile(file, 'utf8').catch(() => {
+    throw new ProjectError('Set this project up for asset work first');
+  });
+  const doc = parseDocument(source);
+
+  const path = ['voices', edit.voice, edit.field];
+  if (edit.value === '') doc.deleteIn(path);
+  else doc.setIn(path, blockValue(edit.value));
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
+}
+
+/**
+ * Points a section at a generator.
+ *
+ * The one edit that changes how everything in a section is made, so it goes
+ * through the same document API as everything else — an author's `style` and
+ * the comment explaining it survive being handed a model.
+ */
+export async function editSectionField(
+  name: string,
+  edit: { section: string; field: 'backend' | 'file' | 'style' | 'negative'; value: string },
+): Promise<void> {
+  const file = join(projectDir(name), 'project.yaml');
+  if (!/^[a-z]+$/.test(edit.section)) throw new ProjectError('Bad section');
+
+  const source = await readFile(file, 'utf8').catch(() => {
+    throw new ProjectError('Set this project up for asset work first');
+  });
+  const doc = parseDocument(source);
+
+  const path = ['sections', edit.section, edit.field];
+  if (edit.value === '') doc.deleteIn(path);
+  else doc.setIn(path, blockValue(edit.value));
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
+}
+
 export type FieldEdit = {
   file: string;
   field: 'prompt' | 'negative' | 'text' | 'voice' | 'notes' | 'freeze';
@@ -582,6 +665,103 @@ export async function migrateShots(name: string): Promise<ShotWork> {
 
   await writeAtomic(paths.scenario, migrated);
   return { ...report, seeded: await syncFromStoryboard(name) };
+}
+
+export type GenerateFailure = {
+  file: string;
+  error: string;
+  /** The generator's own output, when there was any. Usually a Python traceback. */
+  detail?: string;
+};
+
+/**
+ * Generates one asset, or every asset in a section that still needs one.
+ *
+ * Sequential by design. There is one GPU, and a batch that ran them in
+ * parallel would take the same total time while making it impossible to say
+ * which line was being worked on — and the first failure would arrive with
+ * five others on top of it.
+ *
+ * A failure on one line does not stop the rest. Ninety lines will contain one
+ * with an em dash the model chokes on, and losing the other eighty-nine to it
+ * would mean starting again.
+ */
+export async function generate(
+  name: string,
+  request: { section: AssetSection; files: string[] },
+): Promise<{ made: GeneratedTake[]; failed: GenerateFailure[] }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file);
+  const paths = pathsOf(file, project);
+
+  const parsed = parseScenarioSource(await readFile(paths.scenario, 'utf8'));
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const { ledger } = await loadLedger(paths.ledger);
+  const made: GeneratedTake[] = [];
+  const failed: GenerateFailure[] = [];
+
+  for (const asset of request.files) {
+    if (!SAFE_ASSET.test(asset)) {
+      failed.push({ file: asset, error: 'bad asset name' });
+      continue;
+    }
+    try {
+      made.push(
+        await generateAsset({
+          scenario: parsed.scenario,
+          project,
+          paths,
+          ledger,
+          section: request.section,
+          file: asset,
+          modelsRoot: modelsRoot(),
+        }),
+      );
+    } catch (err) {
+      failed.push({
+        file: asset,
+        error: (err as Error).message,
+        ...(err instanceof GenerateError && err.detail ? { detail: err.detail } : {}),
+      });
+    }
+  }
+
+  // Saved once, after the batch. The ledger is the machine's file and a
+  // hundred rewrites of it during one run is a hundred chances to be
+  // interrupted halfway.
+  if (made.length > 0) await saveLedger(paths.ledger, ledger);
+  return { made, failed };
+}
+
+/** Copies the selected take of each asset to the name the scenario declares. */
+export async function publish(
+  name: string,
+  request: { section: AssetSection; files: string[] },
+): Promise<{ published: Published[]; failed: GenerateFailure[] }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file);
+  const paths = pathsOf(file, project);
+  const { ledger } = await loadLedger(paths.ledger);
+
+  const published: Published[] = [];
+  const failed: GenerateFailure[] = [];
+
+  for (const asset of request.files) {
+    if (!SAFE_ASSET.test(asset)) {
+      failed.push({ file: asset, error: 'bad asset name' });
+      continue;
+    }
+    try {
+      published.push(await publishAsset({ paths, ledger, section: request.section, file: asset }));
+    } catch (err) {
+      failed.push({ file: asset, error: (err as Error).message });
+    }
+  }
+
+  return { published, failed };
 }
 
 export type VoiceWiring = {

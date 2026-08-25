@@ -1,0 +1,55 @@
+# The voice sidecar's own environment, managed by uv and separate from
+# everything else in this repo.
+#
+# It is separate on purpose. The game server is Node that Docker ships without
+# a build step, and it must never grow a dependency on Python or on two
+# gigabytes of CUDA wheels — a show runs from a container that holds no models
+# at all. Generation happens at a desk, weeks earlier, in this environment.
+#
+# The base install is deliberately tiny: numpy and soundfile, no torch. That is
+# what makes the placeholder backend usable in seconds, so the whole pathway —
+# button, sidecar, take, ledger, publish — can be proved working before anyone
+# downloads a model.
+
+[project]
+name = "scenario-voice"
+version = "0.1.0"
+description = "Text-to-speech sidecar for the Interactive Scenario editor"
+# 3.14 and not lower, and this is a hardware decision rather than a taste one.
+# chatterbox-tts pins `torch==2.6.0` on older Pythons and `torch>=2.9.0` on
+# 3.14. Torch 2.6 ships no sm_120 kernels, so on an RTX 50-series card — the
+# machine this was built for — the older pin installs perfectly and then fails
+# at the first generate with "no kernel image is available for execution on
+# this device". Taking 3.14 is what gets a Blackwell-capable torch.
+requires-python = ">=3.14"
+dependencies = ["numpy>=2.0", "soundfile>=0.12.1"]
+
+[project.optional-dependencies]
+# Installed with `--extra chatterbox`. Zero-shot voice cloning; see
+# docs/voice-generation.md for the walkthrough. Everything else in the stack is
+# left to chatterbox-tts, which pins its own dependencies exactly.
+#
+# torch and torchaudio are named here even though chatterbox-tts already
+# depends on them, because `[tool.uv.sources]` below only redirects *direct*
+# dependencies. Left transitive, they resolve from PyPI and the CUDA index is
+# quietly ignored. The bounds match what chatterbox-tts asks for on 3.14.
+chatterbox = ["chatterbox-tts>=0.1.7", "torch>=2.9", "torchaudio>=2.9"]
+
+# CUDA 12.8 wheels rather than the default PyPI build, which on Windows is
+# CPU-only. Without this everything installs, imports, runs, and takes most of
+# a minute a line on the processor while a perfectly good GPU sits idle.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["voice"]

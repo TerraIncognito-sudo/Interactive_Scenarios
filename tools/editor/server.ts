@@ -21,8 +21,14 @@ import { join, extname } from 'node:path';
 import { parseScenarioSource } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
 import { ProjectError } from './project.ts';
+import { modelStatuses } from './models.ts';
+import { sidecarStatuses, stopAllSidecars } from './sidecar.ts';
 import {
   editAssetField,
+  editSectionField,
+  editVoiceField,
+  generate,
+  publish,
   initProject,
   listProjects,
   migrateShots,
@@ -39,7 +45,9 @@ import {
   browse,
   loadConfig,
   looksSynced,
+  modelsRoot,
   recentWorkspaces,
+  setModelsRoot,
   setWorkspace,
   workspace,
 } from './workspace.ts';
@@ -158,10 +166,50 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   // open the files, so the listing comes from here instead.
   if (path === '/api/browse' && request.method === 'GET') {
     try {
-      return sendJson(response, 200, await browse(url.searchParams.get('path') ?? undefined));
+      const files = url.searchParams.get('files');
+      return sendJson(
+        response,
+        200,
+        await browse(
+          url.searchParams.get('path') ?? undefined,
+          files ? files.split(',').filter(Boolean) : undefined,
+        ),
+      );
     } catch (err) {
       return sendJson(response, 400, { error: (err as Error).message });
     }
+  }
+
+  // Where model weights live, and which of them are actually on this disk.
+  // Machine-level rather than per-project: `project.yaml` travels between
+  // machines and a path to a folder of weights means nothing when it gets
+  // there, while the model id it names still does.
+  if (path === '/api/models' && request.method === 'GET') {
+    return sendJson(response, 200, {
+      root: modelsRoot(),
+      models: await modelStatuses(modelsRoot()),
+      sidecars: sidecarStatuses(),
+    });
+  }
+
+  if (path === '/api/models' && request.method === 'POST') {
+    const body = (await readBody(request)) as { path?: unknown };
+    if (typeof body.path !== 'string') {
+      return sendJson(response, 400, { error: 'Expected { path }' });
+    }
+    try {
+      const root = await setModelsRoot(body.path);
+      return sendJson(response, 200, { root, models: await modelStatuses(root) });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  // Stopping is worth a button. A loaded model holds the GPU, and the only
+  // other way to get it back is to close the editor.
+  if (path === '/api/models/stop' && request.method === 'POST') {
+    stopAllSidecars();
+    return sendJson(response, 200, { sidecars: sidecarStatuses() });
   }
 
   if (path === '/api/projects' && request.method === 'GET') {
@@ -246,6 +294,56 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 
+      if (action === 'voice' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as Record<string, unknown>;
+        if (typeof body.voice !== 'string' || typeof body.field !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { voice, field, value }' });
+        }
+        await editVoiceField(name, {
+          voice: body.voice,
+          field: body.field as 'reference',
+          value: String(body.value ?? ''),
+        });
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'section' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as Record<string, unknown>;
+        if (typeof body.section !== 'string' || typeof body.field !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { section, field, value }' });
+        }
+        await editSectionField(name, {
+          section: body.section,
+          field: body.field as 'backend',
+          value: String(body.value ?? ''),
+        });
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'generate' && request.method === 'POST') {
+        const body = (await readBody(request)) as { section?: unknown; files?: unknown };
+        if (typeof body.section !== 'string' || !Array.isArray(body.files)) {
+          return sendJson(response, 400, { error: 'Expected { section, files }' });
+        }
+        const result = await generate(name, {
+          section: body.section as 'voice',
+          files: body.files.map(String),
+        });
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'publish' && request.method === 'POST') {
+        const body = (await readBody(request)) as { section?: unknown; files?: unknown };
+        if (typeof body.section !== 'string' || !Array.isArray(body.files)) {
+          return sendJson(response, 400, { error: 'Expected { section, files }' });
+        }
+        const result = await publish(name, {
+          section: body.section as 'voice',
+          files: body.files.map(String),
+        });
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
       if (action === 'select' && request.method === 'POST') {
         const body = (await readBody(request)) as { asset?: unknown; take?: unknown };
         if (typeof body.asset !== 'string') {
@@ -303,6 +401,10 @@ server.listen(PORT, '127.0.0.1', () => {
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    // Before the server, because a model process outliving the editor holds
+    // the GPU with nothing left able to reach it — and the only cure anyone
+    // finds for that is a reboot.
+    stopAllSidecars();
     server.close(() => process.exit(0));
   });
 }

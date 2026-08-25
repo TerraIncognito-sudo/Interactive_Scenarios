@@ -17,6 +17,8 @@ import {
   wireVoice,
   migrateShots,
   pruneOrphans,
+  refreshModels,
+  stopModels,
 } from './assets.js';
 import { initPicker, openPicker } from './picker.js';
 
@@ -603,8 +605,31 @@ $('story-sync').addEventListener('click', () => {
   })();
 });
 
+// Where model weights live on this machine. Asked once, kept in the editor's
+// own config rather than in project.yaml — a project file travels to other
+// machines, and a path to a folder of weights means nothing when it gets there.
+$('models-change').addEventListener('click', () => {
+  openPicker({
+    mode: 'models',
+    label: 'Where do model weights live?',
+    startAt: state.modelsRoot,
+    onPick: (root) => {
+      state.modelsRoot = root;
+      void refreshModels().then(() => setStatus('ok', `models: ${root}`));
+    },
+  });
+});
+
+$('models-stop').addEventListener('click', () => {
+  void (async () => {
+    await stopModels();
+    setStatus('ok', 'model unloaded — the GPU is free again');
+  })();
+});
+
 async function boot() {
   initAssets({
+    onStatus: (kind, text) => setStatus(kind, text),
     // Returns the analysis it kicks off, so an action that rewrites the
     // scenario can wait for it before saying what it did.
     onScenario: (source, name, path) => {
@@ -645,7 +670,12 @@ async function boot() {
 
   // First run: no folder has ever been chosen, so there is nothing to show and
   // no way to guess. Ask before the editor looks broken.
-  if (!workspaceState.workspace) openPicker();
+  const models = await refreshModels().catch(() => null);
+  state.modelsRoot = models?.root;
+
+  if (!workspaceState.workspace) {
+    openPicker({ mode: 'workspace', label: 'Where do your scenarios live?' });
+  }
 }
 
 void boot();

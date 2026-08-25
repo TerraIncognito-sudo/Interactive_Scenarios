@@ -25,6 +25,7 @@ import {
 } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
 import {
+  fromProject,
   recipeHash,
   resolveRecipe,
   takesDir,
@@ -78,10 +79,36 @@ export type SectionView = {
   counts: Record<AssetStatus, number>;
 };
 
+/**
+ * A character, and everything needed to give them a voice.
+ *
+ * The cast comes from the scenario — it is the list of people who speak, and
+ * nothing else gets to invent one — joined to the voice settings in
+ * `project.yaml`. A character with lines and no reference clip is the state
+ * this view exists to make impossible to miss: a cloning model with nothing to
+ * clone gives every one of them the same default voice, and it does it
+ * silently.
+ */
+export type CastMember = {
+  id: string;
+  name: string;
+  /** Voice clips in the scenario attributed to them. */
+  lines: number;
+  /** Of those, how many are ready to play. */
+  ready: number;
+  reference?: string;
+  /** False when `reference` names a file that is not there. */
+  referenceExists: boolean;
+  direction?: string;
+  notes?: string;
+};
+
 export type OverviewProblem = { level: 'error' | 'warning'; message: string };
 
 export type Overview = {
   sections: SectionView[];
+  /** Who speaks, and what their voice is set to. Empty when nobody does. */
+  cast: CastMember[];
   /**
    * Rows in project.yaml that the scenario no longer references. Generated art
    * nothing plays is wasted GPU time, and a long list of it hides real gaps.
@@ -180,6 +207,58 @@ function notesFor(
   return notes;
 }
 
+/**
+ * The speaking cast, joined to its voice settings.
+ *
+ * Built from the voice rows rather than from `scenario.characters`, because a
+ * character can exist without ever speaking — a name on a nameplate in one
+ * scene — and offering to record a reference clip for them is offering work
+ * that will never be used. A voice named by a row but absent from the cast
+ * list is still included: that is a typo, and hiding it would hide the reason
+ * a line will not generate.
+ */
+async function buildCast(
+  scenario: Scenario,
+  project: Project,
+  paths: ProjectPaths,
+  voices: AssetView[],
+): Promise<CastMember[]> {
+  const counted = new Map<string, { lines: number; ready: number }>();
+  for (const asset of voices) {
+    const who = asset.row.voice;
+    if (!who) continue;
+    const tally = counted.get(who) ?? { lines: 0, ready: 0 };
+    tally.lines += 1;
+    if (asset.status === 'ready') tally.ready += 1;
+    counted.set(who, tally);
+  }
+
+  // Configured but silent voices still appear, so a reference clip set for a
+  // character whose lines were all cut is visible rather than mysterious.
+  for (const id of Object.keys(project.voices)) {
+    if (!counted.has(id)) counted.set(id, { lines: 0, ready: 0 });
+  }
+
+  const cast: CastMember[] = [];
+  for (const [id, tally] of [...counted].sort(([a], [b]) => a.localeCompare(b))) {
+    const voice = project.voices[id];
+    const reference = voice?.reference;
+    cast.push({
+      id,
+      name: scenario.characters[id]?.name ?? id,
+      lines: tally.lines,
+      ready: tally.ready,
+      reference,
+      referenceExists: reference
+        ? await fileExists(fromProject(paths.dir, reference))
+        : false,
+      direction: voice?.direction,
+      notes: voice?.notes,
+    });
+  }
+  return cast;
+}
+
 export async function buildOverview(
   scenario: Scenario,
   project: Project,
@@ -259,6 +338,19 @@ export async function buildOverview(
     sections.push({ section, model, assets, counts });
   }
 
+  const voices = sections.find((view) => view.section === 'voice')?.assets ?? [];
+  const cast = await buildCast(scenario, project, paths, voices);
+
+  for (const member of cast) {
+    if (member.reference && !member.referenceExists) {
+      problems.push({
+        level: 'warning',
+        message:
+          `"${member.id}" points at a reference clip that is not there: ${member.reference}`,
+      });
+    }
+  }
+
   const orphans = Object.keys(project.assets)
     .filter((file) => !grouped.has(file))
     .sort();
@@ -270,5 +362,5 @@ export async function buildOverview(
     });
   }
 
-  return { sections, orphans, counts: totals, problems };
+  return { sections, cast, orphans, counts: totals, problems };
 }

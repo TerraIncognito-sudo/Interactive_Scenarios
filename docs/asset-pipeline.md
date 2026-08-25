@@ -5,8 +5,11 @@ in the middle, generated images / video / voice / SFX / ambience / music at the 
 drag-and-drop canvas for arranging a shot before any of its art exists.
 
 **Phase 1 is built** — the project file, the ledger, the storyboard importer and the six
-section views. Nothing generates anything yet; what exists is the status board, and it is
-useful before a single model is installed. Phases 2–5 in §13 are still design.
+section views: the status board, useful before a single model is installed.
+
+**Voice generation is built** — a cast with a reference clip each, a model per section, and
+generate / audition / publish per row. See [voice-generation.md](voice-generation.md) for
+how to set the models up. Images, video and the rest of §13 are still design.
 
 ---
 
@@ -535,7 +538,10 @@ would thrash.
   document into a live status board, and is useful before a single model is installed.
 - **Phase 2 — images.** ComfyUI, `extra_model_paths.yaml` management, one workflow template,
   tiers 0–1, takes and select/publish. Most of the risk and most of the value.
-- **Phase 3 — voice and the `hold:` writeback.** Sidecar with Kokoro and Chatterbox, ffmpeg post.
+- **Phase 3 — voice.** *Built.* A uv-managed Python sidecar over stdio, a placeholder backend
+  and Chatterbox, a cast panel, per-row generate and publish. The `hold:` mismatch is reported
+  after each generate rather than written back: the number belongs to the scenario, and a
+  machine editing timing while an author is editing dialogue is a fight nobody wins.
 - **Phase 4 — the canvas.** Schema, checker, protocol and display changes, then the board.
 - **Phase 5 — video, then music/sfx/ambience and the loudness pass.**
 

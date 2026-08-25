@@ -90,6 +90,20 @@
               the story asks for it, which is why it can never drift out of date.
             </p>
             <div class="totals" id="totals" hidden></div>
+
+            <!-- Model weights are neither content nor code: machine-specific,
+                 tens of gigabytes, and they must never land in the project
+                 folder or the repo. One root, chosen once, per machine. -->
+            <div class="models-bar" id="models-bar" hidden>
+              <span class="models-label">Models</span>
+              <code class="models-root" id="models-root">not set</code>
+              <button id="models-change" type="button" class="ghost">Change…</button>
+              <span class="models-state" id="models-state"></span>
+              <span class="spacer"></span>
+              <button id="models-stop" type="button" class="ghost" hidden>
+                Unload model
+              </button>
+            </div>
             <div class="board-bar" id="board-bar" hidden>
               <button id="wire-voice" type="button" class="ghost">
                 Declare voice clips
@@ -143,8 +157,8 @@
          showDirectoryPicker() hands the page a handle and never a path, and the
          server is the half that has to open the files. -->
     <dialog id="picker-dialog" class="picker">
-      <h2>Where do your scenarios live?</h2>
-      <p class="hint">
+      <h2 id="picker-title">Where do your scenarios live?</h2>
+      <p class="hint" id="picker-hint">
         Pick the folder that <em>contains</em> your scenario folders. Anything inside it
         with a <code>scenario.yaml</code> shows up as a project.
       </p>

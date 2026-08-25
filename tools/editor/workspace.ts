@@ -32,6 +32,15 @@ const ConfigSchema = z.strictObject({
   workspace: z.string().min(1).optional(),
   /** Most recent first. Offered as shortcuts on the picker. */
   recent: z.array(z.string().min(1)).prefault([]),
+  /**
+   * Where model weights live on this machine.
+   *
+   * Config rather than `project.yaml` on purpose. A project file is opened on
+   * other machines and a year later; a path to a folder of weights means
+   * nothing there, while the model *id* it names still does. This is the one
+   * place the two are joined, and it is per-machine by construction.
+   */
+  models: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -76,6 +85,36 @@ export async function setWorkspace(path: string): Promise<string> {
   return resolved;
 }
 
+/** Where model weights live on this machine, or undefined until chosen. */
+export function modelsRoot(): string | undefined {
+  return config.models;
+}
+
+/**
+ * Chooses the models folder, creating it if it is not there yet.
+ *
+ * Created rather than refused, unlike the workspace: a workspace that does not
+ * exist is almost always a typo in a path to work that does, while a models
+ * folder is empty by definition until the first download lands in it.
+ */
+export async function setModelsRoot(path: string): Promise<string> {
+  const resolved = resolve(path);
+  const info = await stat(resolved).catch(() => null);
+  if (info && !info.isDirectory()) throw new Error(`${resolved} is not a folder`);
+  if (!info) await mkdir(resolved, { recursive: true });
+
+  if (looksSynced(resolved)) {
+    throw new Error(
+      `${resolved} is inside a cloud-synced folder. Model weights run to tens of ` +
+        `gigabytes and syncing them will fill the drive — choose a local path.`,
+    );
+  }
+
+  config.models = resolved;
+  await saveConfig();
+  return resolved;
+}
+
 /** Cloud-sync folders a multi-gigabyte takes tree must not land in. */
 export function looksSynced(path: string): boolean {
   return /[\\/](OneDrive|Dropbox|Google Drive|iCloud ?Drive)([\\/]|$)/i.test(path);
@@ -107,6 +146,14 @@ export type Browse = {
   path: string;
   parent?: string;
   entries: BrowseEntry[];
+  /**
+   * Files in this folder, when the caller asked for some.
+   *
+   * Only ever the extensions requested. The picker is used to choose a
+   * character's reference clip as well as a folder, and listing an entire
+   * Downloads directory to find one wav helps nobody.
+   */
+  files: { name: string; path: string; size: number }[];
   /** Drive roots on Windows, so the picker can leave the current tree. */
   roots: string[];
   synced: boolean;
@@ -123,16 +170,28 @@ async function driveRoots(): Promise<string[]> {
 }
 
 /** Lists the folders inside `path`, marking which ones are projects. */
-export async function browse(path?: string): Promise<Browse> {
+export async function browse(path?: string, extensions?: string[]): Promise<Browse> {
   const target = resolve(path && path.trim() ? path : (config.workspace ?? homedir()));
+  const wanted = extensions?.map((ext) => (ext.startsWith('.') ? ext : `.${ext}`).toLowerCase());
 
   const entries: BrowseEntry[] = [];
+  const files: Browse['files'] = [];
   for (const entry of await readdir(target, { withFileTypes: true })) {
+    const full = join(target, entry.name);
+
+    if (entry.isFile()) {
+      if (!wanted?.length) continue;
+      const lower = entry.name.toLowerCase();
+      if (!wanted.some((ext) => lower.endsWith(ext))) continue;
+      const info = await stat(full).catch(() => null);
+      files.push({ name: entry.name, path: full, size: info?.size ?? 0 });
+      continue;
+    }
+
     if (!entry.isDirectory()) continue;
     // Dot-directories are tooling, not content, and they clutter the list.
     if (entry.name.startsWith('.')) continue;
 
-    const full = join(target, entry.name);
     entries.push({
       name: entry.name,
       path: full,
@@ -142,12 +201,14 @@ export async function browse(path?: string): Promise<Browse> {
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name));
+  files.sort((a, b) => a.name.localeCompare(b.name));
 
   const up = dirname(target);
   return {
     path: target,
     parent: up === target || parse(target).root === target ? undefined : up,
     entries,
+    files,
     roots: await driveRoots(),
     synced: looksSynced(target),
   };
