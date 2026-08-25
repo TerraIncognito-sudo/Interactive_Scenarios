@@ -47,6 +47,13 @@ const state = {
   busy: new Set(),
   /** Collapsed sections, so a long board stays navigable. */
   collapsed: new Set(),
+  /**
+   * A section-wide generate in flight: which section, how far, and whether the
+   * author has asked it to stop. One at a time — there is one GPU, and two runs
+   * would take the same total time while making it impossible to say which line
+   * is being worked on.
+   */
+  run: null,
   onScenario: () => {},
   onStoryboard: () => {},
   onStatus: () => {},
@@ -180,6 +187,18 @@ async function runOnScenario(action) {
   return result;
 }
 
+/**
+ * Files every asset under a folder named for its media type.
+ *
+ * Writes to `scenario.yaml` like the other two, because the folder is part of
+ * the name the show opens — a layout the display worked out for itself would
+ * be a rule living in three programs, and the first time they disagreed the
+ * audience would see it.
+ */
+export async function sortFolders() {
+  return runOnScenario('folders');
+}
+
 /** Drops recipes for files the scenario no longer references. */
 export async function pruneOrphans() {
   if (!state.name) return null;
@@ -194,10 +213,12 @@ export async function pruneOrphans() {
 /**
  * Makes one take of one asset.
  *
- * Deliberately per row. A button that generated a whole section would be a
- * button nobody dares press: ninety lines is most of an hour of GPU time, and
- * the first thing an author wants is to hear *one* line and decide whether the
- * voice is right at all.
+ * One asset is the primitive, and everything else is built on it — including
+ * the section-wide run, which loops here rather than asking the server for
+ * ninety at once. The first thing an author wants is to hear *one* line and
+ * decide whether the voice is right at all; the batch is what happens after
+ * that decision, and it stays a loop over this so it can be watched and
+ * stopped.
  */
 export async function generateAssets(section, files) {
   if (!state.name || files.length === 0) return null;
@@ -246,6 +267,23 @@ async function editSection(section, field, value) {
     body: JSON.stringify({ section, field, value }),
   });
   render();
+}
+
+/**
+ * The takes folder's leaf name for an asset.
+ *
+ * Mirrors `takesDir` on the server: a name that already carries its section —
+ * `voice/tran-d5-01.mp3` — does not repeat it inside the section's own folder.
+ */
+/** The separator the server's own paths use, rather than the browser's guess. */
+function sepOf(path) {
+  return path.includes('\\') ? '\\' : '/';
+}
+
+function leafOf(asset) {
+  const prefix = `${asset.section}/`;
+  const inside = asset.file.startsWith(prefix) ? asset.file.slice(prefix.length) : asset.file;
+  return inside.replaceAll('/', '_');
 }
 
 /** Records a reference clip for one character, in one of a palette model's voices. */
@@ -459,6 +497,12 @@ function castMember(member, model) {
             },
             member.reference ? 'Use another file…' : 'Use a recording…',
           ),
+          member.reference && !broken
+            ? playButton(
+                mediaUrl({ reference: member.id }),
+                `Play the reference clip for ${member.name}`,
+              )
+            : null,
           member.reference
             ? h(
                 'code',
@@ -556,12 +600,100 @@ function castPanel(model) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Hearing it
+// ---------------------------------------------------------------------------
+
+/**
+ * One player for the whole board.
+ *
+ * Not one `<audio>` per take. Forty of them is forty elements that can all be
+ * playing at once, and the first time an author clicks down a column of takes
+ * they are listening to six readings of the same line on top of each other.
+ * One element means starting a clip stops the last one, which is the behaviour
+ * anybody comparing two takes actually wants.
+ */
+const player = new Audio();
+
+/** Which media url is playing, so the button that started it can say so. */
+let playing = null;
+
+player.addEventListener('ended', () => {
+  playing = null;
+  render();
+});
+player.addEventListener('error', () => {
+  const failed = playing;
+  playing = null;
+  render();
+  if (failed) state.onStatus('bad', 'could not play that file — is it still on disk?');
+});
+
+function mediaUrl(params) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) query.set(key, value);
+  }
+  return `/api/projects/${encodeURIComponent(state.name)}/media?${query}`;
+}
+
+function toggle(url) {
+  if (playing === url) {
+    player.pause();
+    playing = null;
+    return render();
+  }
+  player.pause();
+  player.src = url;
+  playing = url;
+  render();
+  player.play().catch(() => {
+    // Autoplay policy does not apply to a click, so a rejection here is a file
+    // the browser cannot decode. The error listener has the message.
+    playing = null;
+    render();
+  });
+}
+
+/**
+ * The play control that appears wherever there is something to hear.
+ *
+ * A single glyph rather than a labelled button: it sits inline beside a take id
+ * and a filename, and a row of "Play" buttons would push the names it is meant
+ * to be annotating off the end of the line.
+ */
+function playButton(url, label) {
+  const active = playing === url;
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: `play${active ? ' playing' : ''}`,
+      title: active ? 'Stop' : label,
+      'aria-label': active ? 'Stop' : label,
+      onclick: (event) => {
+        event.stopPropagation();
+        toggle(url);
+      },
+    },
+    active ? '\u25A0' : '\u25B6',
+  );
+}
+
 function takesStrip(asset) {
   if (asset.takes.length === 0) {
+    const folder = state.data?.paths?.generated;
     return h(
       'p',
       { class: 'takes-empty' },
-      'No takes yet. Drop files into the project’s generated folder and they will appear here.',
+      'No takes yet. Anything dropped into ',
+      // The real path, not "the generated folder". Where the takes went is the
+      // question every author asks first, and it is one the project file can
+      // already answer.
+      folder
+        ? h('code', {}, [folder, asset.section, leafOf(asset)].join(sepOf(folder)))
+        : 'the project’s generated folder',
+      ' shows up here.',
     );
   }
 
@@ -573,23 +705,33 @@ function takesStrip(asset) {
       const classes = ['take', chosen && 'chosen', take.orphaned && 'gone']
         .filter(Boolean)
         .join(' ');
+      // Play and select are separate controls on purpose. Listening has to be
+      // free of consequence — an author auditions six takes to pick one, and a
+      // click that both played and selected would leave the last one they
+      // happened to hear as the one that ships.
+      const url = mediaUrl({ section: asset.section, file: asset.file, take: take.id });
       return h(
-        'button',
-        {
-          type: 'button',
-          class: classes,
-          // A take recorded in the ledger but no longer on disk cannot be
-          // chosen; saying so beats a button that silently does nothing.
-          disabled: take.orphaned ? true : undefined,
-          title: take.orphaned
-            ? 'Recorded in the ledger but no longer on disk'
-            : take.untracked
-              ? 'Found in the folder, not made by the pipeline'
-              : `${take.hash}${take.at ? ` · ${take.at}` : ''}`,
-          onclick: () => void selectTake(asset.file, chosen ? null : take.id),
-        },
-        take.id,
-        take.untracked ? h('span', { class: 'take-tag' }, 'manual') : null,
+        'div',
+        { class: 'take-row' },
+        take.orphaned ? null : playButton(url, `Play ${take.id}`),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: classes,
+            // A take recorded in the ledger but no longer on disk cannot be
+            // chosen; saying so beats a button that silently does nothing.
+            disabled: take.orphaned ? true : undefined,
+            title: take.orphaned
+              ? 'Recorded in the ledger but no longer on disk'
+              : take.untracked
+                ? 'Found in the folder, not made by the pipeline'
+                : `${take.hash}${take.at ? ` · ${take.at}` : ''}`,
+            onclick: () => void selectTake(asset.file, chosen ? null : take.id),
+          },
+          take.id,
+          take.untracked ? h('span', { class: 'take-tag' }, 'manual') : null,
+        ),
       );
     }),
   );
@@ -762,6 +904,16 @@ function assetRow(asset, generable = false) {
       statusPill(asset.status),
       asset.frozen ? h('span', { class: 'pill pill-frozen' }, 'frozen') : null,
       asset.published ? h('span', { class: 'pill pill-published' }, 'published') : null,
+      // The published file rather than the selected take. They are usually the
+      // same clip, and the times they are not are exactly when it matters —
+      // a selection changed after the last publish plays the old reading in
+      // front of the room.
+      asset.published
+        ? playButton(
+            mediaUrl({ section: asset.section, file: asset.file }),
+            `Play ${asset.file} as the show will`,
+          )
+        : null,
       h('span', { class: 'spacer' }),
       h('span', { class: 'asset-hash', title: 'Recipe hash' }, asset.hash),
     ),
@@ -780,6 +932,139 @@ function assetRow(asset, generable = false) {
     box,
     takesStrip(asset),
     assetActions(asset, generable),
+  );
+}
+
+/**
+ * Making everything in a section that has nothing yet.
+ *
+ * One request per asset rather than one request for ninety, which costs a few
+ * round trips and buys the two things that make a long run usable: the board
+ * fills in as it goes, and it can be stopped. A batch of ninety inside a single
+ * POST is five minutes of GPU time with no output and no way out of it but
+ * killing the editor.
+ *
+ * Missing only. A row with a take already had somebody listen to it, and
+ * re-rolling the whole act to get at the eleven that were never made is how an
+ * afternoon of auditioning gets thrown away.
+ */
+function said(file, message) {
+  // Most generator errors open with the filename, because a row-level failure
+  // has to say which row. Prefixing it again reads as a stutter in a report
+  // that may list a dozen of them.
+  return message.startsWith(file) ? message : `${file}: ${message}`;
+}
+
+async function onGenerateMissing(section, files) {
+  if (files.length === 0) return;
+  if (
+    files.length > 1 &&
+    !confirm(
+      `Generate ${files.length} missing ${SECTION_LABELS[section].toLowerCase()} ` +
+        `asset${files.length === 1 ? '' : 's'}?\n\nThis runs one at a time and can take a ` +
+        `while. You can stop it partway; anything already made is kept.`,
+    )
+  ) {
+    return;
+  }
+
+  state.run = { section, done: 0, total: files.length, stop: false, failed: [] };
+  render();
+
+  const started = Date.now();
+  for (const file of files) {
+    if (state.run.stop) break;
+    state.onStatus('warn', `${state.run.done + 1}/${files.length} · ${file}`);
+    try {
+      const result = await generateAssets(section, [file]);
+      const made = result?.made?.[0];
+      const failure = result?.failed?.[0];
+      if (failure) state.run.failed.push(said(failure.file, failure.error));
+      else if (made) {
+        state.onStatus(
+          'warn',
+          `${state.run.done + 1}/${files.length} · ${file} · ${made.seconds}s`,
+        );
+      }
+    } catch (err) {
+      // A run that stopped on the first em dash the model choked on would lose
+      // the other eighty-nine. Collect and carry on.
+      state.run.failed.push(said(file, err.message));
+    }
+    state.run.done += 1;
+    render();
+  }
+
+  const { done, stop, failed } = state.run;
+  state.run = null;
+  render();
+
+  const seconds = Math.round((Date.now() - started) / 1000);
+  const parts = [
+    `${stop ? 'stopped after' : 'made'} ${done} of ${files.length} in ${seconds}s`,
+  ];
+  if (failed.length > 0) parts.push(`${failed.length} failed: ${failed.join(' · ')}`);
+  state.onStatus(failed.length > 0 ? 'bad' : 'ok', parts.join(' · '));
+}
+
+/**
+ * The section-level generate, and the way out of it.
+ *
+ * Only when something is actually missing: a button offering to make nothing is
+ * a button that teaches people it does nothing.
+ */
+function sectionActions(section, generable) {
+  if (!generable) return null;
+  const running = state.run?.section === section.section;
+
+  if (running) {
+    const { done, total, stop } = state.run;
+    return h(
+      'span',
+      { class: 'section-run' },
+      h('span', { class: 'section-progress' }, `${done}/${total}`),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost small',
+          disabled: stop ? true : undefined,
+          // Stops after the clip in flight. Killing a model mid-write leaves a
+          // truncated file in the takes folder that looks like a take.
+          onclick: () => {
+            state.run.stop = true;
+            state.onStatus('warn', 'stopping after this one…');
+            render();
+          },
+        },
+        stop ? 'Stopping…' : 'Stop',
+      ),
+    );
+  }
+
+  // `missing` rather than "has no takes": an *unmanaged* row has a published
+  // file somebody made by hand and dropped in, and offering to generate over it
+  // is offering work nobody asked for. This is the same count the pill shows.
+  const missing = section.assets
+    .filter((asset) => asset.status === 'missing')
+    .map((asset) => asset.file);
+  if (missing.length === 0) return null;
+
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'ghost small',
+      disabled: state.run ? true : undefined,
+      title: state.run
+        ? 'Another section is generating'
+        : 'Make one take of everything in this section that has none',
+      onclick: (event) => {
+        event.stopPropagation();
+        void onGenerateMissing(section.section, missing);
+      },
+    },
+    `Generate ${missing.length} missing`,
   );
 }
 
@@ -812,6 +1097,11 @@ function sectionBlock(section) {
     (entry) => entry.section === section.section,
   );
   const chosen = available.find((entry) => entry.id === model?.file);
+
+  // Generation needs three things agreed: a model root on this machine, a
+  // model chosen for the section, and a backend that is not "made by hand".
+  const generable =
+    Boolean(state.models?.root) && Boolean(chosen) && (model?.backend ?? 'manual') !== 'manual';
 
   const picker = h(
     'select',
@@ -872,13 +1162,9 @@ function sectionBlock(section) {
         )
       : null,
     h('span', { class: 'spacer' }),
+    sectionActions(section, generable),
     h('span', { class: 'section-backend' }, model?.backend ?? 'manual'),
   );
-
-  // Generation needs three things agreed: a model root on this machine, a
-  // model chosen for the section, and a backend that is not "made by hand".
-  const generable =
-    Boolean(state.models?.root) && Boolean(chosen) && (model?.backend ?? 'manual') !== 'manual';
 
   return h(
     'section',

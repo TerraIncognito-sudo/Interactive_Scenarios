@@ -270,8 +270,9 @@ export function migrateShotsInto(
       // Renaming them would orphan every prompt already written against them,
       // and this has no business touching the author's prompts.
       const from = standIn ? scenario.scenes[node.scene] : undefined;
-      const background = from?.background ?? (shot.image ? shotMediaName(shot, 'jpg') : undefined);
-      const video = from?.video ?? (shot.motion ? shotMediaName(shot, 'mp4') : undefined);
+      const background =
+        from?.background ?? (shot.image ? shotMediaName(shot, 'images', 'jpg') : undefined);
+      const video = from?.video ?? (shot.motion ? shotMediaName(shot, 'video', 'mp4') : undefined);
       if (background !== undefined) move.background = background;
       if (video !== undefined) move.video = video;
 

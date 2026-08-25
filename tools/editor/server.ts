@@ -16,7 +16,9 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import { join, extname } from 'node:path';
 import { parseScenarioSource } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
@@ -34,7 +36,9 @@ import {
   listProjects,
   migrateShots,
   recordReference,
+  sortAssets,
   openProject,
+  resolveMedia,
   saveProjectSource,
   saveScenarioSource,
   saveStoryboardSource,
@@ -98,6 +102,50 @@ function inspect(source: string) {
     warnings: parsed.warnings,
     analysis: analyzeScenario(parsed.scenario),
   };
+}
+
+/**
+ * Sends a file, honouring a byte range.
+ *
+ * Range matters here even though the clips are seconds long: an `<audio>`
+ * element with a seek bar asks for one, and a browser handed 200 for a range
+ * request will play the clip but refuse to scrub it — which is exactly the
+ * control an author reaches for when they want to hear the end of a line again.
+ */
+async function sendFile(
+  request: IncomingMessage,
+  response: ServerResponse,
+  file: string,
+  type: string,
+): Promise<void> {
+  const size = (await stat(file)).size;
+  const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range ?? '');
+
+  let start = 0;
+  let end = size - 1;
+  if (range) {
+    const [, from, to] = range;
+    if (from) start = Number(from);
+    else if (to) start = Math.max(0, size - Number(to));
+    if (from && to) end = Math.min(end, Number(to));
+    if (start >= size) {
+      response.writeHead(416, { 'content-range': `bytes */${size}` });
+      return void response.end();
+    }
+  }
+
+  response.writeHead(range ? 206 : 200, {
+    'content-type': type,
+    'content-length': end - start + 1,
+    'accept-ranges': 'bytes',
+    ...(range ? { 'content-range': `bytes ${start}-${end}/${size}` } : {}),
+    // The whole point of a take is that another one is coming. A cached clip
+    // would have the author listening to the reading they just replaced.
+    'cache-control': 'no-store',
+  });
+
+  if (request.method === 'HEAD') return void response.end();
+  await pipeline(createReadStream(file, { start, end }), response);
 }
 
 async function serveStatic(pathname: string, response: ServerResponse): Promise<void> {
@@ -293,6 +341,24 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         }
         await saveStoryboardSource(name, body.source);
         return sendJson(response, 200, await openProject(name));
+      }
+
+      // Playing a take, a published file, or a character's reference clip.
+      // Everything else the board shows is text about a sound; this is the
+      // sound, and without it choosing between two takes is guesswork.
+      if (action === 'media' && (request.method === 'GET' || request.method === 'HEAD')) {
+        const media = await resolveMedia(name, {
+          section: url.searchParams.get('section') ?? undefined,
+          file: url.searchParams.get('file') ?? undefined,
+          take: url.searchParams.get('take') ?? undefined,
+          reference: url.searchParams.get('reference') ?? undefined,
+        });
+        return sendFile(request, response, media.path, media.type);
+      }
+
+      if (action === 'folders' && request.method === 'POST') {
+        const result = await sortAssets(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 
       if (action === 'init' && request.method === 'POST') {

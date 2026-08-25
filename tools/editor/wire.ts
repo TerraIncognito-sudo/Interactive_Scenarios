@@ -23,7 +23,7 @@
 
 import { parseDocument, isMap, isSeq } from 'yaml';
 import { lineDuration, type Scenario } from '../../src/scenario/schema.ts';
-import { shotForNode, shotSlug, shotsByNode, type StoryboardShot } from './storyboard.ts';
+import { filed, shotForNode, shotSlug, shotsByNode, type StoryboardShot } from './storyboard.ts';
 import { applyEdits, indentOf, insertionFor, type Edit } from './yaml-edit.ts';
 
 export type WiredLine = {
@@ -70,7 +70,9 @@ function usedNumbers(scenario: Scenario): Map<string, number> {
     if (node.type !== 'dialogue') continue;
     for (const line of node.lines) {
       if (!line.voice) continue;
-      const match = /^(.*)-(\d+)\.[a-z0-9]+$/i.exec(line.voice);
+      // By basename, so a half-wired scenario continues its numbering whether
+      // its clips are filed under `voice/` or sitting flat beside the scenario.
+      const match = /^(.*)-(\d+)\.[a-z0-9]+$/i.exec(line.voice.split('/').pop()!);
       if (!match) continue;
       const key = match[1]!;
       const n = Number(match[2]);
@@ -135,7 +137,7 @@ export function wireVoiceInto(
         const key = `${line.who ?? 'vo'}-${slug}`;
         const n = (used.get(key) ?? 0) + 1;
         used.set(key, n);
-        file = `${key}-${String(n).padStart(2, '0')}.mp3`;
+        file = filed('voice', `${key}-${String(n).padStart(2, '0')}.mp3`);
         parts.push(`voice: ${file}`);
       }
 

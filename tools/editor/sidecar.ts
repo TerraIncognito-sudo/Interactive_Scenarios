@@ -85,6 +85,23 @@ export type SpeakResult = {
  */
 const PROGRESS = /\d+%\|.*\|\s*\d+\/\d+/;
 
+/**
+ * Somebody else's deprecation warning.
+ *
+ * A model's dependency tree is thirty libraries deep and several of them are
+ * mid-migration, so loading one prints a paragraph about `pkg_resources`,
+ * `LoRACompatibleLinear` and `sdp_kernel` before it says a word about the
+ * voice. None of it is actionable by anyone here — it is a note to the
+ * maintainers of libraries this project does not import — and all of it lands
+ * on top of the two lines that are: which model loaded, and from where.
+ *
+ * Kept in the ring, dropped from the console. A warning that turns out to
+ * matter is still in the traceback attached to the failure, which is where
+ * anyone would look for it; a warning nobody can act on that appears on every
+ * single load is how people learn to ignore the terminal.
+ */
+const THIRD_PARTY_WARNING = /^.*:\d+: (Future|Deprecation|User|Runtime|Pending\w*)Warning: /;
+
 export class SidecarError extends Error {
   /** The child's stderr, which is where a Python traceback actually lands. */
   readonly detail: string;
@@ -112,6 +129,15 @@ class Sidecar {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private stdoutBuffer = '';
+  /**
+   * Whether the last stderr line was a warning we swallowed.
+   *
+   * Python prints the offending source line under its warning, indented. That
+   * line is suppressed only when it follows one — not by its own shape, because
+   * a traceback's source lines look exactly the same and those are the ones
+   * anybody debugging a failed load actually needs.
+   */
+  private afterWarning = false;
   /**
    * A ring of the child's recent stderr. When a model fails to load, the
    * useful part is the traceback, and the process is gone by the time anyone
@@ -203,6 +229,11 @@ class Sidecar {
 
         this.stderr.push(line);
         if (this.stderr.length > 200) this.stderr.shift();
+
+        const quiet = THIRD_PARTY_WARNING.test(line) || (this.afterWarning && /^\s/.test(line));
+        this.afterWarning = quiet;
+        if (quiet) continue;
+
         // Echoed as well as kept. A model that will not load is debugged from
         // the terminal the editor was started in, and a traceback that exists
         // only inside a ring buffer might as well not exist.

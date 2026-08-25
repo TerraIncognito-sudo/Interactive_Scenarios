@@ -407,8 +407,12 @@ export async function publishAsset(options: {
   }
 
   const from = join(takesDir(paths, section, file), entry.selected);
-  await mkdir(paths.publish, { recursive: true });
-  await copyFile(from, join(paths.publish, file)).catch((error: unknown) => {
+  const to = join(paths.publish, file);
+  // The scenario's name may carry a folder — `voice/tran-d5-01.mp3` — and that
+  // folder is part of where the show will look for the file, so it is made
+  // here rather than expected to exist.
+  await mkdir(dirname(to), { recursive: true });
+  await copyFile(from, to).catch((error: unknown) => {
     throw new GenerateError(
       `Could not publish ${file}: ${(error as Error).message}`,
     );

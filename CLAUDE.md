@@ -118,6 +118,23 @@ different models. `assetReferencesOf` is the single walk both `assetsOf` and the
 board are built from — two walks would eventually disagree, and the editor's would be the one
 that disagreed silently.
 
+**Assets are filed by media type, in the name the scenario declares.** `voice/tran-d5-01.mp3`,
+not `tran-d5-01.mp3` under a rule the display works out for itself. A layout convention would
+have to live in the display, the validator and the editor at once, and the first time the three
+disagreed the audience would see it — where a name is just a name, `publish` writing to
+`assets/voice/` and the projector fetching `assets/voice/` are the same fact stated once.
+Flat names stay legal, because every scenario written before this is one. `folders.ts` is the
+migration and `filed()` in `storyboard.ts` is what makes new projects born that way; `takesDir`
+drops the section from a name that already carries it, so filing a project costs it no takes.
+
+**The editor plays what it made.** A board that can only describe a clip is a board whose
+selection step is guesswork, and a pipeline nobody can hear ships the first reading of every
+line. `resolveMedia` in `tools/editor/projects.ts` resolves a take, a published file or a
+reference clip from structured parts and checks the result is under the project — the editor
+browses the whole disk on purpose, but that is a picker a person drives, and a URL that
+dereferences `../..` is a different thing. One `Audio` element serves the whole board: forty of
+them is six readings of one line playing at once.
+
 **The editor and the player must agree on filenames.** The player opens exactly the names in
 `scenario.yaml`, so the editor may never invent one. Seeding prompts from a storyboard keys
 every row to `assetReferencesOf(scenario)` and reports anything it cannot place; a prompt

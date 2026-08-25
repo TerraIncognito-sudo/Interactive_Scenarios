@@ -16,6 +16,7 @@ import {
   seedFromStoryboard,
   wireVoice,
   migrateShots,
+  sortFolders,
   pruneOrphans,
   refreshModels,
   stopModels,
@@ -573,6 +574,40 @@ $('migrate-shots').addEventListener('click', () => {
       attention.length > 0 ? 'warn' : 'ok',
       [...done, ...attention].join(' · '),
     );
+  })();
+});
+
+$('sort-folders').addEventListener('click', () => {
+  void (async () => {
+    const result = await sortFolders();
+    if (!result) return;
+
+    const n = result.moved.length;
+    if (n === 0) {
+      return setStatus(
+        'warn',
+        result.kept.length > 0
+          ? 'every asset is already filed by media type'
+          : 'nothing to file',
+      );
+    }
+
+    const by = {};
+    for (const move of result.moved) by[move.section] = (by[move.section] ?? 0) + 1;
+    const parts = [
+      `filed ${n} asset${n === 1 ? '' : 's'} — ` +
+        Object.entries(by)
+          .map(([section, count]) => `${count} into ${section}/`)
+          .join(', '),
+    ];
+    if (result.republished.length > 0) {
+      const m = result.republished.length;
+      parts.push(`moved ${m} published file${m === 1 ? '' : 's'} to match`);
+    }
+    // A name this could not file is a decision for the author, not something
+    // to pick a winner for quietly.
+    const stuck = (result.skipped ?? []).map((entry) => `${entry.file}: ${entry.why}`);
+    setStatus(stuck.length > 0 ? 'warn' : 'ok', [...parts, ...stuck].join(' · '));
   })();
 });
 

@@ -421,9 +421,13 @@ STYLE. The empty control cell, screens dark.
     const { shots } = parseStoryboard(SOURCE);
     const files = proposeAssets(shots).map((a) => a.file);
     // The storyboard documents `tran-d5-01.mp3` by hand; the importer must
-    // produce exactly that, or every filename in the document is wrong.
-    assert.ok(files.includes('tran-d5-01.mp3'), files.join(', '));
-    assert.ok(files.includes('narr-a1-01.mp3'));
+    // produce exactly that, under the folder its media type is filed in.
+    assert.ok(files.includes('voice/tran-d5-01.mp3'), files.join(', '));
+    assert.ok(files.includes('voice/narr-a1-01.mp3'));
+    // The one place in the pipeline allowed to invent a filename is also the
+    // one place that writes the scenario referencing it, so the folder goes in
+    // here rather than being sorted on afterwards.
+    assert.ok(files.includes('images/halifax-a1.jpg'), files.join(', '));
   });
 
   test('scaffolding gives a second shot in one place its own picture', () => {
@@ -444,8 +448,8 @@ STYLE. The empty control cell, screens dark.
     assert.equal(Object.keys(parsed.scenario.scenes).length, 1);
     const [first, second] = parsed.scenario.nodes;
     assert.equal(first!.background, undefined);
-    assert.equal(parsed.scenario.scenes.halifax!.background, 'halifax-a1.jpg');
-    assert.equal(second!.background, 'halifax-d5.jpg');
+    assert.equal(parsed.scenario.scenes.halifax!.background, 'images/halifax-a1.jpg');
+    assert.equal(second!.background, 'images/halifax-d5.jpg');
 
     // And nothing the storyboard wrote is left with nowhere to go.
     const stills = report.unplaceable.filter(
@@ -556,9 +560,10 @@ describe('giving every shot its own picture', () => {
     assert.equal(byId.get('a1_jetty')!.background, undefined);
     assert.equal(parsed.scenario.scenes.halifax!.background, 'a1.jpg');
 
-    // A.3 has nowhere to hang until now.
-    assert.equal(byId.get('a3_departure')!.background, 'halifax-a3.jpg');
-    assert.equal(byId.get('a3_departure')!.video, 'halifax-a3.mp4');
+    // A.3 has nowhere to hang until now. Named the way the pipeline names
+    // anything it invents: under the folder its media type is filed in.
+    assert.equal(byId.get('a3_departure')!.background, 'images/halifax-a3.jpg');
+    assert.equal(byId.get('a3_departure')!.video, 'video/halifax-a3.mp4');
   });
 
   test('a stand-in scene folds back into the place the storyboard names', () => {
@@ -1281,7 +1286,7 @@ describe('wiring voice onto a scenario', () => {
     const result = wire(SOURCE);
     assert.deepEqual(
       result.wired.map((w) => w.file),
-      ['narr-a1-01.mp3', 'narr-a1-02.mp3', 'tran-a1-01.mp3'],
+      ['voice/narr-a1-01.mp3', 'voice/narr-a1-02.mp3', 'voice/tran-a1-01.mp3'],
     );
 
     // Nothing on the server opens the audio file, so a voiced line without a
@@ -1325,7 +1330,10 @@ describe('wiring voice onto a scenario', () => {
   test('a line written inline stays inline', () => {
     // `{ who: tran, text: … }` is how a short line is often written, and a
     // newline inserted into a flow map is not YAML at all.
-    assert.match(wire(SOURCE).source, /\{ who: tran, text: Link is good\., hold: \d+, voice: tran-a1-01\.mp3 \}/);
+    assert.match(
+      wire(SOURCE).source,
+      /\{ who: tran, text: Link is good\., hold: \d+, voice: voice\/tran-a1-01\.mp3 \}/,
+    );
   });
 
   test('pressing it twice changes nothing the second time', () => {
@@ -1345,15 +1353,19 @@ describe('wiring voice onto a scenario', () => {
       '      - who: narr\n        text: Fuel lines. Weather brief.\n        hold: 5\n        voice: narr-a1-07.mp3',
     );
     const result = wire(partial);
+    // The existing clip is flat and the new ones are filed, which is the state
+    // any scenario written before folders existed is in. Numbering is read by
+    // basename so the two spellings still count as the same run of takes —
+    // restarting at 01 would name a file that is already on disk.
     assert.deepEqual(
       result.wired.map((w) => w.file),
-      ['narr-a1-08.mp3', 'tran-a1-01.mp3'],
+      ['voice/narr-a1-08.mp3', 'voice/tran-a1-01.mp3'],
     );
   });
 
   test('a node the storyboard never numbered falls back to its own id', () => {
     const orphaned = SOURCE.replace(/a1_jetty/g, 'p1_defend');
-    assert.equal(wire(orphaned).wired[0]!.file, 'narr-p1-defend-01.mp3');
+    assert.equal(wire(orphaned).wired[0]!.file, 'voice/narr-p1-defend-01.mp3');
   });
 });
 

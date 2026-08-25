@@ -45,15 +45,28 @@ JSON nobody reads by hand.
 ### Project layout
 
 ```
-D:\scenario-projects\arctic-sentinel\        <- anywhere; not in the repo, not in OneDrive
+D:\scenario-projects\arctic-sentinel\        <- anywhere; not in the repo
   project.yaml
+  scenario.yaml
   storyboard.md                              <- or a path to one elsewhere
   .ledger.json
-  generated\
-    images\station\ 0001-s41207.png  0002-s41208.png  0003-s60011.png
-    video\station\  0001.mp4
-    voice\tran-d5-01\ 0001.wav  0002.wav
+  voices\                                    <- reference clips, part of the show
+    narr.wav  tran.wav
+  generated\                                 <- every take ever made
+    images\station.jpg\   9f1befa9-01.png  9f1befa9-02.png
+    video\station.mp4\    ca1d3711-01.mp4
+    voice\tran-d5-01.mp3\ 4b2c8e10-01.mp3
+  assets\                                    <- what publish writes; what the show opens
+    images\station.jpg
+    video\station.mp4
+    voice\tran-d5-01.mp3
 ```
+
+Everything a project is made of is in one folder that copies as a unit — which is what makes
+deploying "move this folder" and what makes a project openable a year later. If the folder is
+inside a synced drive the editor says so in a comment at the top of `project.yaml`; where the
+takes go stays the author's call, because a project split across two drives is one nobody can
+hand to anybody else.
 
 ```yaml
 # project.yaml — the head of it
@@ -79,7 +92,7 @@ So the pipeline has two stages, and this distinction is the spine of the whole d
 ```
 generate  ->  generated\images\station\0003-s60011.png     many candidates, kept
 select    ->  ledger records station.jpg -> 0003           a pointer, reversible
-publish   ->  scenarios\arctic-sentinel\assets\station.jpg  exactly one file, canonical name
+publish   ->  assets\images\station.jpg                     exactly one file, canonical name
 ```
 
 **Publish is a copy, and it is the only thing that touches the repo.** Everything upstream is
@@ -207,7 +220,7 @@ elapsed generation time. Enough to answer "what was different about the one I li
 re-roll near it rather than starting over.
 
 ```json
-{ "station.jpg": {
+{ "images/station.jpg": {
     "selected": "0003-s60011.png",
     "takes": [
       { "id": "0003-s60011.png", "seed": 60011, "steps": 28, "at": "2026-08-25T14:02:11Z", "ms": 41200 },
@@ -361,6 +374,35 @@ One thing it reports rather than fixes: **comments left describing scenes that a
 The prose in a scenario is the author's — several comments in a real one record why a beat is
 the length it is — and a machine that edits prose to keep it true will eventually edit prose
 that was already true. It names the lines and stops there.
+
+### File assets by media type
+
+A finished show is a few hundred files. Flat, `assets/` is a folder where finding the bed for
+act two means reading ninety voice clips first, and where the only thing saying what
+`a4-flank.mp4` *is* is its extension. **File assets by media type** renames every reference to
+`<section>/<name>` — the same six sections the board already groups the work into, because the
+section an asset belongs to is a fact the scenario already carries.
+
+The folder goes into **the name `scenario.yaml` declares**, not into a layout rule the display
+works out for itself. A convention would have to live in the display, the validator and the
+editor at once; a name is one fact, stated once, and reading the scenario tells you where a
+file is. Flat names stay legal — every scenario written before this is one, and the button
+leaves alone anything the author already filed somewhere of their own choosing.
+
+Four things move together, which is the whole reason it is a button rather than a rename:
+
+- every reference in `scenario.yaml`, by source offset, so comments and folded scalars survive
+- the `assets:` keys in `project.yaml`, by key edit, so a row keeps its prompt and its comment
+- the ledger, so the take that was already chosen is still chosen
+- anything already published, moved into the folder the scenario now names
+
+Takes need no move at all: `takesDir` drops the section from a name that already carries it, so
+`generated/voice/tran-d5-01.mp3/` is where they were and where they stay. A project's whole
+history of attempts survives being filed.
+
+What it will not do is guess. A name two schema fields both claim — `bed.mp3` used as both
+`music:` and `ambience:` — is reported rather than filed, because either answer is wrong for
+one of the two uses.
 
 They are also idempotent. Pressing **Declare voice clips** twice does nothing the second time,
 and numbering continues from what the scenario already uses rather than restarting at `01` —
@@ -560,9 +602,12 @@ folder*, takes accumulate under `generated/`, and `publish:` points at the proje
 `dist/assets`. Nothing points into this repo and nothing comes back to it. The repo's
 `scenarios/` folder is just one possible publish target, for the bundled demo scenarios.
 
-Projects therefore default to `~/scenario-projects`, deliberately outside the OneDrive path
-this repo sits in; the editor prints a warning if `PROJECTS_DIR` names a cloud-synced folder,
-because a takes tree is the kind of thing a sync client should never discover.
+Takes live under `generated/` **inside the project**, for the same reason: a project split
+across two drives is one nobody can hand to anybody else, and one nobody can open a year later.
+Where a workspace sits in a cloud-synced folder the editor says so in a comment at the top of
+`project.yaml` — voice takes are kilobytes, stills and video are not — but it says it rather
+than acting on it. Where the takes go is the author's call, and `generated:` accepts an
+absolute path for exactly that reason.
 
 **Settled: a shot carries its own still.** `background:` and `video:` are optional on any
 node, overriding the scene's for as long as that node plays. A scene is a *place* — its music

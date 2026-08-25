@@ -224,9 +224,16 @@ export function pathsOf(projectFile: string, project: Project): ProjectPaths {
  * becomes `generated/images/station.jpg/`. Dots are legal in directory names,
  * and stripping the extension would collide `hero.png` with `hero.jpg`, which
  * are two different assets a scenario is perfectly entitled to reference.
+ *
+ * A scenario that files its assets in per-section folders — `voice/tran-d5-01.mp3`
+ * — has already said "voice" once, and repeating it as `voice/voice_tran-d5-01.mp3`
+ * is noise in the one folder an author opens by hand to hear what was made. The
+ * section directory stays regardless of naming, because it is what keeps `a.mp3`
+ * in `voice:` from sharing a folder with `a.mp3` in `music:`.
  */
 export function takesDir(paths: ProjectPaths, section: AssetSection, file: string): string {
-  return join(paths.generated, section, file.replaceAll(/[\\/]/g, '_'));
+  const inside = file.startsWith(`${section}/`) ? file.slice(section.length + 1) : file;
+  return join(paths.generated, section, inside.replaceAll(/[\\/]/g, '_'));
 }
 
 // ---------------------------------------------------------------------------

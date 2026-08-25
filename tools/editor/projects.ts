@@ -22,17 +22,18 @@
  * anyone touched a text box.
  */
 
-import { readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { parseDocument, Scalar, stringify as stringifyYaml } from 'yaml';
-import { parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
+import { ASSET_SECTIONS, parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
 import {
+  fromProject,
   loadLedger,
   loadProject,
   parseProjectSource,
   pathsOf,
   saveLedger,
+  takesDir,
   ProjectError,
   ProjectSchema,
   type Project,
@@ -41,6 +42,7 @@ import {
 import { buildOverview, type Overview } from './sections.ts';
 import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
 import { migrateShotsInto, type ShotMigration } from './shots.ts';
+import { renameRows, sortIntoFolders, type FolderSort } from './folders.ts';
 import {
   generateAsset,
   makeReferenceClip,
@@ -72,7 +74,24 @@ function blockValue(value: unknown): unknown {
 }
 
 /** Asset keys are filenames, never paths. */
-const SAFE_ASSET = /^[A-Za-z0-9._-]+$/;
+const ASSET_SEGMENT = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+
+/**
+ * A name a project route will act on.
+ *
+ * Segments may nest, because a scenario files its assets by media type, but
+ * every segment has to be an ordinary name — and `..` is an ordinary name as
+ * far as a character class is concerned, which is the trap. This string reaches
+ * `join()` on the way to a takes folder and a publish path, and the editor
+ * writes files without asking anyone.
+ */
+function safeAsset(name: string): boolean {
+  if (!ASSET_SEGMENT.test(name)) return false;
+  return name.split('/').every((part) => part !== '.' && part !== '..');
+}
+
+/** A take is one file inside one folder, and never a path. */
+const SAFE_TAKE = /^[A-Za-z0-9._-]+$/;
 
 export type OpenProject = {
   name: string;
@@ -140,7 +159,12 @@ async function defaultProject(name: string, dir: string): Promise<Project> {
     // project and a sync client quietly uploading a hundred gigabytes of
     // rejected art. Overridable, and written explicitly when a project file
     // is created so the choice is visible rather than magic.
-    generated: looksSynced(dir) ? join(homedir(), 'scenario-takes', name) : 'generated',
+    // Beside the scenario, on purpose. Everything a project is made of should
+    // be in one folder that copies as a unit — that is what makes deploying a
+    // show "move this folder" and what makes a project openable a year later.
+    // Takes are small for voice and large for video, so the sync warning stays
+    // a warning rather than a decision made on the author's behalf.
+    generated: 'generated',
     storyboard: await detectStoryboard(dir),
   });
 }
@@ -307,9 +331,14 @@ export async function initProject(name: string): Promise<OpenProject> {
     assets,
   };
 
+  // Said in the file rather than acted on. Where the takes go is the author's
+  // call — a project whose parts are scattered across two drives is one nobody
+  // can hand to anybody else — but a sync client is going to upload every one
+  // of them, and that is worth knowing before there are ten thousand.
   const header = looksSynced(dir)
-    ? '# generated/ is kept outside this folder on purpose: it is inside a synced\n' +
-      '# drive, and takes accumulate to tens of gigabytes.\n'
+    ? '# This project is inside a synced drive, so everything under generated/ will\n' +
+      '# be uploaded too. Voice takes are small; stills and video are not. Point\n' +
+      '# generated: at a path outside the drive if that becomes a problem.\n'
     : '';
 
   await writeAtomic(file, header + stringifyYaml(document, { lineWidth: 0 }));
@@ -546,7 +575,7 @@ export type FieldEdit = {
  */
 export async function editAssetField(name: string, edit: FieldEdit): Promise<void> {
   const file = join(projectDir(name), 'project.yaml');
-  if (!SAFE_ASSET.test(edit.file)) throw new ProjectError('Bad asset name');
+  if (!safeAsset(edit.file)) throw new ProjectError('Bad asset name');
 
   const source = await readFile(file, 'utf8').catch(() => {
     throw new ProjectError('Set this project up for asset work first');
@@ -612,6 +641,187 @@ export async function pruneOrphans(name: string): Promise<{ removed: string[] }>
   await writeAtomic(file, doc.toString());
 
   return { removed: [...overview.orphans] };
+}
+
+// ---------------------------------------------------------------------------
+// Hearing it
+// ---------------------------------------------------------------------------
+
+/**
+ * Extensions the editor will hand back, and what to call them.
+ *
+ * An allow-list rather than a lookup with a fallback. This route opens files by
+ * a name that came from a browser, and "anything else, as octet-stream" is how
+ * a folder picker becomes a way to read the author's whole disk one file at a
+ * time.
+ */
+const MEDIA_TYPES: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
+export type MediaRequest = {
+  section?: string;
+  file?: string;
+  /** A take id within the asset's takes folder. Omit for the published file. */
+  take?: string;
+  /** A character id, for their reference clip. Mutually exclusive with the above. */
+  reference?: string;
+};
+
+/**
+ * Where a file the editor is being asked to play actually lives.
+ *
+ * Everything about a scenario's assets so far has been text — a name in a
+ * manifest, a hash on a board, a status pill. None of that answers the only
+ * question that matters about a voice clip, which is what it sounds like. An
+ * author who cannot hear a take cannot choose between two of them, and a
+ * pipeline whose selection step is guesswork is a pipeline that ships the first
+ * reading of every line.
+ *
+ * Resolved from structured parts rather than from a path, and checked to be
+ * under the project after resolving. The editor already browses the whole disk
+ * on purpose, but that is a picker a person drives; this is a URL, and a URL
+ * that dereferences `../..` is a different thing entirely.
+ */
+export async function resolveMedia(
+  name: string,
+  request: MediaRequest,
+): Promise<{ path: string; type: string }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  let target: string;
+  let root: string;
+
+  if (request.reference !== undefined) {
+    if (!safeAsset(request.reference)) throw new ProjectError('Bad character id');
+    const clip = project.voices[request.reference]?.reference;
+    if (!clip) throw new ProjectError(`"${request.reference}" has no reference clip`);
+    target = fromProject(paths.dir, clip);
+    // A reference may be a recording from anywhere on the machine — that is
+    // what "use your own" means — so the project is not the boundary here.
+    root = resolve(target);
+  } else {
+    const section = request.section ?? '';
+    if (!(ASSET_SECTIONS as readonly string[]).includes(section)) {
+      throw new ProjectError('Unknown section');
+    }
+    if (!request.file || !safeAsset(request.file)) throw new ProjectError('Bad asset name');
+
+    if (request.take) {
+      if (!SAFE_TAKE.test(request.take)) throw new ProjectError('Bad take name');
+      root = takesDir(paths, section as AssetSection, request.file);
+      target = join(root, request.take);
+    } else {
+      root = paths.publish;
+      target = join(root, request.file);
+    }
+  }
+
+  const resolved = resolve(target);
+  if (!within(resolve(root), resolved)) throw new ProjectError('Outside the project');
+
+  const type = MEDIA_TYPES[extname(resolved).toLowerCase()];
+  if (!type) throw new ProjectError('Not a media file the editor will serve');
+
+  if (!(await stat(resolved).catch(() => null))?.isFile()) {
+    throw new ProjectError('That file is not there');
+  }
+  return { path: resolved, type };
+}
+
+export type FolderWork = Omit<FolderSort, 'source'> & {
+  /** Published files that followed their name into the new folder. */
+  republished: string[];
+};
+
+/**
+ * Files every asset under a folder named for its media type.
+ *
+ * The scenario is the manifest, so the folder has to go into the name the
+ * scenario declares — anything else would be a layout convention living in the
+ * display, the validator and this editor at once, and the first time the three
+ * disagreed the show would be missing a scene.
+ *
+ * Four things move together, and that is the whole reason this is a button:
+ * the scenario's references, the recipe rows keyed to them, the ledger's
+ * history, and any file already published under the old name. Doing three of
+ * the four by hand leaves a board that says ready over art the show cannot
+ * open.
+ *
+ * Takes need no move at all. Their folder is `generated/<section>/<name>`
+ * either way — `takesDir` drops the section from a name that already carries
+ * it — so a project's entire history of attempts survives being filed.
+ */
+export async function sortAssets(name: string): Promise<FolderWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to sort');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const result = sortIntoFolders(source, parsed.scenario);
+  const { source: sorted, ...report } = result;
+  if (report.moved.length === 0) return { ...report, republished: [] };
+
+  const check = parseScenarioSource(sorted);
+  if (!check.ok) {
+    throw new ProjectError('Filing the assets would have broken the scenario', check.problems);
+  }
+
+  // The published files first. If this is going to fail — a locked file, a
+  // full disk — it should fail before the scenario has been rewritten to point
+  // at names nothing has moved to yet.
+  const republished: string[] = [];
+  for (const move of report.moved) {
+    const from = join(paths.publish, move.from);
+    if (!(await stat(from).catch(() => null))?.isFile()) continue;
+    const to = join(paths.publish, move.to);
+    await mkdir(dirname(to), { recursive: true });
+    await rename(from, to);
+    republished.push(move.to);
+  }
+
+  await writeAtomic(paths.scenario, sorted);
+
+  // The recipes, by key edit rather than by rewriting the file: a row is an
+  // afternoon of prompt tuning and a comment recording why.
+  const projectSource = await readFile(file, 'utf8').catch(() => undefined);
+  if (projectSource !== undefined) {
+    await writeAtomic(file, renameRows(projectSource, report.moved));
+  }
+
+  const { ledger } = await loadLedger(paths.ledger);
+  let touched = false;
+  for (const move of report.moved) {
+    const entry = ledger.assets[move.from];
+    if (!entry) continue;
+    ledger.assets[move.to] = entry;
+    delete ledger.assets[move.from];
+    touched = true;
+  }
+  if (touched) await saveLedger(paths.ledger, ledger);
+
+  return { ...report, republished };
 }
 
 export type ShotWork = Omit<ShotMigration, 'source'> & {
@@ -705,7 +915,7 @@ export async function generate(
   const failed: GenerateFailure[] = [];
 
   for (const asset of request.files) {
-    if (!SAFE_ASSET.test(asset)) {
+    if (!safeAsset(asset)) {
       failed.push({ file: asset, error: 'bad asset name' });
       continue;
     }
@@ -752,7 +962,7 @@ export async function publish(
   const failed: GenerateFailure[] = [];
 
   for (const asset of request.files) {
-    if (!SAFE_ASSET.test(asset)) {
+    if (!safeAsset(asset)) {
       failed.push({ file: asset, error: 'bad asset name' });
       continue;
     }
@@ -876,7 +1086,7 @@ export async function selectTake(
   take: string | null,
 ): Promise<void> {
   const dir = projectDir(name);
-  if (!SAFE_ASSET.test(asset)) throw new ProjectError('Bad asset name');
+  if (!safeAsset(asset)) throw new ProjectError('Bad asset name');
 
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));

@@ -380,11 +380,26 @@ describe('media reaches the projector', () => {
     // The display blocks on this list before reporting ready, so anything
     // missing from it is an asset that streams in live in front of the room.
     assert.deepEqual(body.assets.sort(), [
-      'harbour.jpg',
-      'harbour.mp3',
-      'harbour.mp4',
-      'open-1.mp3',
+      'ambience/harbour.mp3',
+      'images/harbour.jpg',
+      'video/harbour.mp4',
+      'voice/open-1.mp3',
     ]);
+  });
+
+  test('an asset filed in a folder is served from one', async () => {
+    // The last link in the chain. The editor files a name, the publisher writes
+    // to it and the validator checks it — and none of that is worth anything if
+    // the route the projector actually fetches from refuses a path with a
+    // slash in it.
+    const response = await fetch(`${baseUrl}/scenario-assets/media/assets/voice/open-1.mp3`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.text()).trim(), 'not really an mp3');
+
+    // And the boundary still holds: the route serves a scenario's assets
+    // folder and nothing above it.
+    const escaped = await fetch(`${baseUrl}/scenario-assets/media/scenario.yaml`);
+    assert.notEqual(escaped.status, 200);
   });
 
   test('a snapshot carries the line voice and the scene video', async () => {
@@ -396,12 +411,18 @@ describe('media reaches the projector', () => {
       (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 0,
     );
 
-    assert.equal(first.beatInfo.kind === 'dialogue' && first.beatInfo.voice, 'open-1.mp3');
+    // Exactly the name the scenario declares, folder and all. The display
+    // joins this to the asset base and opens it — nothing along the way is
+    // allowed to work out a folder for itself.
+    assert.equal(
+      first.beatInfo.kind === 'dialogue' && first.beatInfo.voice,
+      'voice/open-1.mp3',
+    );
     assert.equal(first.scene?.id, 'harbour');
-    assert.equal(first.scene?.video, 'harbour.mp4');
+    assert.equal(first.scene?.video, 'video/harbour.mp4');
     assert.equal(
       first.scene?.background,
-      'harbour.jpg',
+      'images/harbour.jpg',
       'the still has to travel with the clip — it is the poster frame',
     );
 

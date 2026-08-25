@@ -254,8 +254,25 @@ Each row has:
 
 - **Generate** / **Another take** — makes one clip. Pressing it again adds a take; it never
   replaces one and never steals a selection you have already made.
-- the **takes strip** — click a take to select it.
+- the **takes strip** — a **▶** beside each take, and the take itself to select it.
 - **Publish** — copies the selected take to the filename the scenario declares.
+
+The section header has **Generate N missing**, for when the auditioning is done and a whole
+act needs making. It skips anything that already has a take, reports each clip as it lands,
+and has a **Stop** beside it — it is minutes of GPU time, and a run you cannot get out of is a
+run nobody starts. A line that fails does not stop the rest; the failures are listed at the
+end.
+
+### Listening
+
+Press **▶** on any take. One clip plays at a time, so clicking down a column of takes is how
+you compare them rather than how you hear six readings at once. A published row plays the
+**published file** rather than the selected take — usually the same clip, and the times it is
+not are exactly when it matters, because a selection changed after the last publish is the old
+reading in front of the room.
+
+Each character's reference clip has one too. It is worth a listen before generating ninety
+lines: it decides what every one of them sounds like.
 
 Generating and publishing are separate on purpose. Generate a whole act, listen to it, pick
 the readings you want, then publish. Only publishing puts a file where the show will look.
@@ -283,11 +300,15 @@ error rather than a warning.
 | `C:\ML Models\` | weights. Never in the project, never in the repo. |
 | `%LOCALAPPDATA%\interactive-scenario\voice-env` | the sidecar's Python environment. Rebuildable; delete it freely. |
 | `<project>/voices/*.wav` | reference clips, recorded or your own. Part of the show; travels with it. |
+| `<project>/generated/voice/<clip>/` | every take of that clip. Inside the project, so it copies as a unit. |
+| `<project>/assets/voice/<clip>` | what Publish writes: the file the show opens. |
 | `C:\ML Models\voice\kokoro\` | Kokoro's two files, fetched by `voice:fetch`. |
-| `<generated>/voice/<asset>/` | every take, named for the recipe hash that made it. |
 | `.ledger.json` | which takes exist and which is selected. The machine's file. |
 | `project.yaml` | the `voices:` map and the section's model. Yours. |
-| `<publish>/` | the published clips, under the names the scenario declares. |
+
+Takes are named for the hash of the recipe that made them, and the folder does not repeat the
+section it already sits in — `voice/tran-d5-01.mp3` in the scenario is
+`generated/voice/tran-d5-01.mp3/` on disk, the same place it was before the assets were filed.
 
 A take's filename is the hash of the recipe that produced it. That is how the board knows a
 clip is **stale**: edit a line's text, or a character's reference clip, and every clip made

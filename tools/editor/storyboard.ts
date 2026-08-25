@@ -308,9 +308,26 @@ export type ProposedAsset = {
  * `background:`, so each of them has somewhere to hang. The scene keeps the
  * establishing shot's picture; every other shot in that place brings its own.
  */
-export function shotMediaName(shot: StoryboardShot, extension: string): string {
+export function shotMediaName(
+  shot: StoryboardShot,
+  section: AssetSection,
+  extension: string,
+): string {
   const slug = shotSlug(shot.id);
-  return `${shot.scene ? `${shot.scene}-${slug}` : slug}.${extension}`;
+  return filed(section, `${shot.scene ? `${shot.scene}-${slug}` : slug}.${extension}`);
+}
+
+/**
+ * A name with its media type in front of it: `voice/tran-d5-01.mp3`.
+ *
+ * The folder is part of the name the scenario declares rather than a layout
+ * the display works out for itself, so that reading `scenario.yaml` tells you
+ * where a file is. See `folders.ts` — this is the same rule applied at the one
+ * point in the pipeline that is allowed to invent a filename, which is here,
+ * because what happens next is writing the scenario that references it.
+ */
+export function filed(section: AssetSection, name: string): string {
+  return `${section}/${name}`;
 }
 
 export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
@@ -322,7 +339,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.image) {
       proposed.push({
-        file: shotMediaName(shot, 'jpg'),
+        file: shotMediaName(shot, 'images', 'jpg'),
         section: 'images',
         prompt: shot.image,
         source: { shot: shot.id },
@@ -332,7 +349,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.motion) {
       proposed.push({
-        file: shotMediaName(shot, 'mp4'),
+        file: shotMediaName(shot, 'video', 'mp4'),
         section: 'video',
         prompt: shot.motion,
         source: { shot: shot.id },
@@ -342,7 +359,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.sfx) {
       proposed.push({
-        file: `${shot.scene ? `${shot.scene}-${slug}` : slug}-sfx.mp3`,
+        file: filed('sfx', `${shot.scene ? `${shot.scene}-${slug}` : slug}-sfx.mp3`),
         section: 'sfx',
         prompt: shot.sfx,
         source: { shot: shot.id },
@@ -354,7 +371,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
       const n = (perShotVoiceCount.get(`${line.who}-${slug}`) ?? 0) + 1;
       perShotVoiceCount.set(`${line.who}-${slug}`, n);
       proposed.push({
-        file: `${line.who}-${slug}-${String(n).padStart(2, '0')}.mp3`,
+        file: filed('voice', `${line.who}-${slug}-${String(n).padStart(2, '0')}.mp3`),
         section: 'voice',
         text: line.text,
         voice: line.who,

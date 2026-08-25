@@ -734,11 +734,59 @@ textarea.prompt:focus {
   margin-top: 0.45rem;
 }
 
+/* A section-wide generate in flight: how far it has got, and the way out. */
+.section-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.section-progress {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
+.take-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .take {
   font-family: var(--mono);
   font-size: 0.72rem;
   padding: 0.2rem 0.5rem;
   border-radius: 6px;
+}
+
+/*
+ * The play control. A glyph rather than a word because it sits inline beside a
+ * take id and a filename, and a column of "Play" buttons would push the names
+ * it annotates off the end of every line.
+ */
+.play {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  line-height: 1;
+  border-radius: 50%;
+  color: var(--text-dim);
+}
+
+.play:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.play.playing {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .take.chosen {
