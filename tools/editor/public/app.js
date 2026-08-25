@@ -15,6 +15,7 @@ import {
   setProjects,
   seedFromStoryboard,
   wireVoice,
+  migrateShots,
   pruneOrphans,
 } from './assets.js';
 import { initPicker, openPicker } from './picker.js';
@@ -535,6 +536,44 @@ $('wire-voice').addEventListener('click', () => {
   })();
 });
 
+$('migrate-shots').addEventListener('click', () => {
+  void (async () => {
+    const result = await migrateShots();
+    if (!result) return;
+
+    const done = [];
+    if (result.moved.length > 0) {
+      const n = result.moved.length;
+      done.push(`${n} shot${n === 1 ? '' : 's'} now paint their own picture`);
+    }
+    if (result.folded.length > 0) {
+      done.push(`folded ${result.folded.map((entry) => entry.scene).join(', ')}`);
+    }
+    const placed = result.seeded?.added?.length ?? 0;
+    if (placed > 0) done.push(`${placed} prompt${placed === 1 ? '' : 's'} placed`);
+
+    // Two things the author has to decide and no button should decide for
+    // them: a fold that was refused, and prose that has gone stale. Both are
+    // said out loud rather than buried, because neither will announce itself.
+    const attention = (result.skipped ?? []).map((entry) => `${entry.what}: ${entry.why}`);
+    if (result.stale?.length > 0) {
+      const lines = result.stale.map((entry) => entry.line);
+      attention.push(
+        `${lines.length} comment line${lines.length === 1 ? '' : 's'} still describe ` +
+          `scenes that are now gone (line ${lines.join(', ')})`,
+      );
+    }
+
+    if (done.length === 0 && attention.length === 0) {
+      return setStatus('warn', 'every shot already has its own picture');
+    }
+    setStatus(
+      attention.length > 0 ? 'warn' : 'ok',
+      [...done, ...attention].join(' · '),
+    );
+  })();
+});
+
 $('prune').addEventListener('click', () => {
   void (async () => {
     const result = await pruneOrphans();
@@ -566,6 +605,8 @@ $('story-sync').addEventListener('click', () => {
 
 async function boot() {
   initAssets({
+    // Returns the analysis it kicks off, so an action that rewrites the
+    // scenario can wait for it before saying what it did.
     onScenario: (source, name, path) => {
       state.projectName = name;
       markSelected(name);
@@ -575,8 +616,8 @@ async function boot() {
       state.saved = source;
       $('source').value = source;
       markClean();
-      void analyze();
       showTab('assets');
+      return analyze();
     },
     onStoryboard: (source, path) => {
       state.storySaved = source ?? '';

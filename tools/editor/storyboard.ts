@@ -303,22 +303,26 @@ export type ProposedAsset = {
  * lifted straight from its engine-mapping section — extended to stills and
  * clips, which it names only by shot.
  *
- * Stills are named per *shot*, not per scene, because the storyboard calls for
- * twenty-four distinct images across seven places. See the note the importer
- * returns about that: today's schema hangs `background` off the scene, so most
- * of these have nowhere to attach until a shot can carry its own.
+ * Stills are named per *shot*, not per scene, because a storyboard calls for
+ * far more distinct images than it has places — and a node carries its own
+ * `background:`, so each of them has somewhere to hang. The scene keeps the
+ * establishing shot's picture; every other shot in that place brings its own.
  */
+export function shotMediaName(shot: StoryboardShot, extension: string): string {
+  const slug = shotSlug(shot.id);
+  return `${shot.scene ? `${shot.scene}-${slug}` : slug}.${extension}`;
+}
+
 export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
   const proposed: ProposedAsset[] = [];
   const perShotVoiceCount = new Map<string, number>();
 
   for (const shot of shots) {
     const slug = shotSlug(shot.id);
-    const base = shot.scene ? `${shot.scene}-${slug}` : slug;
 
     if (shot.image) {
       proposed.push({
-        file: `${base}.jpg`,
+        file: shotMediaName(shot, 'jpg'),
         section: 'images',
         prompt: shot.image,
         source: { shot: shot.id },
@@ -328,7 +332,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.motion) {
       proposed.push({
-        file: `${base}.mp4`,
+        file: shotMediaName(shot, 'mp4'),
         section: 'video',
         prompt: shot.motion,
         source: { shot: shot.id },
@@ -338,7 +342,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.sfx) {
       proposed.push({
-        file: `${base}-sfx.mp3`,
+        file: `${shot.scene ? `${shot.scene}-${slug}` : slug}-sfx.mp3`,
         section: 'sfx',
         prompt: shot.sfx,
         source: { shot: shot.id },
@@ -405,9 +409,18 @@ export type SeedResult = {
  * a requirement. Where neither answers, the shot goes unmatched and is
  * reported, rather than being attached to the wrong picture.
  */
-type ShotIndex = { stated: Map<string, StoryboardShot>; bySlug: Map<string, StoryboardShot> };
+export type ShotIndex = {
+  stated: Map<string, StoryboardShot>;
+  bySlug: Map<string, StoryboardShot>;
+};
 
-function shotByNode(shots: StoryboardShot[]): ShotIndex {
+/**
+ * Exported because more than one part of the editor has to answer "which shot
+ * is this node?", and two answers to that question is how a prompt ends up on
+ * a file the player never opens. The asset board, the voice wiring and the
+ * shot migration all resolve it here.
+ */
+export function shotsByNode(shots: StoryboardShot[]): ShotIndex {
   const stated = new Map<string, StoryboardShot>();
   const bySlug = new Map<string, StoryboardShot>();
   for (const shot of shots) {
@@ -417,17 +430,19 @@ function shotByNode(shots: StoryboardShot[]): ShotIndex {
   return { stated, bySlug };
 }
 
-function findShot(index: ShotIndex, nodeId: string): StoryboardShot | undefined {
+export function shotForNode(index: ShotIndex, nodeId: string): StoryboardShot | undefined {
   const stated = index.stated.get(nodeId);
   if (stated) return stated;
 
   const exact = index.bySlug.get(nodeId);
   if (exact) return exact;
 
-  for (const [slug, shot] of index.bySlug) {
+  // Longest first, so `e1a` beats `e1` for a node called `e1a_something`.
+  const slugs = [...index.bySlug.keys()].sort((a, b) => b.length - a.length);
+  for (const slug of slugs) {
     if (!nodeId.startsWith(slug)) continue;
     const next = nodeId.charAt(slug.length);
-    if (next === '' || next === '_' || next === '-') return shot;
+    if (next === '' || next === '_' || next === '-') return index.bySlug.get(slug);
   }
   return undefined;
 }
@@ -472,13 +487,13 @@ function deliveryFor(shot: StoryboardShot, who: string | undefined): string | un
  * them. Both routes end with the two files agreeing; neither guesses.
  */
 export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedResult {
-  const byNode = shotByNode(shots);
+  const byNode = shotsByNode(shots);
   const rows: SeedRow[] = [];
   const used = new Set<string>();
 
   // A scene's still is its establishing shot: the first node that plays there.
-  // Later shots in the same room need their own scene to carry their own
-  // picture, which is a limit of the schema rather than a choice made here.
+  // Later shots in the same room carry their own picture on their own node, and
+  // reach this walk as a node-scoped reference rather than a scene-scoped one.
   //
   // Where the establishing node was never storyboarded, the first node in the
   // scene that *was* is used instead. That is not a guess: a scene has exactly
@@ -495,7 +510,7 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
   }
   const nodeForScene = (scene: string): string | undefined => {
     const candidates = nodesOfScene.get(scene) ?? [];
-    return candidates.find((id) => findShot(byNode, id)) ?? candidates[0];
+    return candidates.find((id) => shotForNode(byNode, id)) ?? candidates[0];
   };
 
   const nodeById = new Map(scenario.nodes.map((node) => [node.id, node]));
@@ -513,7 +528,7 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
     if ('node' in origin) nodeId = origin.node;
     else if ('scene' in origin) nodeId = nodeForScene(origin.scene);
 
-    const shot = nodeId ? findShot(byNode, nodeId) : undefined;
+    const shot = nodeId ? shotForNode(byNode, nodeId) : undefined;
     const row: SeedRow = { file: ref.file, section: ref.section, source: {} };
     if (shot) row.source.shot = shot.id;
 
@@ -572,14 +587,18 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
       unmatched.push({
         shot: shot.id,
         kind: 'image',
-        why: 'no scene in the scenario takes its background from this shot',
+        why:
+          'no node or scene in the scenario takes its background from this shot — ' +
+          'give the shot its own picture to place it',
       });
     }
     if (shot.motion && !claimed.has(`${shot.id}:video`)) {
       unmatched.push({
         shot: shot.id,
         kind: 'video',
-        why: 'no scene in the scenario takes its clip from this shot',
+        why:
+          'no node or scene in the scenario takes its clip from this shot — ' +
+          'give the shot its own picture to place it',
       });
     }
     if (shot.lines.length > 0 && !claimed.has(`${shot.id}:voice`)) {

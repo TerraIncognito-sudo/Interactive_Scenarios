@@ -25,7 +25,7 @@
 import { readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { parseDocument, stringify as stringifyYaml } from 'yaml';
+import { parseDocument, Scalar, stringify as stringifyYaml } from 'yaml';
 import { parseScenarioSource } from '../../src/scenario/load.ts';
 import {
   loadLedger,
@@ -40,8 +40,27 @@ import {
 } from './project.ts';
 import { buildOverview, type Overview } from './sections.ts';
 import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
+import { migrateShotsInto, type ShotMigration } from './shots.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
 import { looksSynced, within, workspace } from './workspace.ts';
+
+/**
+ * A value on its way into `project.yaml`, in the block style a person would
+ * have used.
+ *
+ * An image prompt is several hand-wrapped lines, and YAML's default for one is
+ * a folded scalar — which has to pad every original newline with a blank line
+ * to survive the round trip. It reads back identically and looks nothing like
+ * what was written. A literal block is what the importer already produces and
+ * what the rest of the file uses, and this is the file whose prompts the author
+ * spends weeks tuning.
+ */
+function blockValue(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.includes('\n')) return value;
+  const scalar = new Scalar(value);
+  scalar.type = Scalar.BLOCK_LITERAL;
+  return scalar;
+}
 
 /** Asset keys are filenames, never paths. */
 const SAFE_ASSET = /^[A-Za-z0-9._-]+$/;
@@ -417,10 +436,10 @@ export async function syncFromStoryboard(name: string): Promise<StoryboardSync> 
   const doc = parseDocument(source);
   for (const [assetFile, row] of Object.entries(rows)) {
     for (const [field, value] of Object.entries(row)) {
-      doc.setIn(['assets', assetFile, field], value);
+      doc.setIn(['assets', assetFile, field], blockValue(value));
     }
   }
-  for (const fill of fills) doc.setIn(['assets', fill.file, ...fill.path], fill.value);
+  for (const fill of fills) doc.setIn(['assets', fill.file, ...fill.path], blockValue(fill.value));
   await writeAtomic(file, doc.toString());
 
   return { added, filled, kept: existing.size, unmatched };
@@ -456,7 +475,7 @@ export async function editAssetField(name: string, edit: FieldEdit): Promise<voi
     // `setIn` creates the intermediate maps when a row does not exist yet,
     // which is what happens the first time an author writes a prompt for an
     // asset the scenario references but the project has never seen.
-    doc.setIn(path, edit.value);
+    doc.setIn(path, blockValue(edit.value));
   }
 
   const next = doc.toString();
@@ -508,6 +527,61 @@ export async function pruneOrphans(name: string): Promise<{ removed: string[] }>
   await writeAtomic(file, doc.toString());
 
   return { removed: [...overview.orphans] };
+}
+
+export type ShotWork = Omit<ShotMigration, 'source'> & {
+  /** The seeding run that follows, which is the point of the migration. */
+  seeded?: StoryboardSync;
+};
+
+/**
+ * Gives every storyboarded shot its own still and clip.
+ *
+ * The pipeline's second step, and the one that makes the rest of the board
+ * reachable: until a node can carry its own picture, every shot after the
+ * first in a given place has a prompt with no filename to hang off, and the
+ * board reports it unplaceable. See `shots.ts` for what it will and will not
+ * fold.
+ *
+ * It re-seeds afterwards on purpose. Declaring the filenames and leaving the
+ * prompts unattached would be half the job, and the half that is left is the
+ * half nobody remembers — the author would be looking at a board that still
+ * says the work cannot be placed.
+ *
+ * The new source is validated before it is written. A migration that would not
+ * load is a bug in this editor, and the author's scenario is not where anyone
+ * should find out about it.
+ */
+export async function migrateShots(name: string): Promise<ShotWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to migrate');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const storyboard = project.storyboard
+    ? await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined)
+    : undefined;
+  if (!storyboard) {
+    throw new ProjectError('This project has no storyboard to take its shots from');
+  }
+
+  const result = migrateShotsInto(source, parsed.scenario, parseStoryboard(storyboard).shots);
+  const { source: migrated, ...report } = result;
+  if (report.moved.length === 0 && report.folded.length === 0) return report;
+
+  const check = parseScenarioSource(migrated);
+  if (!check.ok) {
+    throw new ProjectError('Migrating shots would have broken the scenario', check.problems);
+  }
+
+  await writeAtomic(paths.scenario, migrated);
+  return { ...report, seeded: await syncFromStoryboard(name) };
 }
 
 export type VoiceWiring = {

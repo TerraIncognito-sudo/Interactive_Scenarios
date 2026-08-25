@@ -133,11 +133,39 @@ export async function seedFromStoryboard() {
  * exists. Doing it anywhere but here is how the two start disagreeing.
  */
 export async function wireVoice() {
+  return runOnScenario('voice');
+}
+
+/**
+ * Gives every storyboarded shot its own still and clip.
+ *
+ * Like wiring voice this writes to `scenario.yaml`, because a picture nothing
+ * declares is a picture nothing can track. The server re-seeds afterwards, so
+ * the prompts the board could not place land on the names it just declared.
+ */
+export async function migrateShots() {
+  return runOnScenario('shots');
+}
+
+/**
+ * Runs an action that rewrites `scenario.yaml`, and puts the result back in
+ * the editor pane.
+ *
+ * The pane holds its own copy of the source. An action that writes the file
+ * without refreshing it leaves the author looking at the version from before —
+ * and the next Save writes that stale copy back over the change.
+ */
+async function runOnScenario(action) {
   if (!state.name) return null;
-  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/voice`, {
-    method: 'POST',
-  });
+  const result = await api(
+    `/api/projects/${encodeURIComponent(state.name)}/${action}`,
+    { method: 'POST' },
+  );
   state.data = result.project;
+  // Awaited, because refreshing the pane re-analyses the scenario and the
+  // analysis writes the status line. Reporting what the action did before that
+  // settles means the caller's message is the one that gets overwritten.
+  await state.onScenario(state.data.scenarioSource, state.name, state.data.paths.scenario);
   render();
   return result;
 }

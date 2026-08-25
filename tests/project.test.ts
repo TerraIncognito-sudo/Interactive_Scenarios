@@ -24,6 +24,7 @@ import {
 } from '../tools/editor/project.ts';
 import { buildOverview } from '../tools/editor/sections.ts';
 import { wireVoiceInto } from '../tools/editor/wire.ts';
+import { migrateShotsInto } from '../tools/editor/shots.ts';
 import { parseStoryboard, proposeAssets, seedRowsFor } from '../tools/editor/storyboard.ts';
 import { scaffoldFromStoryboard } from '../tools/editor/scaffold.ts';
 
@@ -425,21 +426,219 @@ STYLE. The empty control cell, screens dark.
     assert.ok(files.includes('narr-a1-01.mp3'));
   });
 
-  test('scaffolding reports the stills it cannot place instead of dropping them', () => {
+  test('scaffolding gives a second shot in one place its own picture', () => {
     const twoShotsOneScene = SOURCE.replace('`control_cell`', '`halifax`');
     const { scenarioYaml, report } = scaffoldFromStoryboard(twoShotsOneScene, {
       id: 'demo',
       title: 'Demo',
     });
 
-    // Both shots are in `halifax`, but a scene carries one background. The
-    // second shot's still has nowhere to go, and saying so is the whole point.
-    assert.equal(report.unplaceable.length > 0, true);
-    assert.match(report.unplaceable[0]!.why, /one per scene/);
-
-    // What it does emit has to be a scenario the game server would accept.
     const parsed = parseScenarioSource(scenarioYaml);
     assert.equal(parsed.ok, true, JSON.stringify(parsed));
+    if (!parsed.ok) return;
+
+    // Both shots play in `halifax`. The first is the establishing shot and its
+    // still stays on the scene; the second carries its own on its node. A
+    // second scene for the second camera setup would restart the room's
+    // ambience halfway through the act.
+    assert.equal(Object.keys(parsed.scenario.scenes).length, 1);
+    const [first, second] = parsed.scenario.nodes;
+    assert.equal(first!.background, undefined);
+    assert.equal(parsed.scenario.scenes.halifax!.background, 'halifax-a1.jpg');
+    assert.equal(second!.background, 'halifax-d5.jpg');
+
+    // And nothing the storyboard wrote is left with nowhere to go.
+    const stills = report.unplaceable.filter(
+      (entry) => entry.section === 'images' || entry.section === 'video',
+    );
+    assert.deepEqual(stills, []);
+  });
+});
+
+describe('giving every shot its own picture', () => {
+  // Three beats, two of them in one room. `halifax_flank` is the shape an
+  // author reaches for when only a scene can hold a background: a second
+  // camera setup wearing a scene's clothes.
+  const STORYBOARD = [
+    '## ACT A',
+    '',
+    '### Shot A.1 — The jetty',
+    '**Hold:** 8 s · **Scene:** \`halifax\`',
+    '',
+    '**IMAGE**',
+    '\`\`\`',
+    'STYLE. The jetty before dawn.',
+    '\`\`\`',
+    '**MOTION** Slow push toward the bow.',
+    '',
+    '### Shot A.2 — The absence',
+    '**Hold:** 7 s · **Scene:** \`halifax\`',
+    '',
+    '**IMAGE**',
+    '\`\`\`',
+    'STYLE. No gangway, no brow, nothing to walk up.',
+    '\`\`\`',
+    '',
+    '### Shot A.3 — Departure',
+    '**Hold:** 6 s · **Scene:** \`halifax\`',
+    '',
+    '**IMAGE**',
+    '\`\`\`',
+    'STYLE. The hull pulling away into open water.',
+    '\`\`\`',
+    '**MOTION** The wake widens.',
+    '',
+  ].join('\n');
+
+  function source(flankAmbience = 'harbour.mp3'): string {
+    return [
+      'id: demo',
+      'title: Demo',
+      'start: a1_jetty',
+      'characters:',
+      '  narr: { name: Narr }',
+      'scenes:',
+      '  # The sibling below exists purely to carry a second camera setup.',
+      '  halifax: { background: a1.jpg, video: a1.mp4, ambience: harbour.mp3 }',
+      `  halifax_flank: { background: a2-flank.jpg, ambience: ${flankAmbience} }`,
+      'nodes:',
+      '  - id: a1_jetty',
+      '    type: dialogue',
+      '    scene: halifax',
+      '    lines:',
+      '      - who: narr',
+      '        text: >-',
+      '          A hand-wrapped folded scalar',
+      '          that must survive untouched.',
+      '        hold: 8',
+      '    next: a2_absence',
+      '',
+      '  # Why this beat is seven seconds and not five.',
+      '  - id: a2_absence',
+      '    type: dialogue',
+      '    scene: halifax_flank',
+      '    lines:',
+      '      - { who: narr, text: There is no brow., hold: 7 }',
+      '    next: a3_departure',
+      '',
+      '  - id: a3_departure',
+      '    type: dialogue',
+      '    scene: halifax',
+      '    lines:',
+      '      - who: narr',
+      '        text: No one waves it off.',
+      '        hold: 6',
+      '    next: fin',
+      '',
+      '  - id: fin',
+      '    type: end',
+      '    text: Done',
+      '',
+    ].join('\n');
+  }
+
+  function migrate(text: string) {
+    const parsed = parseScenarioSource(text);
+    assert.equal(parsed.ok, true, JSON.stringify(parsed));
+    if (!parsed.ok) throw new Error('unreachable');
+    return migrateShotsInto(text, parsed.scenario, parseStoryboard(STORYBOARD).shots);
+  }
+
+  test('the establishing shot keeps the scene, later shots get their own', () => {
+    const result = migrate(source());
+    const parsed = parseScenarioSource(result.source);
+    assert.equal(parsed.ok, true, JSON.stringify(parsed));
+    if (!parsed.ok) return;
+
+    const byId = new Map(parsed.scenario.nodes.map((node) => [node.id, node]));
+
+    // A.1 is what `halifax`'s background has always depicted, so it stays put.
+    assert.equal(byId.get('a1_jetty')!.background, undefined);
+    assert.equal(parsed.scenario.scenes.halifax!.background, 'a1.jpg');
+
+    // A.3 has nowhere to hang until now.
+    assert.equal(byId.get('a3_departure')!.background, 'halifax-a3.jpg');
+    assert.equal(byId.get('a3_departure')!.video, 'halifax-a3.mp4');
+  });
+
+  test('a stand-in scene folds back into the place the storyboard names', () => {
+    const result = migrate(source());
+    assert.deepEqual(
+      result.folded.map((entry) => [entry.scene, entry.into, entry.nodes]),
+      [['halifax_flank', 'halifax', ['a2_absence']]],
+    );
+
+    const parsed = parseScenarioSource(result.source);
+    if (!parsed.ok) return assert.fail(JSON.stringify(parsed));
+    const node = parsed.scenario.nodes.find((candidate) => candidate.id === 'a2_absence')!;
+    assert.equal(node.scene, 'halifax');
+    // The filename it already declared, unchanged. Renaming it would orphan
+    // every prompt the author has written against it.
+    assert.equal(node.background, 'a2-flank.jpg');
+    // A.2 describes no motion, so nothing invents a clip for it.
+    assert.equal(node.video, undefined);
+    assert.equal('halifax_flank' in parsed.scenario.scenes, false);
+  });
+
+  test('folding is refused when it would change what the audience hears', () => {
+    const result = migrate(source('engine-room.mp3'));
+    assert.deepEqual(result.folded, []);
+    assert.equal(result.skipped.length, 1);
+    assert.match(result.skipped[0]!.why, /different music or ambience/);
+
+    // And the scene it would not fold is still there, still referenced.
+    const parsed = parseScenarioSource(result.source);
+    if (!parsed.ok) return assert.fail(JSON.stringify(parsed));
+    assert.equal('halifax_flank' in parsed.scenario.scenes, true);
+  });
+
+  test('running it a second time changes nothing', () => {
+    const once = migrate(source());
+    const twice = migrate(once.source);
+    assert.equal(twice.source, once.source);
+    assert.deepEqual(twice.moved, []);
+    assert.deepEqual(twice.folded, []);
+  });
+
+  test('comments and hand-wrapped scalars survive the edit', () => {
+    const result = migrate(source());
+    assert.match(result.source, /# Why this beat is seven seconds and not five\./);
+    assert.match(result.source, /text: >-\n          A hand-wrapped folded scalar\n/);
+    // The flow-mapped line stays a flow map rather than being reserialised.
+    assert.match(result.source, /- \{ who: narr, text: There is no brow\., hold: 7 \}/);
+  });
+
+  test('a comment describing the scenes it removed is reported, not rewritten', () => {
+    const result = migrate(source());
+    assert.equal(result.stale.length, 1);
+    assert.match(result.stale[0]!.text, /second camera setup/);
+    // Reported and left alone: the prose in a scenario belongs to its author.
+    assert.match(result.source, /purely to carry a second camera setup/);
+  });
+
+  test('every storyboard prompt has somewhere to go afterwards', () => {
+    const shots = parseStoryboard(STORYBOARD).shots;
+    const before = parseScenarioSource(source());
+    if (!before.ok) return assert.fail(JSON.stringify(before));
+
+    const stillsWithNoHome = (scenario: typeof before.scenario) =>
+      seedRowsFor(scenario, shots).unmatched.filter(
+        (entry) => entry.kind === 'image' || entry.kind === 'video',
+      );
+
+    // A.3's still and clip have nowhere to hang — `halifax` already carries
+    // A.1's picture — which is the whole reason this migration exists.
+    assert.deepEqual(
+      stillsWithNoHome(before.scenario).map((entry) => [entry.shot, entry.kind]),
+      [
+        ['A.3', 'image'],
+        ['A.3', 'video'],
+      ],
+    );
+
+    const after = parseScenarioSource(migrate(source()).source);
+    if (!after.ok) return assert.fail(JSON.stringify(after));
+    assert.deepEqual(stillsWithNoHome(after.scenario), []);
   });
 });
 

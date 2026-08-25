@@ -25,6 +25,7 @@ import {
   editAssetField,
   initProject,
   listProjects,
+  migrateShots,
   openProject,
   saveProjectSource,
   saveScenarioSource,
@@ -227,6 +228,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'prune' && request.method === 'POST') {
         const result = await pruneOrphans(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'shots' && request.method === 'POST') {
+        const result = await migrateShots(name);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 

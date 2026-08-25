@@ -298,6 +298,8 @@ editor does for you from three places:
 - the **scenario tab**, editing YAML directly
 - **Declare voice clips**, which gives every spoken line a `voice:` file and the `hold:` a
   voiced line requires — a scenario with ninety lines is not one anybody types out by hand
+- **Give each shot its own picture**, which hangs a `background:` and `video:` on the node
+  that plays each storyboard shot (see below)
 - the **canvas**, by dropping a new layer box into a frame (see below)
 - a section's **add row**, which writes the field and then opens the new row
 
@@ -319,6 +321,43 @@ prose, so edits are computed from the parsed document's source offsets and appli
 Insertions only; nothing else on the page moves. A block map takes a new line, a flow map
 (`{ who: narr, text: … }`) takes a comma before its brace, and both spellings appear in real
 scenarios so both are handled rather than normalised into one.
+
+### Give each shot its own picture
+
+A storyboard has far more shots than places. `transit` is three shots of the same ocean;
+`control_cell` is seven beats in one room. A scene carries one `background:`, so historically
+only the first shot in each place had anywhere to put its still and the rest were reported as
+**unplaceable** — real work, written, with no filename to hang off.
+
+Authors worked around it the only way the schema allowed: by giving a second camera setup its
+own scene. `halifax_flank`, `control_cell_checks`. That costs more than duplication, because
+`music:` and `ambience:` hang off the scene and are re-triggered when the scene id changes — a
+"scene" that is really a second angle restarts the room's sound halfway through a beat.
+
+Now that a node can carry its own still and clip, this button does both halves at once:
+
+- every storyboarded shot that is not its scene's **establishing shot** — the first beat played
+  there, which is what the scene's still has always depicted — gets a `background:` and
+  `video:` of its own
+- a **stand-in scene**, one whose every node the storyboard places somewhere else, is folded
+  back into that place and its filenames move onto the node unchanged
+
+Then it re-seeds, so the prompts that had nowhere to go land on the names it just declared.
+Declaring the filenames and leaving the prompts unattached would be the half nobody remembers.
+
+Folding is deliberately conservative. A scene is folded only when the storyboard is unanimous
+about where its nodes belong, the destination exists, and the two agree on `music:` and
+`ambience:` — folding a scene whose sound differs would change what the audience hears, which
+is not a migration but a rewrite. What it refuses is reported with the reason.
+
+Filenames it invents follow the importer's own convention, `{scene}-{shot}.jpg`, and a node
+that already states its own media is never rewritten. It is safe on a half-migrated project,
+which is the normal case.
+
+One thing it reports rather than fixes: **comments left describing scenes that are now gone.**
+The prose in a scenario is the author's — several comments in a real one record why a beat is
+the length it is — and a machine that edits prose to keep it true will eventually edit prose
+that was already true. It names the lines and stops there.
 
 They are also idempotent. Pressing **Declare voice clips** twice does nothing the second time,
 and numbering continues from what the scenario already uses rather than restarting at `01` —

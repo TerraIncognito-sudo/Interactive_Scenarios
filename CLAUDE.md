@@ -126,9 +126,23 @@ nothing else — matched by speaker, since one note covers every line split out 
 **Anything the pipeline needs done to a project, the editor does.** If a scenario has to be
 hand-edited or a script run once to get an asset onto the board, the ecosystem has a hole in it
 and the two halves will drift. Declaring `voice:` on every line is `wireVoice` in
-`tools/editor/wire.ts`; removing a recipe the scenario stopped referencing is `pruneOrphans`.
-Both are buttons, both are idempotent, and both edit by source offset rather than by
+`tools/editor/wire.ts`; giving each storyboard shot its own `background:`/`video:` — and
+folding away the stand-in scenes that existed only to carry one — is `migrateShotsInto` in
+`tools/editor/shots.ts`; removing a recipe the scenario stopped referencing is `pruneOrphans`.
+All are buttons, all are idempotent, and all edit by source offset rather than by
 re-serialising, so the author's comments and hand-wrapped folded scalars survive.
+`tools/editor/yaml-edit.ts` is the one home for that technique; a second copy of it would
+eventually disagree with the first about where a key goes.
+
+What an action must *not* do is edit the author's prose. A migration that removes a scene
+leaves any comment describing it factually wrong, and the temptation is to fix the sentence —
+but a machine that rewrites prose to keep it true will eventually rewrite prose that was
+already true. `migrateShotsInto` reports the line numbers and stops.
+
+An action that rewrites `scenario.yaml` must also push the new source back into the editor
+pane and wait for the re-analysis before reporting. The pane holds its own copy: refresh it
+late and the analysis overwrites the action's status line; do not refresh it at all and the
+next Save quietly reverts everything the action just did.
 
 **The machine never rewrites `project.yaml` wholesale.** It is the author's file, full of
 hand-tuned prompts and comments recording why. Field edits go through YAML's document API

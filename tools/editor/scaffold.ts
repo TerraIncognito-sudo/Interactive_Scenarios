@@ -57,12 +57,14 @@ export function scaffoldFromStoryboard(
 
   // --- scenes -------------------------------------------------------------
   //
-  // The schema hangs `background` off the scene, and a storyboard has many more
-  // shots than places. The first shot in a scene supplies that scene's still;
-  // every later shot's still is reported as unplaceable rather than silently
-  // dropped, because those prompts represent real work the author intended.
+  // A scene is a place and a node is a shot, so a storyboard's many shots in
+  // one room do not need many rooms. The first shot in a scene supplies that
+  // scene's still — its establishing picture — and every later shot in the same
+  // place carries its own on its node, below.
   const scenes: Record<string, Record<string, string>> = {};
   const sceneClaimed = new Set<string>();
+  /** Shots whose picture the scene took, and which therefore need no override. */
+  const establishing = new Set<string>();
 
   for (const shot of shots) {
     if (!shot.scene) continue;
@@ -77,6 +79,7 @@ export function scaffoldFromStoryboard(
       if (still) scenes[shot.scene]!.background = still.file;
       if (clip) scenes[shot.scene]!.video = clip.file;
       sceneClaimed.add(shot.scene);
+      establishing.add(shot.id);
     }
   }
 
@@ -87,6 +90,24 @@ export function scaffoldFromStoryboard(
 
   // --- nodes --------------------------------------------------------------
   const nodes: Record<string, unknown>[] = [];
+
+  /**
+   * A shot's own still and clip, for every shot but its scene's establishing
+   * one. Both are optional and independent: a beat that adds motion over the
+   * room's picture takes the clip alone, which is a real thing to want and the
+   * reason these are not one field.
+   */
+  function ownMedia(shot: StoryboardShot): Record<string, string> {
+    if (establishing.has(shot.id)) return {};
+    const media: Record<string, string> = {};
+    for (const asset of proposed) {
+      if (asset.source.shot !== shot.id) continue;
+      if (asset.section === 'images') media.background = asset.file;
+      if (asset.section === 'video') media.video = asset.file;
+    }
+    for (const file of Object.values(media)) placed.add(file);
+    return media;
+  }
 
   shots.forEach((shot, index) => {
     const next = shots[index + 1];
@@ -121,6 +142,7 @@ export function scaffoldFromStoryboard(
         id: nodeId(shot),
         type: 'pause',
         ...(shot.scene ? { scene: shot.scene } : {}),
+        ...ownMedia(shot),
         duration: shot.hold ?? 5,
         next: next ? nodeId(next) : 'debrief',
       });
@@ -131,6 +153,7 @@ export function scaffoldFromStoryboard(
       id: nodeId(shot),
       type: 'dialogue',
       ...(shot.scene ? { scene: shot.scene } : {}),
+      ...ownMedia(shot),
       lines,
       next: next ? nodeId(next) : 'debrief',
     });
@@ -143,11 +166,7 @@ export function scaffoldFromStoryboard(
     unplaceable.push({
       file: asset.file,
       section: asset.section,
-      why:
-        asset.section === 'images' || asset.section === 'video'
-          ? `scene "${asset.scene ?? '?'}" already has a ${asset.section === 'images' ? 'background' : 'video'}; ` +
-            `the schema allows one per scene, not one per shot`
-          : 'nothing in the generated scenario references it',
+      why: 'nothing in the generated scenario references it',
     });
   }
 
