@@ -293,6 +293,43 @@ export function activeScene(scenario: Scenario, state: RunState): string | undef
   return undefined;
 }
 
+export type SceneMedia = {
+  id: string;
+  background?: string;
+  video?: string;
+  music?: string;
+  ambience?: string;
+};
+
+/**
+ * What the projector should actually be showing.
+ *
+ * The scene carries the place — its music and ambience persist across every
+ * node played there. The still and the clip are the *shot*, so a node may
+ * override them for its own duration, and a node that does not override falls
+ * back to the scene's.
+ *
+ * Deliberately keyed off the current node rather than the history walk that
+ * finds the scene: an override belongs to the node that declared it and ends
+ * when that node does. Inheriting it forward would make the picture depend on
+ * which path the audience voted the story down.
+ */
+export function sceneMediaOf(scenario: Scenario, state: RunState): SceneMedia | undefined {
+  const id = activeScene(scenario, state);
+  if (!id) return undefined;
+
+  const scene = scenario.scenes[id];
+  const node = scenario.nodes.find((n) => n.id === state.nodeId);
+
+  return {
+    id,
+    background: node?.background ?? scene?.background,
+    video: node?.video ?? scene?.video,
+    music: scene?.music,
+    ambience: scene?.ambience,
+  };
+}
+
 /** Convenience for tests and the journal: an empty tally for the current poll. */
 export function emptyCounts(scenario: Scenario, state: RunState): Counts {
   const node = nodeById(scenario, state.nodeId);

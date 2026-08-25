@@ -69,7 +69,10 @@ let lastRenderedBeat = -1;
  * several beats past it during the dropout.
  */
 let renderedLocally = false;
-let currentSceneId: string | undefined;
+/** The scene last painted, so a beat that names none keeps the current place. */
+let lastSceneId: string | undefined;
+/** What is on the projector right now, as a media key rather than a scene id. */
+let paintedKey: string | undefined;
 let typeTimer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 let resultTimer: ReturnType<typeof setTimeout> | undefined;
@@ -190,15 +193,27 @@ function announceReady(): void {
 // Rendering
 // ---------------------------------------------------------------------------
 
-function applyScene(sceneId: string | undefined): void {
-  if (sceneId === currentSceneId) return;
-  currentSceneId = sceneId;
-
+/**
+ * Paints the shot: the scene's still and clip, or the node's own where it
+ * declares them.
+ *
+ * Keyed on the resolved media rather than the scene id, because two nodes in
+ * one place are now two different pictures — comparing scene ids alone would
+ * paint the first shot and then never repaint.
+ */
+function applyScene(sceneId: string | undefined, nodeId?: string): void {
   const definition = sceneId ? scenario?.scenes[sceneId] : undefined;
-  scene.style.backgroundImage = definition?.background
-    ? `url("${assetBase}${definition.background}")`
-    : '';
-  applySceneVideo(definition?.video);
+  const node = nodeId ? scenario?.nodes.find((n) => n.id === nodeId) : undefined;
+  const background = node?.background ?? definition?.background;
+  const video = node?.video ?? definition?.video;
+
+  lastSceneId = sceneId;
+  const key = `${sceneId ?? ''}|${background ?? ''}|${video ?? ''}`;
+  if (key === paintedKey) return;
+  paintedKey = key;
+
+  scene.style.backgroundImage = background ? `url("${assetBase}${background}")` : '';
+  applySceneVideo(video);
 }
 
 /**
@@ -422,20 +437,20 @@ function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
       show('lobby');
       return;
     case 'dialogue':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       renderDialogue(beat);
       return;
     case 'pause':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       show('pause');
       el('pause-text').textContent = beat.text ?? '';
       return;
     case 'poll':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       renderPoll(beat, snapshot?.tally);
       return;
     case 'end':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       show('end');
       el('end-text').textContent = beat.text ?? 'The end.';
       return;

@@ -92,6 +92,24 @@ nodes:
 Both are prefetched before the display reports ready, so nothing streams in live
 in front of the room.
 
+A **scene is a place**, and a place gets several shots. Any node may carry its own
+`background:` and `video:`, overriding the scene's for as long as it plays:
+
+```yaml
+nodes:
+  - id: a2_absence
+    type: dialogue
+    background: a2-flank.jpg   # this shot only
+    video: a2-flank.mp4
+    lines:
+      - text: Except there is no brow. No gangway.
+        hold: 5
+```
+
+The scene's `music:` and `ambience:` keep playing throughout — they belong to the
+place, not the shot — and the next node without an override falls back to the
+scene's still.
+
 **Give every voiced line a `hold`.** Nothing on the server opens the audio file, so
 the beat still ends when `hold` — or failing that, the reading-speed estimate — says
 it does. Get it wrong and the narrator is cut off, or the room watches a still frame

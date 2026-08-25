@@ -534,6 +534,9 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
       const note = shot ? deliveryFor(shot, spoken.who) : undefined;
       if (note) row.prompt = note;
     } else if (shot) {
+      // A node's own still or clip belongs to that node, not merely to the
+      // place — record it so the board can click through to the right beat.
+      if ('node' in origin) row.source.node = origin.node;
       if (ref.section === 'images' && shot.image) row.prompt = shot.image;
       else if (ref.section === 'video' && shot.motion) row.prompt = shot.motion;
       else if (ref.section === 'sfx' && shot.sfx) row.prompt = shot.sfx;

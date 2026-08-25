@@ -12,7 +12,7 @@ import {
   initialState,
   openPoll,
   reduce,
-  activeScene,
+  sceneMediaOf,
   type Beat,
   type RunState,
 } from '../engine/engine.ts';
@@ -194,8 +194,9 @@ export class Room {
 
   snapshot(): Snapshot {
     const beat = beatOf(this.scenario, this.state);
-    const sceneId = activeScene(this.scenario, this.state);
-    const scene = sceneId ? this.scenario.scenes[sceneId] : undefined;
+    // Resolved rather than read straight off the scene: the node playing right
+    // now may carry its own still and clip.
+    const scene = sceneMediaOf(this.scenario, this.state);
 
     return {
       type: 'snapshot',
@@ -208,15 +209,7 @@ export class Room {
         description: this.scenario.description,
       },
       beatInfo: this.describeBeat(beat),
-      scene: sceneId
-        ? {
-            id: sceneId,
-            background: scene?.background,
-            video: scene?.video,
-            music: scene?.music,
-            ambience: scene?.ambience,
-          }
-        : undefined,
+      scene,
       tally: this.box
         ? { counts: this.box.counts(), voters: this.box.voterCount }
         : undefined,

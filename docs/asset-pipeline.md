@@ -519,16 +519,25 @@ Projects therefore default to `~/scenario-projects`, deliberately outside the On
 this repo sits in; the editor prints a warning if `PROJECTS_DIR` names a cloud-synced folder,
 because a takes tree is the kind of thing a sync client should never discover.
 
-**Open — and now urgent: a shot cannot carry its own still.** `background` and `video` hang off
-the *scene*, and a storyboard has far more shots than places. Importing Arctic Sentinel found
-29 shots across 6 scenes: 71 assets could be placed and **41 could not**, because the schema
-allows one background and one clip per scene. That is most of the visual work, and the board
-cannot show what it cannot represent.
+**Settled: a shot carries its own still.** `background:` and `video:` are optional on any
+node, overriding the scene's for as long as that node plays. A scene is a *place* — its music
+and ambience persist across every node played there — and a place gets many camera setups; a
+storyboard has far more shots than locations. Without this, a second shot in one room needed a
+second scene, which made "scene" stop meaning "place" and re-triggered the scene's audio on
+every beat.
 
-The fix is small — an optional `background:` and `video:` on the dialogue node, overriding the
-scene's — and it touches `schema.ts`, `assetReferencesOf`, `room.ts` where the scene media is
-resolved, and the display. Alternatives are worse: one scene per shot makes "scene" stop meaning
-"place" and would re-trigger music on every beat once music playback exists.
+The override belongs to the node that declared it and ends when that node does. A later node
+with no override falls back to the scene's still, which is what keeps the scene the default
+rather than merely the first shot. Inheriting it forward would make the picture depend on which
+way the audience voted.
+
+The fields are independent, so a node may take the clip and leave the still — motion over the
+scene's picture is a real thing to want. It is also how one shot's still ends up under another
+shot's clip, which only becomes visible on a projector, so the checker warns when a node
+overrides one and inherits the other.
+
+For the importer this is the whole ballgame: a node-level still maps straight to the shot that
+node came from, instead of every shot in a place competing for one scene-level slot.
 
 **Also open:**
 

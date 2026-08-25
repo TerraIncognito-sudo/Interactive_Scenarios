@@ -97,6 +97,13 @@ room on the server. Anything scheduled goes through the guard.
 **Room codes exclude `O/0`, `I/1`, `S/5`, `Z`.** They are read off a projector from the back
 of a room.
 
+**A scene is a place; a node is a shot.** `music:` and `ambience:` hang off the scene and
+persist across every node played there. `background:` and `video:` may be overridden per node,
+for that node only — `sceneMediaOf` in the engine is the one resolver, used by the server
+snapshot and the display alike. An override that leaked forward would make the picture depend
+on the path the audience voted down, and one scene per shot would re-trigger the scene's audio
+on every beat.
+
 **An asset's production section comes from the schema field that referenced it**, never from
 its extension. A `.mp3` in `voice:` and a `.mp3` in `music:` are different work made by
 different models. `assetReferencesOf` is the single walk both `assetsOf` and the editor's

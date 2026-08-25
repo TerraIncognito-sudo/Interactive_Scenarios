@@ -67,6 +67,21 @@ const BaseNode = {
   id: NodeIdSchema,
   /** Switching scene re-renders background and crossfades music. */
   scene: z.string().min(1).optional(),
+  /**
+   * This node's own still and clip, overriding the scene's for as long as it
+   * plays.
+   *
+   * A scene is a *place*, and a place gets several shots: a storyboard has far
+   * more camera setups than locations. Without this, a second shot in the same
+   * room needs a second scene, which makes "scene" stop meaning "place" and
+   * re-triggers the scene's music and ambience on every beat.
+   *
+   * The override lasts exactly as long as the node. A later node with no
+   * override falls back to the scene's still, which is what makes the scene
+   * the default rather than merely the first shot.
+   */
+  background: z.string().min(1).optional(),
+  video: z.string().min(1).optional(),
 };
 
 export const DialogueNodeSchema = z.strictObject({

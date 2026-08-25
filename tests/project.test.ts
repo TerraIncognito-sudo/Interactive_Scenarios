@@ -24,7 +24,7 @@ import {
 } from '../tools/editor/project.ts';
 import { buildOverview } from '../tools/editor/sections.ts';
 import { wireVoiceInto } from '../tools/editor/wire.ts';
-import { parseStoryboard, proposeAssets } from '../tools/editor/storyboard.ts';
+import { parseStoryboard, proposeAssets, seedRowsFor } from '../tools/editor/storyboard.ts';
 import { scaffoldFromStoryboard } from '../tools/editor/scaffold.ts';
 
 function scenario(overrides: Record<string, unknown> = {}) {
@@ -1180,5 +1180,65 @@ describe('the editor cannot reach the live server', () => {
     // paths under the chosen workspace and refuses anything outside it.
     assert.doesNotMatch(source, /\bwriteFile\b/);
     assert.doesNotMatch(source, /\brename\b/);
+  });
+});
+
+describe('a shot that carries its own still', () => {
+  test('takes its prompt from its own shot, not the establishing one', () => {
+    // The case the schema change exists for: two shots in one place. Before a
+    // node could carry its own still, the second shot had nowhere to attach and
+    // was reported unmatched — most of a storyboard's visual work.
+    const board = [
+      '### Shot A.1 — The jetty',
+      '**Hold:** 8 s · **Scene:** `halifax`',
+      '',
+      '**IMAGE**',
+      '```',
+      'wide establishing shot of the pier',
+      '```',
+      '',
+      '### Shot A.2 — The absence',
+      '**Hold:** 7 s · **Scene:** `halifax`',
+      '',
+      '**IMAGE**',
+      '```',
+      'tight along the hull, no gangway',
+      '```',
+      '**MOTION** the amber light pulses once per 2 s',
+      '',
+    ].join('\n');
+
+    const scenario = parseScenarioSource(
+      [
+        'id: x',
+        'title: X',
+        'start: a1_jetty',
+        'scenes: { halifax: { background: a1-jetty.jpg } }',
+        'nodes:',
+        '  - id: a1_jetty',
+        '    type: dialogue',
+        '    scene: halifax',
+        '    lines: [{ text: One., hold: 3 }]',
+        '    next: a2_absence',
+        '  - id: a2_absence',
+        '    type: dialogue',
+        '    background: a2-flank.jpg',
+        '    video: a2-flank.mp4',
+        '    lines: [{ text: Two., hold: 3 }]',
+        '    next: z',
+        '  - { id: z, type: end }',
+        '',
+      ].join('\n'),
+    );
+    assert.ok(scenario.ok, scenario.ok ? '' : scenario.message);
+
+    const { rows, unmatched } = seedRowsFor(scenario.scenario, parseStoryboard(board).shots);
+    const row = (file: string) => rows.find((r) => r.file === file);
+
+    assert.equal(row('a1-jetty.jpg')?.prompt, 'wide establishing shot of the pier');
+    assert.equal(row('a2-flank.jpg')?.prompt, 'tight along the hull, no gangway');
+    assert.equal(row('a2-flank.mp4')?.prompt, 'the amber light pulses once per 2 s');
+    assert.equal(row('a2-flank.jpg')?.source.node, 'a2_absence');
+    assert.deepEqual(unmatched, []);
   });
 });

@@ -176,10 +176,12 @@ function describeOrigin(origin) {
   switch (origin.kind) {
     case 'sprite':
       return `portrait of ${origin.character}`;
+    // Both of these come in two flavours now: the scene's default picture, and
+    // one node's own shot overriding it.
     case 'background':
-      return `background of ${origin.scene}`;
+      return origin.node ? `still for ${origin.node}` : `background of ${origin.scene}`;
     case 'video':
-      return `motion in ${origin.scene}`;
+      return origin.node ? `motion on ${origin.node}` : `motion in ${origin.scene}`;
     case 'music':
       return `music in ${origin.scene}`;
     case 'ambience':
