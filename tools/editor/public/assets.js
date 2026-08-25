@@ -71,7 +71,7 @@ export async function openProject(name) {
     // The project owns its scenario, so opening one takes over the source pane
     // rather than leaving the author editing a different file than the board
     // they are looking at.
-    state.onScenario(data.scenarioSource, name);
+    state.onScenario(data.scenarioSource, name, data.paths.scenario);
     state.onStoryboard(data.storyboardSource, data.paths.storyboard);
     render();
   } catch (err) {

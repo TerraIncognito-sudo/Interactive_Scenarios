@@ -1157,3 +1157,28 @@ describe('wiring voice onto a scenario', () => {
     assert.equal(wire(orphaned).wired[0]!.file, 'narr-p1-defend-01.mp3');
   });
 });
+
+describe('the editor cannot reach the live server', () => {
+  /**
+   * The editor used to serve `/api/scenarios`, including a PUT that wrote
+   * straight into the repo's `scenarios/` folder — the one the game server
+   * reads, possibly mid-show. Authoring and running are weeks apart and must
+   * not share a filesystem path.
+   *
+   * Read as a file rather than started as a server, because the point is that
+   * the capability is absent from the source, not merely unreachable today.
+   */
+  const source = readFileSync(join(import.meta.dirname, '..', 'tools', 'editor', 'server.ts'), 'utf8');
+
+  test('serves no route into the scenarios folder', () => {
+    assert.doesNotMatch(source, /['"`]\/api\/scenarios/);
+    assert.doesNotMatch(source, /SCENARIOS_DIR/);
+  });
+
+  test('never writes a file outside the workspace', () => {
+    // Every write the editor performs goes through projects.ts, which resolves
+    // paths under the chosen workspace and refuses anything outside it.
+    assert.doesNotMatch(source, /\bwriteFile\b/);
+    assert.doesNotMatch(source, /\brename\b/);
+  });
+});

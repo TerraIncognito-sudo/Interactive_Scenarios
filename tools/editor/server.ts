@@ -1,18 +1,23 @@
 /**
  * The scenario editor's local server.
  *
- * Deliberately not part of the game server. Authoring happens at a desk, days
- * before a show; the game server runs in front of an audience. Keeping them
- * separate means this tool can write files, reload freely and change shape
- * without any of that being reachable from the public internet.
+ * Deliberately not part of the game server, and deliberately unable to reach
+ * it. Authoring happens at a desk over weeks; the game server runs in front of
+ * an audience. This process writes only inside the author's chosen workspace —
+ * it cannot read or write `scenarios/`, and there is no route that would let
+ * it. Deploying is a person copying a finished folder across, on purpose,
+ * when they mean to.
  *
- * It binds to loopback only, and it is the one process in this project that
- * writes to `scenarios/`. Both of those are deliberate.
+ * That is a hard boundary rather than a convention: an editor that can write
+ * into the folder a live show is being served from will eventually do it by
+ * accident, and the failure lands in front of a room.
+ *
+ * It binds to loopback only. It writes files and has no authentication.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile, writeFile, rename, readdir, stat } from 'node:fs/promises';
-import { join, resolve, extname } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join, extname } from 'node:path';
 import { parseScenarioSource } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
 import { ProjectError } from './project.ts';
@@ -38,24 +43,10 @@ import {
   workspace,
 } from './workspace.ts';
 
-const ROOT = resolve(import.meta.dirname, '..', '..');
 const PUBLIC_DIR = join(import.meta.dirname, 'public');
-const SCENARIOS_DIR = resolve(process.env.SCENARIOS_DIR ?? join(ROOT, 'scenarios'));
 
 // Rare on purpose, and not the game server's 8880 — both can run at once.
 const PORT = Number(process.env.EDITOR_PORT ?? 8890);
-
-/**
- * Folder names come from the client and are used to build a path, so they are
- * checked against a whitelist rather than sanitised. Nothing outside
- * `scenarios/<name>/scenario.yaml` is reachable.
- */
-const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
-
-function scenarioFile(folder: string): string | undefined {
-  if (!SAFE_NAME.test(folder)) return undefined;
-  return join(SCENARIOS_DIR, folder, 'scenario.yaml');
-}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -98,42 +89,6 @@ function inspect(source: string) {
   };
 }
 
-async function listScenarios() {
-  let entries: string[];
-  try {
-    entries = await readdir(SCENARIOS_DIR);
-  } catch {
-    return [];
-  }
-
-  const folders = [];
-  for (const entry of entries.sort()) {
-    if (!SAFE_NAME.test(entry)) continue;
-    const info = await stat(join(SCENARIOS_DIR, entry)).catch(() => null);
-    if (!info?.isDirectory()) continue;
-
-    let source: string;
-    try {
-      source = await readFile(join(SCENARIOS_DIR, entry, 'scenario.yaml'), 'utf8');
-    } catch {
-      continue;
-    }
-
-    const result = inspect(source);
-    folders.push({
-      folder: entry,
-      title: result.ok ? result.analysis.title : entry,
-      ok: result.ok,
-      // A broken scenario is listed, not hidden — being unable to open the one
-      // file you need to fix would be a poor editor.
-      message: result.ok ? undefined : result.message,
-      nodes: result.ok ? result.analysis.counts.nodes : 0,
-      polls: result.ok ? result.analysis.counts.polls : 0,
-    });
-  }
-  return folders;
-}
-
 async function serveStatic(pathname: string, response: ServerResponse): Promise<void> {
   const name = pathname === '/' ? 'index.html' : pathname.slice(1);
   if (!/^[A-Za-z0-9_.-]+$/.test(name) || name.includes('..')) {
@@ -161,10 +116,6 @@ const server = createServer((request, response) => {
 async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? '/', `http://localhost:${PORT}`);
   const path = url.pathname;
-
-  if (path === '/api/scenarios' && request.method === 'GET') {
-    return sendJson(response, 200, { scenarios: await listScenarios(), dir: SCENARIOS_DIR });
-  }
 
   // --- projects -----------------------------------------------------------
   //
@@ -307,37 +258,6 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return sendJson(response, 405, { error: 'Method not allowed' });
   }
 
-  // /api/scenarios/<folder>/source
-  const sourceMatch = /^\/api\/scenarios\/([^/]+)\/source$/.exec(path);
-  if (sourceMatch) {
-    const file = scenarioFile(decodeURIComponent(sourceMatch[1]!));
-    if (!file) return sendJson(response, 400, { error: 'Bad scenario name' });
-
-    if (request.method === 'GET') {
-      try {
-        const source = await readFile(file, 'utf8');
-        return sendJson(response, 200, { source, ...inspect(source) });
-      } catch {
-        return sendJson(response, 404, { error: 'No scenario.yaml in that folder' });
-      }
-    }
-
-    if (request.method === 'PUT') {
-      const body = (await readBody(request)) as { source?: unknown };
-      if (typeof body.source !== 'string') {
-        return sendJson(response, 400, { error: 'Expected { source }' });
-      }
-      // Temp file plus rename, so a crash mid-write cannot leave a half-written
-      // scenario behind — the game server may be reading this same folder.
-      const temp = `${file}.tmp`;
-      await writeFile(temp, body.source, 'utf8');
-      await rename(temp, file);
-      return sendJson(response, 200, { saved: true, ...inspect(body.source) });
-    }
-
-    return sendJson(response, 405, { error: 'Method not allowed' });
-  }
-
   if (path === '/api/analyze' && request.method === 'POST') {
     const body = (await readBody(request)) as { source?: unknown };
     if (typeof body.source !== 'string') {
@@ -371,7 +291,6 @@ await loadConfig();
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`\n  Scenario editor   http://localhost:${PORT}`);
-  console.log(`  Reading           ${SCENARIOS_DIR}`);
   console.log(`  Workspace         ${workspace() ?? '(none chosen yet — pick one in the editor)'}`);
   console.log('');
 });

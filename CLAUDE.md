@@ -147,8 +147,12 @@ the file the first time anyone touches a text box. A test guards this.
 unreachable nodes, unknown characters and scenes, poll defaults that are not options,
 unknown `$placeholder`s. Run `npm run validate` after touching a scenario.
 
-The editor is a separate process by design — authoring happens at a desk, the game server
-runs in front of an audience, and only the editor writes to `scenarios/`. Its simulator
+The editor is a separate process by design — authoring happens at a desk over weeks, the
+game server runs in front of an audience. **The editor cannot reach `scenarios/` at all**:
+it serves no route into that folder and writes only inside the author's chosen workspace.
+Deploying is a person copying a finished project folder across when the show is ready, and
+a test asserts the capability stays absent. An editor able to write into the folder a live
+show is served from will eventually do it by accident. Its simulator
 calls the production `reduce`, so **never give it its own copy of the engine**: a
 simulation that could drift from the real thing is worse than none. `parseScenarioSource`
 in `src/scenario/load.ts` is the shared validation path — the editor and the server must

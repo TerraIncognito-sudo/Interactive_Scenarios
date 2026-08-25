@@ -11,13 +11,11 @@
       <span class="brand">Scenario editor</span>
 
       <!--
-        One control, because there is only ever one answer to "what am I
-        editing". A project and a bundled scenario are both a scenario.yaml on
-        disk; what differs is which folder it lives in and whether there is a
-        workshop around it. Two boxes made that look like two questions, and
-        left one of them showing a stale answer.
+        Projects only. The editor cannot reach the repo's scenarios/ folder —
+        that belongs to the live server, and this tool is not allowed to touch
+        a show that might be running.
       -->
-      <select id="picker" aria-label="Project or scenario"></select>
+      <select id="picker" aria-label="Project"></select>
       <button id="change-workspace" type="button" class="ghost" title="Choose the folder your projects live in">
         Folder…
       </button>
