@@ -10,7 +10,7 @@
  */
 
 import { parseExpr, referencedVars, ExprError } from '../engine/expr.ts';
-import type { Scenario, ScenarioNode } from './schema.ts';
+import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, type Scenario, type ScenarioNode } from './schema.ts';
 
 export type Problem = {
   nodeId?: string;
@@ -64,6 +64,22 @@ export function checkScenario(scenario: Scenario): CheckResult {
     }
   }
 
+  for (const [id, scene] of Object.entries(scenario.scenes)) {
+    if (scene.video !== undefined && !VIDEO_EXTENSIONS.test(scene.video)) {
+      errors.push({
+        message: `scene "${id}" has video "${scene.video}", which is not a video file`,
+      });
+    }
+
+    // The still is what paints while the clip decodes. Without one the
+    // projector shows black for as long as the first frame takes.
+    if (scene.video !== undefined && scene.background === undefined) {
+      warnings.push({
+        message: `scene "${id}" has video but no background to use as its poster frame`,
+      });
+    }
+  }
+
   for (const node of scenario.nodes) {
     for (const target of exitsOf(node)) {
       if (!byId.has(target)) {
@@ -84,6 +100,27 @@ export function checkScenario(scenario: Scenario): CheckResult {
           errors.push({
             nodeId: node.id,
             message: `line ${i + 1} references unknown character "${line.who}"`,
+          });
+        }
+
+        if (line.voice !== undefined && !AUDIO_EXTENSIONS.test(line.voice)) {
+          errors.push({
+            nodeId: node.id,
+            message:
+              `line ${i + 1} has voice "${line.voice}", which is not an audio file ` +
+              `the display can play`,
+          });
+        }
+
+        // Nothing on the server reads the clip, so the beat ends when the
+        // estimate says it does. An unheld voiced line either talks over the
+        // next one or sits in silence, and neither is visible until showtime.
+        if (line.voice !== undefined && line.hold === undefined) {
+          warnings.push({
+            nodeId: node.id,
+            message:
+              `line ${i + 1} has a voice clip but no hold: — its time on screen is a ` +
+              `reading-speed estimate that does not know how long the clip runs`,
           });
         }
       });

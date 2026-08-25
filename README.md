@@ -69,6 +69,40 @@ directory. Adding a scenario means adding a folder — no code changes. See
 
 Node types are `dialogue`, `poll`, `branch`, `pause`, and `end`.
 
+### Voice-over and motion
+
+A line can carry spoken audio, and a scene can carry a looping clip:
+
+```yaml
+scenes:
+  harbour:
+    background: harbour.jpg    # the poster frame — paints while the clip decodes
+    video: harbour.mp4         # muted, looping, drawn over the still
+
+nodes:
+  - id: open
+    type: dialogue
+    scene: harbour
+    lines:
+      - text: Zero four hundred, Halifax.
+        voice: narration-01.mp3
+        hold: 7                # say how long, or the estimate decides for you
+```
+
+Both are prefetched before the display reports ready, so nothing streams in live
+in front of the room.
+
+**Give every voiced line a `hold`.** Nothing on the server opens the audio file, so
+the beat still ends when `hold` — or failing that, the reading-speed estimate — says
+it does. Get it wrong and the narrator is cut off, or the room watches a still frame
+in silence. `npm run validate` warns about any voiced line that leaves it to the
+estimate.
+
+Scene video is muted, which is what lets it autoplay. Voice is not, and browsers
+refuse audible playback until the page has been interacted with — so the display
+shows a **Click to enable sound** button the first time a clip is blocked. Click it
+once when you open the projector window.
+
 ### The editor
 
 A separate local tool, deliberately not part of the game server:

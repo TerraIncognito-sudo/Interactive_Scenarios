@@ -1,0 +1,42 @@
+# Exercises the media fields end to end: a scene with a looping clip over a
+# poster still, and lines carrying voice-over. Holds are long enough to assert
+# against but short enough not to slow the suite.
+id: media
+title: Media
+start: open
+
+settings:
+  minLineSeconds: 0.05
+  maxLineSeconds: 0.2
+  wordsPerMinute: 600
+
+characters:
+  narrator:
+    name: Narrator
+    color: '#B0BEC5'
+
+scenes:
+  harbour:
+    background: harbour.jpg
+    video: harbour.mp4
+    ambience: harbour.mp3
+  quiet: {}
+
+nodes:
+  - id: open
+    type: dialogue
+    scene: harbour
+    lines:
+      - { who: narrator, text: Spoken, hold: 0.05, voice: open-1.mp3 }
+      - { text: Silent, hold: 0.05 }
+    next: after
+
+  - id: after
+    type: dialogue
+    scene: quiet
+    lines: [{ text: Done, hold: 0.05 }]
+    next: finish
+
+  - id: finish
+    type: end
+    text: The end.

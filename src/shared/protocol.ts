@@ -107,6 +107,7 @@ export type SnapshotBeat =
       text: string;
       scene?: string;
       durationMs: number;
+      voice?: string;
       sfx?: string;
     }
   | { kind: 'pause'; nodeId: string; text?: string; scene?: string; durationMs: number }
@@ -135,7 +136,13 @@ export type Snapshot = {
   scenario: PublicScenario;
   beatInfo: SnapshotBeat;
   /** Resolved scene media for the active scene, if any. */
-  scene?: { id: string; background?: string; music?: string; ambience?: string };
+  scene?: {
+    id: string;
+    background?: string;
+    video?: string;
+    music?: string;
+    ambience?: string;
+  };
   /** Live tally while a poll is open. */
   tally?: { counts: Record<string, number>; voters: number };
   /** Revealed once a poll closes, for the display's result animation. */

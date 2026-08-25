@@ -158,23 +158,100 @@ export async function loadLibrary(root: string): Promise<ScenarioLibrary> {
   return { scenarios, failures };
 }
 
-/** Asset paths a scenario expects to exist, for preflight and client prefetch. */
-export function assetsOf(scenario: Scenario): string[] {
-  const assets = new Set<string>();
-  for (const character of Object.values(scenario.characters)) {
-    if (character.sprite) assets.add(character.sprite);
-  }
-  for (const scene of Object.values(scenario.scenes)) {
-    if (scene.background) assets.add(scene.background);
-    if (scene.music) assets.add(scene.music);
-    if (scene.ambience) assets.add(scene.ambience);
-  }
-  for (const node of scenario.nodes) {
-    if (node.type === 'dialogue') {
-      for (const line of node.lines) {
-        if (line.sfx) assets.add(line.sfx);
-      }
+/**
+ * Production sections an asset can belong to.
+ *
+ * Not derived from the file extension — an `.mp3` in `voice:` and an `.mp3` in
+ * `music:` are different work, made by different models, at different lengths.
+ * The schema field that referenced the file is the only thing that knows which,
+ * so that is what routes it.
+ */
+export const ASSET_SECTIONS = ['images', 'video', 'voice', 'sfx', 'ambience', 'music'] as const;
+
+export type AssetSection = (typeof ASSET_SECTIONS)[number];
+
+/** Where in the scenario an asset was referenced, for click-through and prefill. */
+export type AssetOrigin =
+  | { kind: 'sprite'; character: string }
+  | { kind: 'background' | 'video' | 'music' | 'ambience'; scene: string }
+  | { kind: 'voice' | 'sfx'; node: string; line: number };
+
+export type AssetReference = {
+  file: string;
+  section: AssetSection;
+  origin: AssetOrigin;
+};
+
+/**
+ * Every reference to an asset, in scenario order, keeping duplicates.
+ *
+ * `assetsOf` answers "what files must exist"; this answers "and who asked for
+ * them", which is what lets the editor route a file to exactly one production
+ * section and jump back to the line that needs it. Both come from this single
+ * walk on purpose: two walks would eventually disagree, and the one that
+ * disagreed silently would be the editor's — showing an author a complete
+ * manifest while the display preloaded something else.
+ */
+export function assetReferencesOf(scenario: Scenario): AssetReference[] {
+  const refs: AssetReference[] = [];
+
+  for (const [id, character] of Object.entries(scenario.characters)) {
+    if (character.sprite) {
+      refs.push({
+        file: character.sprite,
+        section: 'images',
+        origin: { kind: 'sprite', character: id },
+      });
     }
   }
-  return [...assets].sort();
+
+  for (const [id, scene] of Object.entries(scenario.scenes)) {
+    if (scene.background) {
+      refs.push({
+        file: scene.background,
+        section: 'images',
+        origin: { kind: 'background', scene: id },
+      });
+    }
+    if (scene.video) {
+      refs.push({ file: scene.video, section: 'video', origin: { kind: 'video', scene: id } });
+    }
+    if (scene.music) {
+      refs.push({ file: scene.music, section: 'music', origin: { kind: 'music', scene: id } });
+    }
+    if (scene.ambience) {
+      refs.push({
+        file: scene.ambience,
+        section: 'ambience',
+        origin: { kind: 'ambience', scene: id },
+      });
+    }
+  }
+
+  for (const node of scenario.nodes) {
+    if (node.type !== 'dialogue') continue;
+    node.lines.forEach((line, index) => {
+      if (line.voice) {
+        refs.push({
+          file: line.voice,
+          section: 'voice',
+          origin: { kind: 'voice', node: node.id, line: index },
+        });
+      }
+      if (line.sfx) {
+        refs.push({
+          file: line.sfx,
+          section: 'sfx',
+          origin: { kind: 'sfx', node: node.id, line: index },
+        });
+      }
+    });
+  }
+
+  return refs;
+}
+
+/** Asset paths a scenario expects to exist, for preflight and client prefetch. */
+export function assetsOf(scenario: Scenario): string[] {
+  return [...new Set(assetReferencesOf(scenario).map((ref) => ref.file))].sort();
 }

@@ -14,7 +14,7 @@
 import QRCode from 'qrcode';
 import { Connection, queryParam } from '../shared/connection.ts';
 import type { Snapshot, SnapshotBeat } from '../../shared/protocol.ts';
-import type { Scenario } from '../../scenario/schema.ts';
+import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, type Scenario } from '../../scenario/schema.ts';
 import { beatOf, initialState, reduce, activeScene, type RunState } from '../../engine/engine.ts';
 
 const room = queryParam('room')?.toUpperCase();
@@ -37,6 +37,8 @@ const views = {
 
 const conn = el('conn');
 const scene = el('scene');
+const sceneVideo = el<HTMLVideoElement>('scene-video');
+const audioGate = el<HTMLButtonElement>('audio-gate');
 
 // ---------------------------------------------------------------------------
 // Stage scaling — author at 1920x1080, fit whatever projector we are given.
@@ -60,6 +62,13 @@ let assetsLoaded = false;
 let local: RunState | undefined;
 let localTimer: ReturnType<typeof setTimeout> | undefined;
 let lastRenderedBeat = -1;
+/**
+ * Set while the last thing on screen came from local playback. The same-beat
+ * guard in `onSnapshot` must not skip a resync just because the server's beat
+ * number matches the last one we took from it — locally we may have drifted
+ * several beats past it during the dropout.
+ */
+let renderedLocally = false;
 let currentSceneId: string | undefined;
 let typeTimer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
@@ -95,6 +104,37 @@ function preloadAudio(url: string): Promise<void> {
   });
 }
 
+function preloadVideo(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    video.oncanplaythrough = () => resolve();
+    video.onerror = () => resolve();
+    video.preload = 'auto';
+    video.muted = true;
+    video.src = url;
+  });
+}
+
+/**
+ * Same reasoning as resolving on error: an asset that never finishes must not
+ * be able to hold the show at "loading…" forever. A background clip on a bad
+ * venue connection is far more capable of stalling than a JPEG ever was.
+ */
+const PRELOAD_TIMEOUT_MS = 20_000;
+
+function bounded(work: Promise<void>): Promise<void> {
+  return Promise.race([
+    work,
+    new Promise<void>((resolve) => setTimeout(resolve, PRELOAD_TIMEOUT_MS)),
+  ]);
+}
+
+function preload(url: string): Promise<void> {
+  if (VIDEO_EXTENSIONS.test(url)) return bounded(preloadVideo(url));
+  if (AUDIO_EXTENSIONS.test(url)) return bounded(preloadAudio(url));
+  return bounded(preloadImage(url));
+}
+
 async function loadScenario(): Promise<void> {
   if (!room || !token) {
     el('asset-state').textContent = 'Missing room or token in the URL.';
@@ -125,8 +165,7 @@ async function loadScenario(): Promise<void> {
 
   await Promise.all(
     body.assets.map(async (file) => {
-      const url = assetBase + file;
-      await (/\.(mp3|ogg|wav|m4a)$/i.test(file) ? preloadAudio(url) : preloadImage(url));
+      await preload(assetBase + file);
       done++;
       state.textContent = `Loading assets… ${done}/${total}`;
     }),
@@ -159,7 +198,74 @@ function applyScene(sceneId: string | undefined): void {
   scene.style.backgroundImage = definition?.background
     ? `url("${assetBase}${definition.background}")`
     : '';
+  applySceneVideo(definition?.video);
 }
+
+/**
+ * The clip is muted and looping, so autoplay policy never blocks it and it
+ * needs no gesture. The still background stays painted underneath as the
+ * poster frame.
+ */
+function applySceneVideo(file: string | undefined): void {
+  if (!file) {
+    sceneVideo.hidden = true;
+    sceneVideo.pause();
+    // Dropping the source releases the decoder; a projector left on a scene
+    // for twenty minutes should not be decoding a clip nobody can see.
+    sceneVideo.removeAttribute('src');
+    sceneVideo.load();
+    return;
+  }
+
+  const url = assetBase + file;
+  if (sceneVideo.getAttribute('src') !== url) sceneVideo.src = url;
+  sceneVideo.hidden = false;
+  void sceneVideo.play().catch(() => {
+    // A clip that will not start is a missing decoration, not a failure:
+    // the background still holds the scene.
+    sceneVideo.hidden = true;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Voice-over
+// ---------------------------------------------------------------------------
+
+const voiceEl = new Audio();
+voiceEl.preload = 'auto';
+
+/**
+ * Plays the line's voice clip, cutting off whatever was speaking. Two voices
+ * overlapping is worse than a clipped one — and a repeated snapshot for the
+ * same beat used to restart the line, which with audio would stutter the
+ * narration mid-sentence. `onSnapshot` guards that.
+ */
+function playVoice(file: string | undefined): void {
+  voiceEl.pause();
+  if (!file) {
+    voiceEl.removeAttribute('src');
+    return;
+  }
+
+  voiceEl.src = assetBase + file;
+  voiceEl.currentTime = 0;
+  void voiceEl
+    .play()
+    .then(() => {
+      audioGate.hidden = true;
+    })
+    .catch(() => {
+      // Autoplay policy, almost always. Ask for the one gesture that lifts it.
+      audioGate.hidden = false;
+    });
+}
+
+audioGate.addEventListener('click', () => {
+  audioGate.hidden = true;
+  void voiceEl.play().catch(() => {
+    audioGate.hidden = false;
+  });
+});
 
 function typeLine(target: HTMLElement, text: string, charsPerSecond: number): void {
   clearInterval(typeTimer);
@@ -215,6 +321,7 @@ function renderDialogue(beat: Extract<SnapshotBeat, { kind: 'dialogue' }>): void
   }
 
   typeLine(el('line'), beat.text, scenario?.settings.charsPerSecond ?? 45);
+  playVoice(beat.voice);
 }
 
 function renderPoll(
@@ -306,6 +413,10 @@ function renderResult(result: NonNullable<Snapshot['lastResult']>, then: () => v
 }
 
 function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
+  // Leaving a line for anything else silences it — including a host skipping
+  // ahead, which would otherwise leave a voice talking over the next scene.
+  if (beat.kind !== 'dialogue') playVoice(undefined);
+
   switch (beat.kind) {
     case 'idle':
       show('lobby');
@@ -373,11 +484,13 @@ function renderLocal(): void {
       text: beat.line.text,
       scene: activeScene(scenario, local),
       durationMs: beat.durationMs,
+      voice: beat.line.voice,
       sfx: beat.line.sfx,
     });
   } else {
     renderBeat(beat as SnapshotBeat);
   }
+  renderedLocally = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -410,11 +523,18 @@ function onSnapshot(snapshot: Snapshot): void {
     };
   }
 
-  if (snapshot.beat === lastRenderedBeat && snapshot.beatInfo.kind === 'poll') {
+  // A snapshot for a beat already on screen — a new tally, a player joining,
+  // a display connecting — must not re-render it. Re-rendering restarted the
+  // typewriter, and now it would restart the voice clip mid-sentence too.
+  // `renderedLocally` is the exception: after a dropout the local engine may
+  // have run past this beat, so the server's position has to be reasserted
+  // even when its beat number is one we have already seen.
+  if (snapshot.beat === lastRenderedBeat && !renderedLocally) {
     // Same beat, new tally: update the bars without restarting the countdown.
-    renderPoll(snapshot.beatInfo, snapshot.tally);
+    if (snapshot.beatInfo.kind === 'poll') renderPoll(snapshot.beatInfo, snapshot.tally);
     return;
   }
+  renderedLocally = false;
 
   // A poll that just closed gets its reveal before the story continues.
   const result = snapshot.lastResult;

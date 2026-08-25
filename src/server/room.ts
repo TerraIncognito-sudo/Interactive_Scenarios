@@ -180,6 +180,7 @@ export class Room {
           text: beat.line.text,
           scene: beat.scene,
           durationMs: beat.durationMs,
+          voice: beat.line.voice,
           sfx: beat.line.sfx,
         };
       }
@@ -211,6 +212,7 @@ export class Room {
         ? {
             id: sceneId,
             background: scene?.background,
+            video: scene?.video,
             music: scene?.music,
             ambience: scene?.ambience,
           }

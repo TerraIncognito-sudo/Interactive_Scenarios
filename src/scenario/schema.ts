@@ -27,8 +27,22 @@ export const CharacterSchema = z.strictObject({
   sprite: z.string().min(1).optional(),
 });
 
+/**
+ * Extensions the projector knows how to play. Shared with the checker so a
+ * `.png` in a `voice:` field is caught at the desk rather than discovered as
+ * silence in front of an audience.
+ */
+export const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|opus|wav|flac)$/i;
+export const VIDEO_EXTENSIONS = /\.(mp4|webm|m4v|mov)$/i;
+
 export const SceneSchema = z.strictObject({
   background: z.string().min(1).optional(),
+  /**
+   * A looping clip that plays over `background`, for scenes with subtle motion.
+   * `background` stays the poster frame: the still paints immediately while the
+   * clip is still decoding, so a scene change never flashes black on a projector.
+   */
+  video: z.string().min(1).optional(),
   music: z.string().min(1).optional(),
   ambience: z.string().min(1).optional(),
 });
@@ -39,6 +53,13 @@ export const LineSchema = z.strictObject({
   text: z.string().min(1),
   /** Seconds to hold this line, overriding the reading-speed estimate. */
   hold: z.number().positive().max(120).optional(),
+  /**
+   * Spoken audio for this line. The server still schedules the beat from
+   * `hold` or the reading estimate — nothing here reads the file — so a voiced
+   * line without a `hold` will be cut off or left hanging by however much the
+   * estimate is wrong. The checker warns about exactly that.
+   */
+  voice: z.string().min(1).optional(),
   sfx: z.string().min(1).optional(),
 });
 
