@@ -25,4 +25,8 @@ def load(backend: str, **options: object) -> VoiceBackend:
         from .chatterbox import Backend
 
         return Backend(**options)
+    if backend == "kokoro":
+        from .kokoro import Backend
+
+        return Backend(**options)
     raise RuntimeError(f"unknown voice backend {backend!r}")

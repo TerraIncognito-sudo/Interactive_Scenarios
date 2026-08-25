@@ -22,6 +22,7 @@ import { parseScenarioSource } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
 import { ProjectError } from './project.ts';
 import { modelStatuses } from './models.ts';
+import { downloadModel } from './download.ts';
 import { sidecarStatuses, stopAllSidecars } from './sidecar.ts';
 import {
   editAssetField,
@@ -32,6 +33,7 @@ import {
   initProject,
   listProjects,
   migrateShots,
+  recordReference,
   openProject,
   saveProjectSource,
   saveScenarioSource,
@@ -205,6 +207,29 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     }
   }
 
+  // Fetching the files for a model whose library will not fetch its own.
+  // Slow — hundreds of megabytes — and answered when it is done rather than
+  // streamed: the editor shows one spinner, and a progress bar for a download
+  // that takes half a minute is not worth a second protocol.
+  const downloadMatch = /^\/api\/models\/([a-z0-9-]+)\/download$/.exec(path);
+  if (downloadMatch && request.method === 'POST') {
+    try {
+      const id = downloadMatch[1]!;
+      let last = 0;
+      const result = await downloadModel(id, modelsRoot(), ({ file, received, total }) => {
+        // To the editor's terminal, so a long download is visibly alive.
+        const percent = total ? Math.floor((received / total) * 100) : 0;
+        if (percent >= last + 10) {
+          last = percent;
+          console.log(`  [${id}] ${file} ${percent}%`);
+        }
+      });
+      return sendJson(response, 200, { ...result, models: await modelStatuses(modelsRoot()) });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
   // Stopping is worth a button. A loaded model holds the GPU, and the only
   // other way to get it back is to close the editor.
   if (path === '/api/models/stop' && request.method === 'POST') {
@@ -318,6 +343,19 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
           value: String(body.value ?? ''),
         });
         return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'reference' && request.method === 'POST') {
+        const body = (await readBody(request)) as Record<string, unknown>;
+        if (typeof body.voice !== 'string' || typeof body.preset !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { voice, preset }' });
+        }
+        const clip = await recordReference(name, {
+          voice: body.voice,
+          preset: body.preset,
+          model: typeof body.model === 'string' ? body.model : undefined,
+        });
+        return sendJson(response, 200, { ...clip, project: await openProject(name) });
       }
 
       if (action === 'generate' && request.method === 'POST') {

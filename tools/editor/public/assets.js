@@ -248,6 +248,32 @@ async function editSection(section, field, value) {
   render();
 }
 
+/** Records a reference clip for one character, in one of a palette model's voices. */
+export async function recordReference(voice, preset) {
+  if (!state.name) return null;
+  state.busy.add(`voice:${voice}`);
+  render();
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(state.name)}/reference`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ voice, preset }),
+    });
+    state.data = result.project;
+    return result;
+  } finally {
+    state.busy.delete(`voice:${voice}`);
+    render();
+  }
+}
+
+export async function downloadModel(id) {
+  const result = await api(`/api/models/${encodeURIComponent(id)}/download`, { method: 'POST' });
+  await refreshModels();
+  render();
+  return result;
+}
+
 export async function refreshModels() {
   state.models = await api('/api/models');
   renderModelsBar();
@@ -350,8 +376,12 @@ function renderModelsBar() {
  * cast that all sound like the same person. That is a mistake you notice after
  * generating ninety lines, so the panel says it before you generate one.
  */
-function castMember(member, clones) {
-  const missing = clones && !member.reference;
+function castMember(member, model) {
+  const clones = model?.clones === true;
+  const palette = model?.voices ?? [];
+  const busy = state.busy.has(`voice:${member.id}`);
+
+  const missing = clones ? !member.reference : !member.preset;
   const broken = Boolean(member.reference) && !member.referenceExists;
 
   return h(
@@ -369,52 +399,95 @@ function castMember(member, clones) {
         member.lines === 0 ? 'no lines' : `${member.ready}/${member.lines} ready`,
       ),
     ),
-    h(
-      'div',
-      { class: 'cast-ref' },
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'ghost',
-          onclick: () =>
-            openPicker({
-              mode: 'file',
-              extensions: ['.wav', '.mp3', '.flac', '.ogg'],
-              label: `Reference clip for ${member.name}`,
-              startAt: state.data?.paths?.dir,
-              onPick: (path) => void editVoice(member.id, 'reference', path),
-            }),
-        },
-        member.reference ? 'Change clip…' : 'Choose clip…',
-      ),
-      member.reference
-        ? h(
-            'code',
-            { class: `cast-file${broken ? ' gone' : ''}` },
-            member.reference,
-            broken ? h('span', { class: 'pill pill-stale' }, 'not found') : null,
-          )
-        : h(
-            'em',
-            { class: 'cast-none' },
-            clones
-              ? 'no reference — this character will use the model’s default voice'
-              : 'this model does not clone; no clip needed',
-          ),
-      member.reference
-        ? h(
+
+    // A palette model casts from a list. It is also how a reference clip gets
+    // made for a cloning model, so the list is offered either way — the only
+    // difference is what the button beside it does with the choice.
+    palette.length > 0
+      ? (() => {
+          const select = h(
+            'select',
+            {
+              class: 'cast-preset',
+              onchange: (event) => {
+                const preset = event.target.value;
+                if (!preset) return void editVoice(member.id, 'preset', '');
+                // For a palette model the choice *is* the voice. For a cloning
+                // one it is only the raw material, and nothing changes until a
+                // clip has actually been recorded from it.
+                if (clones) void onRecord(member, preset);
+                else void editVoice(member.id, 'preset', preset);
+              },
+            },
+            h('option', { value: '' }, clones ? 'record a clip from…' : 'choose a voice…'),
+            palette.map((voice) =>
+              h(
+                'option',
+                { value: voice.id, selected: voice.id === member.preset ? true : undefined },
+                voice.label,
+              ),
+            ),
+          );
+          if (member.preset) select.value = member.preset;
+          return h(
+            'div',
+            { class: 'cast-ref' },
+            select,
+            busy ? h('span', { class: 'cast-working' }, 'recording…') : null,
+          );
+        })()
+      : null,
+
+    // The reference clip itself, for a model that clones.
+    clones
+      ? h(
+          'div',
+          { class: 'cast-ref' },
+          h(
             'button',
             {
               type: 'button',
               class: 'ghost small',
-              title: 'Clear the reference clip',
-              onclick: () => void editVoice(member.id, 'reference', ''),
+              onclick: () =>
+                openPicker({
+                  mode: 'file',
+                  extensions: ['.wav', '.mp3', '.flac', '.ogg'],
+                  label: `Reference clip for ${member.name}`,
+                  startAt: state.data?.paths?.dir,
+                  onPick: (path) => void editVoice(member.id, 'reference', path),
+                }),
             },
-            '✕',
-          )
-        : null,
-    ),
+            member.reference ? 'Use another file…' : 'Use a recording…',
+          ),
+          member.reference
+            ? h(
+                'code',
+                { class: `cast-file${broken ? ' gone' : ''}` },
+                member.reference,
+                broken ? h('span', { class: 'pill pill-stale' }, 'not found') : null,
+              )
+            : h(
+                'em',
+                { class: 'cast-none' },
+                palette.length > 0
+                  ? 'no clip yet — record one above, or point at your own'
+                  : 'no clip yet',
+              ),
+          member.reference
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'ghost small',
+                  title: 'Clear the reference clip',
+                  onclick: () => void editVoice(member.id, 'reference', ''),
+                },
+                '✕',
+              )
+            : null,
+        )
+      : null,
+
     (() => {
       const box = h('input', {
         type: 'text',
@@ -432,9 +505,12 @@ function castMember(member, clones) {
 }
 
 /** The cast, above the voice rows, because it is what has to be set up first. */
-function castPanel(clones) {
+function castPanel(model) {
   const cast = state.data?.overview?.cast ?? [];
   if (cast.length === 0) return null;
+
+  const clones = model?.clones === true;
+  const palette = (state.models?.models ?? []).find((entry) => (entry.voices ?? []).length > 0);
 
   return h(
     'div',
@@ -445,7 +521,38 @@ function castPanel(clones) {
       'Every character who speaks. A voice is set once here and used by every line ',
       'they have — which is also why changing one makes all of their clips stale.',
     ),
-    h('div', { class: 'cast-list' }, cast.map((member) => castMember(member, clones))),
+
+    // The way out of the chicken-and-egg a cloning model creates: it wants a
+    // recording of a voice that does not exist yet. A palette model has thirty
+    // that do, so one of them reads the character's own lines and the result
+    // becomes the reference.
+    clones && palette && !palette.installed
+      ? h(
+          'p',
+          { class: 'cast-offer' },
+          `No recordings? ${palette.title} can make them — about ${palette.sizeGb} GB, no GPU needed. `,
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'ghost small',
+              onclick: (event) => void onDownload(palette.id, event.target),
+            },
+            `Download ${palette.title}`,
+          ),
+        )
+      : null,
+
+    h(
+      'div',
+      { class: 'cast-list' },
+      cast.map((member) =>
+        castMember(member, {
+          clones,
+          voices: palette?.installed ? (palette.voices ?? []) : model?.voices ?? [],
+        }),
+      ),
+    ),
   );
 }
 
@@ -486,6 +593,50 @@ function takesStrip(asset) {
       );
     }),
   );
+}
+
+/**
+ * Records a reference clip for a character and reports what was said.
+ *
+ * The text is worth echoing back: the clip is the character's own lines, and
+ * hearing which ones is how an author decides whether the voice fits the part
+ * rather than merely whether it sounds nice.
+ */
+async function onRecord(member, preset) {
+  try {
+    const clip = await recordReference(member.id, preset);
+    if (!clip) return;
+    state.onStatus(
+      'ok',
+      `${member.name}: ${clip.seconds}s recorded as ${clip.file} — "${clip.text.slice(0, 60)}…"`,
+    );
+  } catch (err) {
+    state.onStatus('bad', err.message);
+  }
+}
+
+async function onDownload(id, button) {
+  const label = button?.textContent;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Downloading…';
+  }
+  state.onStatus('warn', `downloading ${id} — this takes a minute`);
+  try {
+    const result = await downloadModel(id);
+    state.onStatus(
+      'ok',
+      result.fetched.length > 0
+        ? `${id}: fetched ${result.fetched.join(', ')} into ${result.path}`
+        : `${id} was already downloaded`,
+    );
+  } catch (err) {
+    state.onStatus('bad', err.message);
+    if (button) {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
 }
 
 /**
@@ -699,6 +850,20 @@ function sectionBlock(section) {
           `${chosen.title} is not downloaded yet`,
         )
       : null,
+    // Only for a model whose library will not fetch its own weights. The
+    // others download on first load, and a button promising to do it now
+    // would be lying about where the wait happens.
+    chosen && !chosen.installed && (chosen.files ?? []).length > 0
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'ghost small',
+            onclick: (event) => void onDownload(chosen.id, event.target),
+          },
+          `Download (${chosen.sizeGb} GB)`,
+        )
+      : null,
     chosen?.clones === false && chosen.id === 'placeholder'
       ? h(
           'span',
@@ -720,7 +885,7 @@ function sectionBlock(section) {
     { class: `section${collapsed ? ' collapsed' : ''}` },
     head,
     collapsed ? null : modelLine,
-    collapsed || section.section !== 'voice' ? null : castPanel(chosen?.clones === true),
+    collapsed || section.section !== 'voice' ? null : castPanel(chosen),
     collapsed
       ? null
       : section.assets.length === 0

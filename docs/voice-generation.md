@@ -98,11 +98,43 @@ recorded.
 
 ---
 
-## 3. Install Chatterbox
+## 3. Choose a model
+
+Two, and the right first move is usually the smaller one.
+
+| | Kokoro | Chatterbox |
+|---|---|---|
+| Size | 340 MB | ~5 GB |
+| GPU | not needed | wants one |
+| Speed | faster than real time on CPU | roughly real time on a GPU |
+| Voices | ~28 ready-made English | clones any voice from a clip |
+| Needs from you | pick a voice per character | a reference recording per character |
+
+**Start with Kokoro.** It has a cast in it already, it installs in a minute, and it will
+tell you whether the pipeline suits the show before you spend an evening on the big one.
+
+```bash
+npm run voice:install -- kokoro
+```
+
+```bash
+npm run voice:fetch -- kokoro
+```
+
+```bash
+npm run voice:check -- kokoro
+```
+
+Its files do not come down automatically, which is what `voice:fetch` is for — it puts
+them in `C:\ML Models\voice\kokoro\` under names you will recognise a year from now. The
+editor has a **Download** button beside the model that does the same thing.
+
+### Then Chatterbox, if you want more
 
 [Chatterbox](https://github.com/resemble-ai/chatterbox) clones a voice from a few seconds
-of reference audio, which is what a scenario with a cast needs — a model with a fixed
-palette of voices gives you a palette, not a cast.
+of reference audio. It is more expressive than a fixed palette and it is how you get a
+voice that is not on anybody's list — but it needs that recording, and §5 below is about
+where to get one when you have none.
 
 ```bash
 npm run voice:install -- chatterbox
@@ -118,7 +150,7 @@ environment outside the repo.
 
 ---
 
-## 4. Check it
+## 4. Check Chatterbox
 
 ```bash
 npm run voice:check -- chatterbox
@@ -149,10 +181,47 @@ the network.
 
 ## 5. Give each character a voice
 
-Switch the Voice section's model to **Chatterbox TTS**. A **cast panel** appears above the
-rows: every character in the scenario who speaks, with how many lines they have.
+Pick a model in the Voice section's dropdown. A **cast panel** appears above the rows:
+every character in the scenario who speaks, with how many lines they have.
 
-Each one needs a reference clip. Press **Choose clip…** and pick a file.
+### With Kokoro — pick from the list
+
+Each character gets a dropdown of about thirty voices. Choose one and that character is
+cast. There is nothing to record and nothing to download per voice; they all live in the
+one 27 MB voices file.
+
+That is the whole step. Skip to §6.
+
+### With Chatterbox — and no recordings
+
+Chatterbox's first question is "which recording?", and most authors cannot answer it: you
+have a scenario, not a sound booth. So the cast panel answers it for you.
+
+With Kokoro downloaded, each character's dropdown reads **record a clip from…** and lists
+the same thirty voices. Choose one and the editor:
+
+1. collects that character's own lines from the scenario, in order, until it has enough
+   words for a good reference,
+2. has Kokoro read them,
+3. saves the result as `voices/<character>.wav` inside the project,
+4. points the character's `reference:` at it, and records which voice made it.
+
+A couple of seconds per character. Six characters, six distinctly different voices, no
+microphone.
+
+It uses their **own lines** on purpose. A reference is copied in register as much as in
+timbre — a voice sampled reading *the quick brown fox* carries none of the flatness a duty
+officer reads with, and the clone comes back sounding like an audiobook rather than a
+watch-keeper.
+
+The `preset:` recorded beside the reference is what lets the clip be made again. A wav in
+a folder with no note of where it came from is a dead end the first time you want to adjust
+it.
+
+### Or use your own recording
+
+**Use a recording…** takes any file you point it at, which is what you want as soon as a
+character deserves a real performance.
 
 **What makes a good reference:**
 
@@ -165,15 +234,16 @@ Each one needs a reference clip. Press **Choose clip…** and pick a file.
 
 Put the clips inside the project — `arctic-sentinel/voices/narr.wav` — and the editor
 stores the path relative to the project so the folder stays copyable. A clip from
-elsewhere on disk is recorded absolutely and will not travel.
+elsewhere on disk is recorded absolutely and will not travel. Clips the editor records for
+you are already in the right place.
 
 The **Direction** field on each character is free text for models that take one. Chatterbox
 does not, so it is a note to yourself for now; it is part of the recipe, so editing it does
 mark that character's clips stale.
 
-> **A character with no clip is not an error, and that is the danger.** Chatterbox will
-> read the line in its own default voice, do it for every character, and hand you back a
-> cast who all sound like the same person. The panel outlines them in orange, and generate
+> **A character with no voice is not an error, and that is the danger.** Either model
+> falls back to one default voice and applies it to the whole cast, silently, and you find
+> out after ninety generations. The panel outlines those characters in orange, and generate
 > refuses rather than guessing.
 
 ---
@@ -212,7 +282,8 @@ error rather than a warning.
 |---|---|
 | `C:\ML Models\` | weights. Never in the project, never in the repo. |
 | `%LOCALAPPDATA%\interactive-scenario\voice-env` | the sidecar's Python environment. Rebuildable; delete it freely. |
-| `<project>/voices/*.wav` | reference clips. Part of the show; travels with it. |
+| `<project>/voices/*.wav` | reference clips, recorded or your own. Part of the show; travels with it. |
+| `C:\ML Models\voice\kokoro\` | Kokoro's two files, fetched by `voice:fetch`. |
 | `<generated>/voice/<asset>/` | every take, named for the recipe hash that made it. |
 | `.ledger.json` | which takes exist and which is selected. The machine's file. |
 | `project.yaml` | the `voices:` map and the section's model. Yours. |
@@ -309,7 +380,12 @@ Three places, and the tests will tell you if you miss one:
 
 1. `tools/voice/voice/backends/<name>.py` — a class with `info()` and `speak()`.
 2. A line in `tools/voice/voice/backends/__init__.py`.
-3. An entry in `MODELS` in `tools/editor/models.ts`, with its uv extra and HF repo.
+3. An entry in `MODELS` in `tools/editor/models.ts`, with its uv extra, and either an HF
+   repo (fetches itself) or a `files:` list (the editor fetches it).
+
+A model that does not clone lists its `voices:` there too. That list is what the cast panel
+offers before the model is downloaded — choosing a voice is part of deciding whether to
+download it at all — and the backend validates against its own list at load time.
 
 The registry is a fixed list rather than a scan of the models folder, because a generator is
 weights *plus* the adapter that knows how to call them. Offering a model with no adapter

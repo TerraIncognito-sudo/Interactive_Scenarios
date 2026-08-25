@@ -82,6 +82,14 @@ export const VoiceSchema = z.strictObject({
    * project, so the recording travels with the show that uses it.
    */
   reference: z.string().min(1).optional(),
+  /**
+   * One of the model's own voices, for a model that has a palette instead.
+   *
+   * Both fields can be set at once, and that is useful rather than confusing:
+   * the preset is what made the reference clip, so it records where a cloned
+   * voice came from and lets it be made again.
+   */
+  preset: z.string().min(1).optional(),
   /** Direction, for a model that takes it. "Tired, precise, never raises her voice." */
   direction: z.string().optional(),
   /** Per-voice generation settings, layered over the section's defaults. */
@@ -250,6 +258,7 @@ export type Recipe = {
    * speak looking finished.
    */
   reference?: string;
+  preset?: string;
   direction?: string;
   model: { backend: string; file?: string };
 };
@@ -275,6 +284,7 @@ export function resolveRecipe(
     text: row.text,
     voice: row.voice,
     reference: voice?.reference,
+    preset: voice?.preset,
     direction: voice?.direction,
     model: { backend: model?.backend ?? 'manual', file: model?.file },
   };

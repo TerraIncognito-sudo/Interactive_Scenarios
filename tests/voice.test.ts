@@ -26,7 +26,12 @@ import {
   pathsOf,
   EMPTY_LEDGER,
 } from '../tools/editor/project.ts';
-import { generateAsset, publishAsset, GenerateError } from '../tools/editor/generate.ts';
+import {
+  generateAsset,
+  publishAsset,
+  referenceTextFor,
+  GenerateError,
+} from '../tools/editor/generate.ts';
 import { modelById, modelsFor, modelStatus } from '../tools/editor/models.ts';
 import { buildOverview } from '../tools/editor/sections.ts';
 
@@ -68,6 +73,18 @@ function project(overrides: Record<string, unknown> = {}) {
 }
 
 describe('a voice belongs to a character, not to a line', () => {
+  test('the chosen preset is part of the recipe too', () => {
+    // Same argument as the reference clip: swapping a character's voice has to
+    // make every line they speak stale, or the board calls clips finished that
+    // were made by a voice no longer in the file.
+    const before = project({ voices: { tran: { preset: 'am_michael' } } });
+    const after = project({ voices: { tran: { preset: 'bm_george' } } });
+    assert.notEqual(
+      recipeHash(resolveRecipe(before, 'voice', 'tran-a-01.mp3')),
+      recipeHash(resolveRecipe(after, 'voice', 'tran-a-01.mp3')),
+    );
+  });
+
   test('the reference clip is part of every line that character speaks', () => {
     const silent = project();
     const cast = project({ voices: { tran: { reference: 'voices/tran.wav' } } });
@@ -167,6 +184,25 @@ describe('what generation refuses to do', () => {
     });
   });
 
+  test('a palette model with no voice chosen is refused for the same reason', async () => {
+    // The mirror image, and the same silent failure: kokoro without a preset
+    // falls back to one default voice for the whole cast.
+    await failsWith(/No voice chosen/i, {
+      sections: { voice: { backend: 'sidecar', file: 'kokoro' } },
+      voices: { tran: { reference: 'voices/tran.wav' } },
+    });
+  });
+
+  test('a preset satisfies a palette model, and a clip satisfies a cloning one', () => {
+    // Neither field is required in general — what is required is the one the
+    // chosen model can actually use.
+    const withPreset = project({ voices: { tran: { preset: 'am_michael' } } });
+    assert.equal(resolveRecipe(withPreset, 'voice', 'tran-a-01.mp3').preset, 'am_michael');
+
+    const withClip = project({ voices: { tran: { reference: 'voices/tran.wav' } } });
+    assert.equal(resolveRecipe(withClip, 'voice', 'tran-a-01.mp3').reference, 'voices/tran.wav');
+  });
+
   test('a section that is not voice is refused, rather than half-attempted', async () => {
     const { root, args } = base();
     try {
@@ -177,6 +213,80 @@ describe('what generation refuses to do', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('making a reference clip when you have no recordings', () => {
+  const talkative = ScenarioSchema.parse({
+    id: 'demo',
+    title: 'Demo',
+    start: 'a',
+    characters: { narr: { name: 'Narrator' }, tran: { name: 'Tran' } },
+    scenes: { room: { background: 'room.jpg' } },
+    nodes: [
+      {
+        id: 'a',
+        type: 'dialogue',
+        scene: 'room',
+        lines: [
+          { who: 'tran', text: 'Link is good.' },
+          { who: 'narr', text: 'Eleven days north, through the Labrador Sea and the Davis Strait.' },
+          { who: 'tran', text: 'Two-second round trip, sometimes four when the satellite is low.' },
+          { who: 'narr', text: 'Two seconds is a long time in a fight.' },
+          {
+            who: 'tran',
+            text: 'Autonomy stack is green, navigation is nominal, and collision-avoidance has the ice at four hundred metres.',
+          },
+          { who: 'tran', text: 'This line is past the minimum and should not be reached.' },
+        ],
+        next: 'z',
+      },
+      { id: 'z', type: 'end', text: 'Done' },
+    ],
+  });
+
+  test('a reference is the character own lines, in order', () => {
+    const text = referenceTextFor(talkative, 'tran')!;
+    // Their words, not a pangram: a reference is copied in register as much as
+    // in timbre, and a voice sampled reading filler comes back as filler.
+    assert.match(text, /^Link is good\./);
+    assert.match(text, /Two-second round trip/);
+    assert.ok(!text.includes('Two seconds is a long time'), 'took another character line');
+  });
+
+  test('it stops once there is enough to clone from', () => {
+    const text = referenceTextFor(talkative, 'tran')!;
+    const words = text.split(/\s+/).length;
+    assert.ok(words >= 25, `only ${words} words`);
+    // And does not run on: everything they ever say would be a minute of audio
+    // to characterise a voice that needs fifteen seconds.
+    assert.ok(!text.includes('should not be reached'), 'kept going past the minimum');
+  });
+
+  test('a character who never speaks has nothing to record', () => {
+    assert.equal(referenceTextFor(talkative, 'nobody'), undefined);
+  });
+
+  test('a character with only a line or two still gets one', () => {
+    const terse = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      characters: { rus: { name: 'Russian officer' } },
+      scenes: {},
+      nodes: [
+        {
+          id: 'a',
+          type: 'dialogue',
+          lines: [{ who: 'rus', text: 'Canadian vessel, you are standing into danger.' }],
+          next: 'z',
+        },
+        { id: 'z', type: 'end', text: 'Done' },
+      ],
+    });
+    // Below the minimum the clone is poorer, but a poor clone an author can
+    // hear beats a refusal they cannot do anything about.
+    assert.match(referenceTextFor(terse, 'rus')!, /standing into danger/);
   });
 });
 
@@ -230,6 +340,32 @@ describe('publishing', () => {
   });
 });
 
+describe('downloading a model', () => {
+  test('a model that fetches its own weights offers nothing to download', async () => {
+    const { downloadModel } = await import('../tools/editor/download.ts');
+    // chatterbox pulls from Hugging Face on first load. Offering a Download
+    // button for it would be a button that cannot do anything.
+    await assert.rejects(() => downloadModel('chatterbox', '/tmp', undefined), /fetches its own/i);
+  });
+
+  test('downloading without a models folder says so rather than guessing', async () => {
+    const { downloadModel } = await import('../tools/editor/download.ts');
+    await assert.rejects(() => downloadModel('kokoro', undefined, undefined), /No models folder/i);
+  });
+
+  test('every downloadable file has a name, a URL and a size', () => {
+    for (const model of modelsFor('voice')) {
+      for (const file of model.files ?? []) {
+        assert.match(file.url, /^https:\/\//, model.id);
+        // The size is what tells an interrupted download from a finished one,
+        // and what stops someone starting a 300 MB fetch unawares.
+        assert.ok(file.mb > 0, `${model.id}/${file.name} has no size`);
+        assert.ok(file.name.length > 0);
+      }
+    }
+  });
+});
+
 describe('the model registry', () => {
   test('the placeholder needs no download, so the pathway works before one', async () => {
     const spec = modelById('placeholder')!;
@@ -238,6 +374,18 @@ describe('the model registry', () => {
     // the model, which is the difference between a five-minute fix and an
     // evening when a real generate fails.
     assert.equal(status.installed, true);
+  });
+
+  test('a palette model offers voices, a cloning model does not', () => {
+    const kokoro = modelById('kokoro')!;
+    const chatterbox = modelById('chatterbox')!;
+
+    // A model without cloning has to say which voices it has, or there is no
+    // way to cast it. One that clones takes its voice from the recording.
+    assert.equal(kokoro.clones, false);
+    assert.ok((kokoro.voices ?? []).length > 10);
+    assert.equal(chatterbox.clones, true);
+    assert.equal(chatterbox.voices, undefined);
   });
 
   test('a model with weights is not installed until they are on disk', async () => {
@@ -261,7 +409,7 @@ describe('the model registry', () => {
     // The registry is a fixed list rather than a scan of a folder precisely so
     // this holds: a generator is weights plus an adapter, and offering a model
     // with no adapter is offering a button that cannot work.
-    const adapters = new Set(['placeholder', 'chatterbox']);
+    const adapters = new Set(['placeholder', 'kokoro', 'chatterbox']);
     for (const model of modelsFor('voice')) {
       assert.ok(adapters.has(model.id), 'no adapter for ' + model.id);
     }

@@ -43,6 +43,31 @@ export type ModelSpec = {
   sizeGb?: number;
   /** True when the model needs a reference clip per character to clone from. */
   clones?: boolean;
+  /**
+   * True when landing on the CPU is a misconfiguration rather than the plan.
+   *
+   * Kokoro on a processor is faster than real time and entirely normal;
+   * chatterbox on a processor is a minute a line and almost always a CPU-only
+   * torch wheel. Warning about both would train people to ignore the warning.
+   */
+  prefersGpu?: boolean;
+  /**
+   * The voices this model already has, for one that does not clone.
+   *
+   * Listed here as well as reported by the sidecar, because the picker has to
+   * be usable before the model is downloaded — choosing a voice is how you
+   * decide whether to download it at all. The sidecar validates against its
+   * own list and says so if the two ever drift.
+   */
+  voices?: { id: string; label: string }[];
+  /**
+   * Files to fetch, for a model whose library will not fetch its own.
+   *
+   * Named explicitly rather than pointed at a repo, because these land in a
+   * folder the author chose and has to be able to recognise later. A cache
+   * full of hashes is fine for a library and useless to a person.
+   */
+  files?: { name: string; url: string; mb: number }[];
   license?: string;
 };
 
@@ -62,6 +87,65 @@ export const MODELS: ModelSpec[] = [
     clones: false,
   },
   {
+    id: 'kokoro',
+    section: 'voice',
+    title: 'Kokoro',
+    summary:
+      'About thirty ready-made English voices. Needs no recordings, runs ' +
+      'without a GPU, and can make the reference clips a cloning model wants.',
+    extra: 'kokoro',
+    folder: 'voice/kokoro',
+    sizeGb: 0.34,
+    clones: false,
+    license: 'Apache-2.0',
+    files: [
+      {
+        name: 'kokoro-v1.0.onnx',
+        url: 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx',
+        mb: 310,
+      },
+      {
+        name: 'voices-v1.0.bin',
+        url: 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin',
+        mb: 27,
+      },
+    ],
+    // American and British only: this is the palette an English-language show
+    // casts from, and offering fifty entries in nine languages to pick a
+    // narrator out of is not help. The model knows the others; the sidecar
+    // will accept one typed into project.yaml by hand.
+    voices: [
+      { id: 'af_heart', label: 'Heart — American, female, warm' },
+      { id: 'af_bella', label: 'Bella — American, female, bright' },
+      { id: 'af_nicole', label: 'Nicole — American, female, soft' },
+      { id: 'af_aoede', label: 'Aoede — American, female, even' },
+      { id: 'af_kore', label: 'Kore — American, female, firm' },
+      { id: 'af_sarah', label: 'Sarah — American, female, light' },
+      { id: 'af_nova', label: 'Nova — American, female, clear' },
+      { id: 'af_sky', label: 'Sky — American, female, young' },
+      { id: 'af_alloy', label: 'Alloy — American, female, flat' },
+      { id: 'af_jessica', label: 'Jessica — American, female, dry' },
+      { id: 'af_river', label: 'River — American, female, quiet' },
+      { id: 'am_michael', label: 'Michael — American, male, steady' },
+      { id: 'am_fenrir', label: 'Fenrir — American, male, deep' },
+      { id: 'am_puck', label: 'Puck — American, male, light' },
+      { id: 'am_adam', label: 'Adam — American, male, plain' },
+      { id: 'am_echo', label: 'Echo — American, male, level' },
+      { id: 'am_eric', label: 'Eric — American, male, clipped' },
+      { id: 'am_liam', label: 'Liam — American, male, young' },
+      { id: 'am_onyx', label: 'Onyx — American, male, low' },
+      { id: 'am_santa', label: 'Santa — American, male, old' },
+      { id: 'bf_emma', label: 'Emma — British, female, measured' },
+      { id: 'bf_alice', label: 'Alice — British, female, crisp' },
+      { id: 'bf_isabella', label: 'Isabella — British, female, formal' },
+      { id: 'bf_lily', label: 'Lily — British, female, young' },
+      { id: 'bm_george', label: 'George — British, male, older' },
+      { id: 'bm_daniel', label: 'Daniel — British, male, even' },
+      { id: 'bm_fable', label: 'Fable — British, male, storytelling' },
+      { id: 'bm_lewis', label: 'Lewis — British, male, gruff' },
+    ],
+  },
+  {
     id: 'chatterbox',
     section: 'voice',
     title: 'Chatterbox TTS',
@@ -69,6 +153,7 @@ export const MODELS: ModelSpec[] = [
       'Zero-shot cloning from a few seconds of reference audio. One clip per ' +
       'character gives the whole cast distinct voices.',
     extra: 'chatterbox',
+    prefersGpu: true,
     repo: 'ResembleAI/chatterbox',
     folder: 'voice/chatterbox',
     sizeGb: 2,

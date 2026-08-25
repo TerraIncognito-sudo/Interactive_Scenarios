@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "validate": "node src/scenario/validate.ts",
     "voice:check": "node tools/voice/check.ts",
-    "voice:install": "node tools/voice/install.ts"
+    "voice:install": "node tools/voice/install.ts",
+    "voice:fetch": "node tools/voice/fetch.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.3",

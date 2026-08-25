@@ -43,10 +43,12 @@ import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
 import { migrateShotsInto, type ShotMigration } from './shots.ts';
 import {
   generateAsset,
+  makeReferenceClip,
   publishAsset,
   GenerateError,
   type GeneratedTake,
   type Published,
+  type ReferenceClip,
 } from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
@@ -483,7 +485,7 @@ function portablePath(dir: string, value: string): string {
  */
 export async function editVoiceField(
   name: string,
-  edit: { voice: string; field: 'reference' | 'direction' | 'notes'; value: string },
+  edit: { voice: string; field: 'reference' | 'preset' | 'direction' | 'notes'; value: string },
 ): Promise<void> {
   const dir = projectDir(name);
   const file = join(dir, 'project.yaml');
@@ -762,6 +764,44 @@ export async function publish(
   }
 
   return { published, failed };
+}
+
+/**
+ * Records a reference clip for a character, in one of a palette model's voices.
+ *
+ * The answer to a cloning model's first question, which most authors cannot
+ * answer: they have a scenario, not a sound booth. Writes the clip into the
+ * project and points the character's voice at it, both in one action — a file
+ * on disk that nothing references is not a voice, it is litter.
+ */
+export async function recordReference(
+  name: string,
+  request: { voice: string; preset: string; model?: string },
+): Promise<ReferenceClip> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file);
+  const paths = pathsOf(file, project);
+
+  const parsed = parseScenarioSource(await readFile(paths.scenario, 'utf8'));
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const clip = await makeReferenceClip({
+    scenario: parsed.scenario,
+    paths,
+    who: request.voice,
+    preset: request.preset,
+    model: request.model ?? 'kokoro',
+    modelsRoot: modelsRoot(),
+  });
+
+  await editVoiceField(name, { voice: request.voice, field: 'reference', value: clip.file });
+  // Kept beside it so the clip can be made again. A wav in a folder with no
+  // note of where it came from is a dead end the first time anyone wants to
+  // adjust it.
+  await editVoiceField(name, { voice: request.voice, field: 'preset', value: clip.preset });
+
+  return clip;
 }
 
 export type VoiceWiring = {

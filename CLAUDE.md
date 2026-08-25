@@ -151,6 +151,14 @@ reference clip and direction into the recipe, so re-recording a reference marks 
 of that character's clips stale. Left out, the hash would say finished about clips made from
 a voice that no longer exists.
 
+**A cloning model needs a recording that does not exist yet.** That circle is broken by
+keeping a palette model — Kokoro — beside it: it has thirty voices of its own, so it can
+read a character's lines and the result becomes the reference clip Chatterbox wanted.
+`makeReferenceClip` in `tools/editor/generate.ts` uses the character's *own* lines,
+because a reference is copied in register as much as in timbre — a voice sampled reading
+"the quick brown fox" comes back as an audiobook rather than a watch-keeper. The preset
+that made it is written beside it, so the clip can be made again.
+
 **Generating never publishes, and never steals a selection.** A take is added; the published
 file changes only when someone presses Publish. Re-rolling has to be free or nobody does it,
 and then the first acceptable reading of every line is the one that ships.

@@ -21,7 +21,7 @@
  */
 
 import { copyFile, mkdir, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { lineDuration, type Scenario } from '../../src/scenario/schema.ts';
 import type { AssetSection } from '../../src/scenario/load.ts';
 import {
@@ -82,7 +82,7 @@ async function nextTakeId(dir: string, hash: string, extension: string): Promise
  * do rather than what went wrong. A generator that answers "invalid request"
  * to a missing reference clip is a generator people stop using.
  */
-function checkVoice(recipe: Recipe, file: string, clones: boolean): void {
+function checkVoice(recipe: Recipe, file: string, spec: { clones?: boolean; title: string }): void {
   if (!recipe.text?.trim()) {
     throw new GenerateError(
       `${file} has no text to say. Seed it from the storyboard, or type the line ` +
@@ -95,11 +95,17 @@ function checkVoice(recipe: Recipe, file: string, clones: boolean): void {
         `Re-seed from the storyboard to attach it.`,
     );
   }
-  if (clones && !recipe.reference) {
+  if (spec.clones && !recipe.reference) {
     throw new GenerateError(
-      `No reference clip for "${recipe.voice}". This model clones a voice from a few ` +
-        `seconds of speech — set one in the Voices panel, or every character will ` +
-        `sound the same.`,
+      `No reference clip for "${recipe.voice}". ${spec.title} clones a voice from a few ` +
+        `seconds of speech — choose a clip in the Voices panel, or have one made there ` +
+        `from a Kokoro voice. Without it every character reads in the same default voice.`,
+    );
+  }
+  if (!spec.clones && !recipe.preset) {
+    throw new GenerateError(
+      `No voice chosen for "${recipe.voice}". ${spec.title} has a palette of them — ` +
+        `pick one in the Voices panel.`,
     );
   }
 }
@@ -159,7 +165,7 @@ export async function generateAsset(options: {
 
   const status = await modelStatus(options.modelsRoot, spec);
   const recipe = resolveRecipe(project, section, file);
-  checkVoice(recipe, file, spec.clones === true);
+  checkVoice(recipe, file, spec);
 
   const hash = recipeHash(recipe);
   const dir = takesDir(paths, section, file);
@@ -186,6 +192,7 @@ export async function generateAsset(options: {
     text: recipe.text!,
     out: join(dir, take),
     reference: recipe.reference ? fromProject(paths.dir, recipe.reference) : undefined,
+    preset: recipe.preset,
     seed,
     // The engine's own estimate, so a placeholder clip lasts exactly as long as
     // the beat was budgeted for and a rehearsal runs to the real running time.
@@ -258,6 +265,123 @@ async function speakOrExplain(
     }
     throw err;
   }
+}
+
+/** Enough speech to clone from: long enough to characterise, short enough to stay clean. */
+const REFERENCE_WORDS = { min: 25, max: 55 };
+
+/**
+ * The character's own words, for a reference clip.
+ *
+ * Their real lines rather than a pangram, because a reference is copied in
+ * register as well as in timbre — a voice sampled reading "the quick brown
+ * fox" carries none of the flatness a duty officer reads with. Taken in
+ * scenario order and stopped at the first sentence boundary past the minimum,
+ * so the clip ends on a full stop instead of mid-clause.
+ */
+export function referenceTextFor(scenario: Scenario, who: string): string | undefined {
+  const said: string[] = [];
+  let words = 0;
+
+  for (const node of scenario.nodes) {
+    if (node.type !== 'dialogue') continue;
+    for (const line of node.lines) {
+      if (line.who !== who) continue;
+      const text = line.text.trim();
+      if (!text) continue;
+      said.push(text);
+      words += text.split(/\s+/).length;
+      if (words >= REFERENCE_WORDS.min) return said.join(' ');
+    }
+  }
+
+  // Everything they say, when they do not say much. Below the minimum a clone
+  // is poor, but a poor clone the author can hear beats a refusal they cannot.
+  return said.length > 0 ? said.join(' ') : undefined;
+}
+
+export type ReferenceClip = {
+  voice: string;
+  preset: string;
+  /** Project-relative, which is how it is written into project.yaml. */
+  file: string;
+  seconds: number;
+  text: string;
+};
+
+/**
+ * Makes a reference clip for a character, in one of a palette model's voices.
+ *
+ * This exists because the cloning model's first question — "which recording?"
+ * — is one most authors cannot answer. They have a scenario, not a sound
+ * booth. A palette model has thirty usable voices and no such question, so it
+ * can be used to answer chatterbox's: pick a voice, hear the character's own
+ * lines in it, and keep the result as the reference.
+ *
+ * The preset is recorded next to the reference so the clip can be made again.
+ * A wav file in a folder with no note of where it came from is a dead end the
+ * first time anyone wants to adjust it.
+ */
+export async function makeReferenceClip(options: {
+  scenario: Scenario;
+  paths: ProjectPaths;
+  who: string;
+  preset: string;
+  model: string;
+  modelsRoot?: string;
+}): Promise<ReferenceClip> {
+  const { scenario, paths, who, preset } = options;
+
+  const spec = modelById(options.model);
+  if (!spec || spec.section !== 'voice' || spec.clones) {
+    throw new GenerateError(
+      `"${options.model}" cannot make a reference clip — that needs a model with ` +
+        `voices of its own, like Kokoro.`,
+    );
+  }
+
+  const status = await modelStatus(options.modelsRoot, spec);
+  if (!status.installed) {
+    throw new GenerateError(
+      `${spec.title} is not downloaded yet. Press Download beside it in the model ` +
+        `picker, or run \`npm run voice:fetch -- ${spec.id}\`.`,
+    );
+  }
+
+  const text = referenceTextFor(scenario, who);
+  if (!text) {
+    throw new GenerateError(
+      `"${who}" has no lines in the scenario, so there is nothing to record them saying.`,
+    );
+  }
+
+  // Beside the scenario, so the clip travels with the show that uses it.
+  const relative = `voices/${who}.wav`;
+  const target = join(paths.dir, 'voices', `${who}.wav`);
+  await mkdir(dirname(target), { recursive: true });
+
+  // WAV, not MP3. This is fed back into a model rather than played to an
+  // audience, and there is no reason to make it listen to compression
+  // artefacts on the one recording that decides what a character sounds like.
+  const result = await speakOrExplain(
+    {
+      backend: spec.id,
+      modelPath: status.local ? status.path : undefined,
+      modelsRoot: options.modelsRoot,
+    },
+    { text: trimToWords(text, REFERENCE_WORDS.max), out: target, preset },
+  );
+
+  return { voice: who, preset, file: relative, seconds: result.seconds, text };
+}
+
+/** Keeps a reference clip from running long, on a sentence boundary if it can. */
+function trimToWords(text: string, max: number): string {
+  const words = text.split(/\s+/);
+  if (words.length <= max) return text;
+  const cut = words.slice(0, max).join(' ');
+  const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '));
+  return stop > cut.length / 2 ? cut.slice(0, stop + 1) : `${cut}.`;
 }
 
 export type Published = { file: string; from: string };

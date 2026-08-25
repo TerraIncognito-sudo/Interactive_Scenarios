@@ -1127,3 +1127,36 @@ button.small {
   color: var(--text-faint);
   font-size: 0.78rem;
 }
+
+/* The way out of a cloning model's chicken-and-egg: it wants a recording of a
+   voice that does not exist yet, and this is the offer to make one. */
+.cast-offer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg-raised);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.cast-preset {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.28rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.cast-working {
+  color: var(--accent);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}

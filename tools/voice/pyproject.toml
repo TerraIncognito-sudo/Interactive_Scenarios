@@ -45,6 +45,12 @@ dependencies = ["numpy>=2.0", "soundfile>=0.12.1"]
 # index is quietly ignored.
 chatterbox = ["chatterbox-tts>=0.1.7", "torch>=2.9", "torchaudio>=2.9"]
 
+# A palette of ready-made voices, and no torch at all — it runs on ONNX. That
+# is what makes it the answer to "I have no reference recordings": pick a
+# voice per character and the cast exists, or generate a clip with one and
+# hand that to chatterbox to clone.
+kokoro = ["kokoro-onnx>=0.4"]
+
 [tool.uv]
 # chatterbox-tts pins `torch==2.6.0` on this Python, and that pin is a tested
 # baseline rather than a real incompatibility — the same package asks for

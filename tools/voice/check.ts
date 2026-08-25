@@ -74,9 +74,10 @@ async function main(): Promise<number> {
     const info: Partial<SidecarInfo> = sidecar.info ?? {};
     say('device', String(info.gpu ?? info.device ?? 'unknown'));
 
-    // The single most common silent failure: everything installs, imports and
-    // runs, and does it on the processor at a minute a line.
-    if (info.device === 'cpu' && spec.id !== 'placeholder') {
+    // The single most common silent failure for a model that wants a GPU:
+    // everything installs, imports and runs, and does it on the processor at a
+    // minute a line.
+    if (info.device === 'cpu' && spec.prefersGpu) {
       say('warning', 'running on CPU — see the troubleshooting section of the walkthrough');
     }
 

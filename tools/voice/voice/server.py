@@ -39,7 +39,7 @@ def _params(request: dict[str, Any]) -> dict[str, Any]:
     for a model that has not been written yet without breaking the one that has.
     """
     params = dict(request.get("params") or {})
-    for key in ("reference", "seed", "seconds"):
+    for key in ("reference", "preset", "seed", "seconds"):
         if request.get(key) is not None:
             params[key] = request[key]
     return params

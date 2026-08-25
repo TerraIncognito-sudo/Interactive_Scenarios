@@ -46,6 +46,8 @@ export type SidecarInfo = {
   backend: string;
   device?: string;
   clones?: boolean;
+  /** The model's own voices, as it reports them. */
+  voices?: string[];
   gpu?: string | null;
   sampleRate?: number;
 };
@@ -54,6 +56,8 @@ export type SpeakRequest = {
   text: string;
   out: string;
   reference?: string;
+  /** One of the model's own voices, for a model that has a palette. */
+  preset?: string;
   seed?: number;
   /** Length hint, used by the placeholder and ignored by a real model. */
   seconds?: number;

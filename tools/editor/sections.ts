@@ -99,6 +99,8 @@ export type CastMember = {
   reference?: string;
   /** False when `reference` names a file that is not there. */
   referenceExists: boolean;
+  /** The model voice cast in this part, for a model that has a palette. */
+  preset?: string;
   direction?: string;
   notes?: string;
 };
@@ -249,6 +251,7 @@ async function buildCast(
       lines: tally.lines,
       ready: tally.ready,
       reference,
+      preset: voice?.preset,
       referenceExists: reference
         ? await fileExists(fromProject(paths.dir, reference))
         : false,
