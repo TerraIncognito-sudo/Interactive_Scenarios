@@ -7,27 +7,16 @@
  * here can drift from what the game server will do with the same file.
  */
 
-const $ = (id) => document.getElementById(id);
-
-function h(tag, props = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (value === undefined || value === null || value === false) continue;
-    if (key === 'class') node.className = value;
-    else if (key.startsWith('on')) node.addEventListener(key.slice(2).toLowerCase(), value);
-    else node.setAttribute(key, value === true ? '' : value);
-  }
-  // Deep, not one level: rows are built from arrays of [separator, element]
-  // pairs, and a half-flattened array stringifies to "[object HTMLElement]".
-  for (const child of children.flat(Infinity)) {
-    if (child === undefined || child === null || child === false) continue;
-    node.append(typeof child === 'object' ? child : String(child));
-  }
-  return node;
-}
+import { $, h } from './dom.js';
+import { initAssets, refreshAssets, setProjects, seedFromStoryboard } from './assets.js';
+import { initPicker, openPicker } from './picker.js';
 
 const state = {
   folder: null,
+  /** Set when a project is open; its scenario takes over the source pane. */
+  projectName: null,
+  /** What is on disk for the storyboard, so its Save button means something. */
+  storySaved: '',
   /** What is on disk, so "unsaved" is a fact rather than a guess. */
   saved: '',
   analysis: null,
@@ -54,6 +43,7 @@ async function loadList() {
 
 async function openFolder(folder) {
   state.folder = folder;
+  state.projectName = null;
   const response = await fetch(`/api/scenarios/${encodeURIComponent(folder)}/source`);
   if (!response.ok) {
     setStatus('bad', 'could not open');
@@ -68,10 +58,33 @@ async function openFolder(folder) {
 }
 
 async function save() {
-  if (!state.folder) return;
   const source = $('source').value;
   $('save').disabled = true;
   try {
+    // A project owns its own scenario, which lives outside this repo. Saving
+    // has to follow the file the board is showing, not the folder picker.
+    if (state.projectName) {
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(state.projectName)}/scenario`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ source }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setStatus('bad', data.error ?? 'save failed');
+        return;
+      }
+      state.saved = source;
+      markClean();
+      await analyze();
+      await refreshAssets();
+      return;
+    }
+
+    if (!state.folder) return;
     const response = await fetch(`/api/scenarios/${encodeURIComponent(state.folder)}/source`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -469,16 +482,82 @@ window.addEventListener('keydown', (event) => {
 
 // Closing the tab on unsaved changes loses work with no way back.
 window.addEventListener('beforeunload', (event) => {
-  if ($('source').value !== state.saved) event.preventDefault();
+  if ($('source').value !== state.saved || $('story').value !== state.storySaved) {
+    event.preventDefault();
+  }
+});
+
+$('story-save').addEventListener('click', () => {
+  void (async () => {
+    if (!state.projectName) return;
+    const source = $('story').value;
+    const response = await fetch(
+      `/api/projects/${encodeURIComponent(state.projectName)}/storyboard`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source }),
+      },
+    );
+    const data = await response.json();
+    if (!response.ok) return setStatus('bad', data.error ?? 'could not save storyboard');
+    state.storySaved = source;
+    setStatus('ok', 'storyboard saved');
+    await refreshAssets();
+  })();
+});
+
+$('story-sync').addEventListener('click', () => {
+  void (async () => {
+    const result = await seedFromStoryboard();
+    if (!result) return;
+    // Nothing is ever overwritten, so the honest report counts what appeared
+    // and what was filled in — never "synced", which would imply the storyboard
+    // had won an argument with the project file.
+    const filled = result.filled?.length ?? 0;
+    const parts = [];
+    if (result.added.length > 0) {
+      parts.push(`added ${result.added.length} asset${result.added.length === 1 ? '' : 's'}`);
+    }
+    if (filled > 0) parts.push(`filled gaps in ${filled} row${filled === 1 ? '' : 's'}`);
+    setStatus(
+      parts.length > 0 ? 'ok' : 'warn',
+      parts.length > 0 ? parts.join(', ') : 'nothing new in the storyboard',
+    );
+  })();
 });
 
 async function boot() {
-  const scenarios = await loadList();
-  if (scenarios.length === 0) {
-    setStatus('bad', 'no scenarios found');
-    return;
-  }
-  await openFolder(scenarios[0].folder);
+  initAssets({
+    onScenario: (source, name) => {
+      state.projectName = name;
+      state.saved = source;
+      $('source').value = source;
+      markClean();
+      void analyze();
+      showTab('assets');
+    },
+    onStoryboard: (source, path) => {
+      state.storySaved = source ?? '';
+      $('story').value = source ?? '';
+      $('story').disabled = source === undefined;
+      $('story-path').textContent = path ?? 'no storyboard in this project';
+      $('story-sync').disabled = source === undefined;
+      $('story-save').disabled = source === undefined;
+    },
+  });
+
+  const workspaceState = await initPicker({
+    onWorkspace: (next) => setProjects(next.projects, next.workspace),
+  });
+
+  setProjects(workspaceState.projects, workspaceState.workspace);
+
+  // First run: no folder has ever been chosen, so there is nothing to show and
+  // no way to guess. Ask before the editor looks broken.
+  if (!workspaceState.workspace) openPicker();
+
+  await loadList();
 }
 
 void boot();

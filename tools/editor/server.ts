@@ -15,6 +15,26 @@ import { readFile, writeFile, rename, readdir, stat } from 'node:fs/promises';
 import { join, resolve, extname } from 'node:path';
 import { parseScenarioSource } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
+import { ProjectError } from './project.ts';
+import {
+  editAssetField,
+  initProject,
+  listProjects,
+  openProject,
+  saveProjectSource,
+  saveScenarioSource,
+  saveStoryboardSource,
+  selectTake,
+  syncFromStoryboard,
+} from './projects.ts';
+import {
+  browse,
+  loadConfig,
+  looksSynced,
+  recentWorkspaces,
+  setWorkspace,
+  workspace,
+} from './workspace.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const PUBLIC_DIR = join(import.meta.dirname, 'public');
@@ -144,6 +164,137 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return sendJson(response, 200, { scenarios: await listScenarios(), dir: SCENARIOS_DIR });
   }
 
+  // --- projects -----------------------------------------------------------
+  //
+  // A project is the workshop: a storyboard, a scenario, and the recipes and
+  // takes for every asset the scenario asks for. It lives outside this repo,
+  // and nothing it produces has to come back here.
+
+  // The workspace is the folder the author keeps their scenarios in. The editor
+  // has no opinion about where that is and asks on first run.
+  if (path === '/api/workspace' && request.method === 'GET') {
+    return sendJson(response, 200, {
+      workspace: workspace(),
+      recent: recentWorkspaces(),
+      synced: workspace() ? looksSynced(workspace()!) : false,
+      projects: await listProjects(),
+    });
+  }
+
+  if (path === '/api/workspace' && request.method === 'POST') {
+    const body = (await readBody(request)) as { path?: unknown };
+    if (typeof body.path !== 'string') {
+      return sendJson(response, 400, { error: 'Expected { path }' });
+    }
+    try {
+      const chosen = await setWorkspace(body.path);
+      return sendJson(response, 200, {
+        workspace: chosen,
+        recent: recentWorkspaces(),
+        synced: looksSynced(chosen),
+        projects: await listProjects(),
+      });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  // Serves the folder picker. `showDirectoryPicker()` in the browser hands the
+  // page a handle and never a path, which is no use to a process that has to
+  // open the files, so the listing comes from here instead.
+  if (path === '/api/browse' && request.method === 'GET') {
+    try {
+      return sendJson(response, 200, await browse(url.searchParams.get('path') ?? undefined));
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  if (path === '/api/projects' && request.method === 'GET') {
+    return sendJson(response, 200, { projects: await listProjects(), dir: workspace() });
+  }
+
+  const projectMatch = /^\/api\/projects\/([^/]+)(?:\/([a-z]+))?$/.exec(path);
+  if (projectMatch) {
+    const name = decodeURIComponent(projectMatch[1]!);
+    const action = projectMatch[2];
+
+    try {
+      if (!action && request.method === 'GET') {
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'project' && request.method === 'PUT') {
+        const body = (await readBody(request)) as { source?: unknown };
+        if (typeof body.source !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { source }' });
+        }
+        await saveProjectSource(name, body.source);
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'scenario' && request.method === 'PUT') {
+        const body = (await readBody(request)) as { source?: unknown };
+        if (typeof body.source !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { source }' });
+        }
+        await saveScenarioSource(name, body.source);
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'asset' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as {
+          file?: unknown;
+          field?: unknown;
+          value?: unknown;
+        };
+        if (typeof body.file !== 'string' || typeof body.field !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { file, field, value }' });
+        }
+        await editAssetField(name, {
+          file: body.file,
+          field: body.field as 'prompt',
+          value: typeof body.value === 'boolean' ? body.value : String(body.value ?? ''),
+        });
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'storyboard' && request.method === 'PUT') {
+        const body = (await readBody(request)) as { source?: unknown };
+        if (typeof body.source !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { source }' });
+        }
+        await saveStoryboardSource(name, body.source);
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'init' && request.method === 'POST') {
+        return sendJson(response, 200, await initProject(name));
+      }
+
+      if (action === 'sync' && request.method === 'POST') {
+        const result = await syncFromStoryboard(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'select' && request.method === 'POST') {
+        const body = (await readBody(request)) as { asset?: unknown; take?: unknown };
+        if (typeof body.asset !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { asset, take }' });
+        }
+        await selectTake(name, body.asset, typeof body.take === 'string' ? body.take : null);
+        return sendJson(response, 200, await openProject(name));
+      }
+    } catch (err) {
+      if (err instanceof ProjectError) {
+        return sendJson(response, 400, { error: err.message, problems: err.problems });
+      }
+      throw err;
+    }
+
+    return sendJson(response, 405, { error: 'Method not allowed' });
+  }
+
   // /api/scenarios/<folder>/source
   const sourceMatch = /^\/api\/scenarios\/([^/]+)\/source$/.exec(path);
   if (sourceMatch) {
@@ -204,9 +355,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
 // Loopback only. This process writes files and has no authentication; it has no
 // business being reachable from anywhere but the machine it runs on.
+await loadConfig();
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`\n  Scenario editor   http://localhost:${PORT}`);
-  console.log(`  Reading           ${SCENARIOS_DIR}\n`);
+  console.log(`  Reading           ${SCENARIOS_DIR}`);
+  console.log(`  Workspace         ${workspace() ?? '(none chosen yet — pick one in the editor)'}`);
+  console.log('');
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

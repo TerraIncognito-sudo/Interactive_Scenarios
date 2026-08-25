@@ -10,6 +10,11 @@
     <header class="bar">
       <span class="brand">Scenario editor</span>
 
+      <select id="project-picker" aria-label="Project"></select>
+      <button id="change-workspace" type="button" class="ghost" title="Choose the folder your scenarios live in">
+        Folder…
+      </button>
+
       <select id="picker" aria-label="Scenario"></select>
 
       <span class="status" id="status">…</span>
@@ -44,6 +49,8 @@
           <button class="tab" data-tab="nodes" role="tab" aria-selected="true">Nodes</button>
           <button class="tab" data-tab="vars" role="tab" aria-selected="false">Variables</button>
           <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
+          <button class="tab" data-tab="assets" role="tab" aria-selected="false">Assets</button>
+          <button class="tab" data-tab="story" role="tab" aria-selected="false">Storyboard</button>
         </div>
 
         <div class="tab-body">
@@ -72,9 +79,71 @@
             <button id="run" type="button" class="primary">Run through</button>
             <div class="trace" id="trace"></div>
           </div>
+
+          <div class="tab-panel" id="panel-assets" hidden>
+            <p class="hint" id="assets-hint">
+              Open a project to see what the show needs and what has been made. The list
+              comes from the scenario itself — an asset appears here because something in
+              the story asks for it, which is why it can never drift out of date.
+            </p>
+            <div class="totals" id="totals" hidden></div>
+            <div class="sections" id="sections"></div>
+          </div>
+
+          <div class="tab-panel" id="panel-story" hidden>
+            <p class="hint">
+              The storyboard lives in the project, beside the scenario it describes. It is
+              where the work starts — shots, prompts and spoken lines in one document — and
+              the asset rows are seeded from it. Seeding only ever <em>adds</em>: once a
+              prompt has been tuned here, the document that suggested it does not overwrite it.
+            </p>
+            <div class="story-bar">
+              <span class="hint" id="story-path">no storyboard in this project</span>
+              <span class="spacer"></span>
+              <button id="story-sync" type="button" class="ghost">Seed missing assets</button>
+              <button id="story-save" type="button" class="primary">Save storyboard</button>
+            </div>
+            <textarea
+              id="story"
+              spellcheck="false"
+              autocomplete="off"
+              wrap="soft"
+              aria-label="Storyboard"
+            ></textarea>
+          </div>
         </div>
       </section>
     </main>
+
+    <!-- The folder picker. Served by the editor process rather than the browser:
+         showDirectoryPicker() hands the page a handle and never a path, and the
+         server is the half that has to open the files. -->
+    <dialog id="picker-dialog" class="picker">
+      <h2>Where do your scenarios live?</h2>
+      <p class="hint">
+        Pick the folder that <em>contains</em> your scenario folders. Anything inside it
+        with a <code>scenario.yaml</code> shows up as a project.
+      </p>
+
+      <div class="picker-recent" id="picker-recent"></div>
+
+      <div class="picker-path">
+        <input id="picker-input" type="text" spellcheck="false" aria-label="Folder path" />
+        <button id="picker-go" type="button" class="ghost">Go</button>
+      </div>
+
+      <div class="picker-roots" id="picker-roots"></div>
+      <ul class="picker-list" id="picker-list"></ul>
+
+      <p class="picker-warn" id="picker-warn" hidden></p>
+
+      <footer class="picker-foot">
+        <span class="hint" id="picker-here"></span>
+        <span class="spacer"></span>
+        <button id="picker-cancel" type="button" class="ghost">Cancel</button>
+        <button id="picker-use" type="button" class="primary">Use this folder</button>
+      </footer>
+    </dialog>
 
     <script type="module" src="./app.js"></script>
   </body>

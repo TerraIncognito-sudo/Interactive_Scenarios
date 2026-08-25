@@ -18,6 +18,10 @@ npm run typecheck
 npm run validate
 ```
 
+Structural problems are errors; art that has not been made yet is a warning, so a scenario
+can declare its media before the media exists — which is what puts it on the editor's asset
+board. Add `--strict` for a pre-show check, where a missing file *is* an error.
+
 ```bash
 npm run build
 ```
@@ -26,6 +30,15 @@ npm run build
 watches, `npm run editor` starts the scenario editor on 8890. **Never leave a dev server
 running** — one was left on port 8880 once and served a stale page to the user's browser
 while they debugged a "crash" on the real server. Kill what you start.
+
+```bash
+npm run project:new -- <storyboard.md> <target-folder> "Some Title"
+```
+
+Scaffolds a project folder from a storyboard, for when a storyboard exists and there is no
+scenario yet. Once a folder has a `scenario.yaml` the editor takes over: it asks for a
+**workspace** folder on first run and lists every folder inside it that has one. See
+[docs/asset-pipeline.md](docs/asset-pipeline.md).
 
 ## The build constraint that shapes everything
 
@@ -84,6 +97,30 @@ room on the server. Anything scheduled goes through the guard.
 **Room codes exclude `O/0`, `I/1`, `S/5`, `Z`.** They are read off a projector from the back
 of a room.
 
+**An asset's production section comes from the schema field that referenced it**, never from
+its extension. A `.mp3` in `voice:` and a `.mp3` in `music:` are different work made by
+different models. `assetReferencesOf` is the single walk both `assetsOf` and the editor's
+board are built from — two walks would eventually disagree, and the editor's would be the one
+that disagreed silently.
+
+**The editor and the player must agree on filenames.** The player opens exactly the names in
+`scenario.yaml`, so the editor may never invent one. Seeding prompts from a storyboard keys
+every row to `assetReferencesOf(scenario)` and reports anything it cannot place; a prompt
+written against a name of the editor's own choosing would belong to a file nothing ever loads.
+The one place names *are* invented is `scaffold.ts`, which is writing the scenario that will
+reference them — so the two files still agree. Tests guard both routes.
+
+The same rule governs what a voice clip *says*: `text` on a voice row is the scenario's line,
+never the storyboard's blockquote. A storyboard quotes a whole delivery at once where the
+scenario splits it into the lines the display shows, so reading the storyboard by position puts
+one line's words in another line's clip. The storyboard contributes the *Delivery:* note and
+nothing else — matched by speaker, since one note covers every line split out of its block.
+
+**The machine never rewrites `project.yaml` wholesale.** It is the author's file, full of
+hand-tuned prompts and comments recording why. Field edits go through YAML's document API
+(`tools/editor/projects.ts`); parsing to an object and re-serialising strips every comment in
+the file the first time anyone touches a text box. A test guards this.
+
 ## Layout
 
 | Path | What lives there |
@@ -93,6 +130,9 @@ of a room.
 | `src/server/` | Fastify, rooms, WebSocket, SQLite, admin auth |
 | `src/client/` | `display/` projector, `host/` console, `player/` phone, `admin/` console |
 | `tools/editor/` | The scenario editor — a separate local process, not part of the server |
+| `tools/editor/workspace.ts` | Which folder holds the projects, and the server-side folder picker |
+| `tools/editor/project.ts` | Asset projects: `project.yaml` (author-owned) + `.ledger.json` (machine-owned) |
+| `tools/editor/sections.ts` | The status board — scenario, recipes, ledger and disk reconciled |
 | `src/shared/protocol.ts` | Message unions, Zod-validated in both directions |
 | `scenarios/` | Content. Adding a scenario is adding a folder — no code changes |
 

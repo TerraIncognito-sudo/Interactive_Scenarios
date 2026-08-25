@@ -1,10 +1,25 @@
 /**
- * Preflight CLI: `npm run validate [scenariosDir]`
+ * Preflight CLI: `npm run validate [scenariosDir] [--strict]`
  *
  * Catches broken scenarios at your desk instead of on stage. Checks schema,
  * graph integrity, and that every referenced asset actually exists on disk.
  *
- * Exit code 1 on any error, so it can gate CI or a pre-event checklist.
+ * Two different questions, deliberately separated:
+ *
+ *   Is this scenario broken?     dangling `next`, a poll with no default,
+ *                                an unknown character. Always an error.
+ *   Has the art been made yet?   missing files. A warning by default.
+ *
+ * They were one question once, and it made the tool unusable while a show was
+ * being built: declaring `background: a1-jetty.jpg` before the image existed
+ * turned validate red, so authors commented their media out — which left the
+ * scenario lying about what it needed, and the editor's asset board empty.
+ * Work in progress is not a defect.
+ *
+ * `--strict` restores the old behaviour and is what a pre-event check should
+ * run: on show day, missing art *is* an error.
+ *
+ * Exit code 1 on any error, so either mode can gate CI or a checklist.
  */
 
 import { access } from 'node:fs/promises';
@@ -31,14 +46,19 @@ async function missingAssets(dir: string, files: string[]): Promise<string[]> {
 }
 
 async function main(): Promise<void> {
-  const arg = process.argv[2];
+  const args = process.argv.slice(2);
+  const strict = args.includes('--strict');
+  const arg = args.find((value) => !value.startsWith('--'));
   const root = arg ? resolve(arg) : loadConfig([]).scenariosDir;
 
-  console.log(`${DIM}Validating scenarios in ${root}${RESET}\n`);
+  console.log(
+    `${DIM}Validating scenarios in ${root}${strict ? ' (strict: art must exist)' : ''}${RESET}\n`,
+  );
 
   const { scenarios, failures } = await loadLibrary(root);
   let errorCount = 0;
   let warningCount = 0;
+  let outstanding = 0;
 
   for (const failure of failures) {
     errorCount++;
@@ -60,16 +80,33 @@ async function main(): Promise<void> {
     const pollCount = scenario.nodes.filter((n) => n.type === 'poll').length;
     const endCount = scenario.nodes.filter((n) => n.type === 'end').length;
 
-    const status = missing.length > 0 ? `${RED}FAIL${RESET}` : `${GREEN}OK${RESET}  `;
+    // The scenario itself is sound at this point — `loadLibrary` collects the
+    // structural failures separately. So the only thing that can fail a
+    // scenario here is missing art, and only when that has been asked for.
+    const failed = strict && missing.length > 0;
+    const status = failed ? `${RED}FAIL${RESET}` : `${GREEN}OK${RESET}  `;
     console.log(`${status}  ${id} ${DIM}— "${scenario.title}"${RESET}`);
     console.log(
       `      ${DIM}${nodeCount} nodes · ${pollCount} polls · ${endCount} endings · ` +
-        `${assets.length} assets${RESET}`,
+        `${assets.length - missing.length}/${assets.length} assets made${RESET}`,
     );
 
     for (const file of missing) {
-      errorCount++;
-      console.log(`        ${RED}·${RESET} missing asset: assets/${file}`);
+      if (strict) {
+        errorCount++;
+        console.log(`        ${RED}·${RESET} missing asset: assets/${file}`);
+      } else {
+        outstanding++;
+      }
+    }
+
+    // Listed as a count rather than a line each: forty "not made yet" entries
+    // are a to-do list, and the editor's asset board is where that belongs.
+    if (!strict && missing.length > 0) {
+      console.log(
+        `        ${YELLOW}·${RESET} ${missing.length} asset(s) not made yet ` +
+          `${DIM}(--strict to fail on these)${RESET}`,
+      );
     }
 
     for (const warning of warnings) {
@@ -86,8 +123,15 @@ async function main(): Promise<void> {
 
   const summary =
     `${scenarios.size} scenario(s) loaded, ` +
-    `${errorCount} error(s), ${warningCount} warning(s)`;
+    `${errorCount} error(s), ${warningCount} warning(s)` +
+    (outstanding > 0 ? `, ${outstanding} asset(s) outstanding` : '');
   console.log(errorCount > 0 ? `${RED}${summary}${RESET}` : `${GREEN}${summary}${RESET}`);
+
+  if (outstanding > 0) {
+    console.log(
+      `${DIM}Run with --strict before a show: outstanding art is an error on the night.${RESET}`,
+    );
+  }
 
   process.exit(errorCount > 0 ? 1 : 0);
 }

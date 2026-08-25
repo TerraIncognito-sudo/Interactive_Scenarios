@@ -541,3 +541,412 @@ select {
   font-size: 0.88rem;
   padding: 1rem 0;
 }
+
+/* ---------------------------------------------------------------- assets -- */
+
+.totals {
+  padding: 0.6rem 0 0.9rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.9rem;
+}
+
+.totals[hidden] {
+  display: none;
+}
+
+.totals-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.totals-path {
+  margin: 0.5rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+/* Stale is the state nothing else in the workshop can see, so it is the one
+   that gets the alarming colour. Missing is merely work not done yet. */
+.pill-stale {
+  border-color: #7a4a1e;
+  background: rgba(255, 138, 101, 0.14);
+  color: var(--accent-warm);
+}
+
+.pill-unselected {
+  border-color: #2f4d6b;
+  background: rgba(79, 195, 247, 0.12);
+  color: var(--accent);
+}
+
+.pill-ready {
+  border-color: #2c5c3f;
+  background: rgba(94, 201, 138, 0.12);
+  color: var(--good);
+}
+
+.pill-missing {
+  color: var(--text-faint);
+}
+
+.pill-unmanaged {
+  border-color: #5a4a22;
+  color: #d8b866;
+}
+
+.pill-frozen,
+.pill-published {
+  border-color: #3a465c;
+  color: var(--text-dim);
+}
+
+.section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-head:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.section-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.section-caret {
+  color: var(--text-faint);
+  width: 0.8rem;
+}
+
+.section-count {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.section-model {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0.4rem 0.75rem 0.6rem 1.55rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.section-root {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.section-backend {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.asset {
+  padding: 0.6rem 0.75rem 0.7rem 1.55rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.asset:last-child {
+  border-bottom: none;
+}
+
+.asset-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.asset-file {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.asset-hash {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-faint);
+}
+
+.asset-origins {
+  margin: 0.2rem 0 0.4rem;
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+textarea.prompt {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  font: 0.82rem/1.45 var(--mono);
+}
+
+textarea.prompt:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.takes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
+.take {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.take.chosen {
+  border-color: var(--good);
+  color: var(--good);
+}
+
+.take.gone {
+  text-decoration: line-through;
+}
+
+.take-tag {
+  margin-left: 0.35rem;
+  color: var(--text-faint);
+}
+
+.takes-empty,
+.sections .empty {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.sections .empty {
+  padding: 0.6rem 0.75rem 0.75rem 1.55rem;
+}
+
+/* Warnings about one asset, on the row they belong to rather than in a wall
+   of forty identical lines at the top of the board. */
+.asset-notes {
+  margin: 0 0 0.45rem;
+  padding-left: 1.1rem;
+  font-size: 0.76rem;
+  color: var(--accent-warm);
+}
+
+/* ---------------------------------------------------------------- picker -- */
+
+.picker {
+  width: min(680px, 92vw);
+  max-height: 84vh;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  color: var(--text);
+  padding: 1.1rem 1.2rem;
+}
+
+.picker::backdrop {
+  background: rgba(4, 6, 11, 0.72);
+}
+
+.picker h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+}
+
+.picker-recent,
+.picker-roots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.5rem 0;
+}
+
+.chip {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-path {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.picker-path input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  font: 0.82rem var(--mono);
+}
+
+.picker-list {
+  list-style: none;
+  margin: 0.3rem 0;
+  padding: 0;
+  max-height: 38vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 0.35rem 0.6rem;
+}
+
+.picker-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.picker-row.up {
+  color: var(--text-faint);
+}
+
+.picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-empty {
+  padding: 0.6rem;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+}
+
+.picker-warn {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--accent-warm);
+}
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+}
+
+.picker-foot .hint {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A folder with a scenario but no project file cannot save a prompt, so the
+   board leads with the one action that fixes it. */
+.setup {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #3a465c;
+  border-radius: 8px;
+  background: rgba(79, 195, 247, 0.08);
+  font-size: 0.82rem;
+}
+
+/* ------------------------------------------------------------ storyboard -- */
+
+#panel-story {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.story-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.story-bar .hint {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#story {
+  flex: 1;
+  min-height: 24rem;
+  resize: vertical;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  font: 0.82rem/1.6 var(--mono);
+}
+
+#story:focus {
+  outline: none;
+  border-color: var(--accent);
+}
