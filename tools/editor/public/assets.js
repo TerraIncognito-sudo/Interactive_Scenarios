@@ -57,6 +57,10 @@ export async function openProject(name) {
   state.name = name;
   if (!name) {
     state.data = null;
+    // The storyboard belongs to the project. Leaving it on screen means the
+    // Storyboard tab describes a project that is no longer open, and its Save
+    // button writes to it.
+    state.onStoryboard(undefined, undefined);
     render();
     return;
   }
@@ -382,15 +386,20 @@ function render() {
   );
 
   const problems = overview.problems ?? [];
+  // Spread rather than a null placeholder: `replaceChildren` is a raw DOM call
+  // and stringifies null into a text node reading "null", which is exactly as
+  // good as it sounds. `h()` filters nulls; this is not `h()`.
   container.replaceChildren(
-    problems.length > 0
-      ? h(
-          'div',
-          { class: 'problems warn' },
-          h('strong', {}, `${problems.length} thing${problems.length === 1 ? '' : 's'} to look at`),
-          h('ul', {}, problems.map((p) => h('li', {}, p.message))),
-        )
-      : null,
+    ...(problems.length > 0
+      ? [
+          h(
+            'div',
+            { class: 'problems warn' },
+            h('strong', {}, `${problems.length} thing${problems.length === 1 ? '' : 's'} to look at`),
+            h('ul', {}, problems.map((p) => h('li', {}, p.message))),
+          ),
+        ]
+      : []),
     ...overview.sections.map(sectionBlock),
   );
 }
@@ -399,19 +408,14 @@ function render() {
 // Wiring
 // ---------------------------------------------------------------------------
 
+/**
+ * Notes a new workspace and closes whatever was open.
+ *
+ * The picker itself is built in app.js, which is the only place that knows
+ * about both projects and bundled scenarios — a list assembled in two files
+ * is a list that can show two different truths.
+ */
 export function setProjects(projects, workspacePath) {
-  const picker = $('project-picker');
-  picker.replaceChildren(
-    h('option', { value: '' }, projects.length === 0 ? 'no projects here' : '— no project —'),
-    ...projects.map((p) =>
-      h(
-        'option',
-        { value: p.name },
-        p.ok ? `${p.title}${p.hasProjectFile ? '' : ' ·'}` : `${p.name} (broken)`,
-      ),
-    ),
-  );
-
   $('assets-hint').textContent =
     projects.length === 0
       ? `No folders with a scenario.yaml in ${workspacePath ?? 'the chosen folder'}. ` +
@@ -427,6 +431,5 @@ export function setProjects(projects, workspacePath) {
 export function initAssets({ onScenario, onStoryboard }) {
   state.onScenario = onScenario ?? (() => {});
   state.onStoryboard = onStoryboard ?? (() => {});
-  $('project-picker').addEventListener('change', (event) => void openProject(event.target.value));
   render();
 }

@@ -10,6 +10,7 @@
 import { $, h } from './dom.js';
 import {
   initAssets,
+  openProject,
   refreshAssets,
   setProjects,
   seedFromStoryboard,
@@ -28,29 +29,89 @@ const state = {
   saved: '',
   analysis: null,
   choices: {},
+  /** Both halves of the picker, so it can be rebuilt from one place. */
+  projects: [],
+  scenarios: [],
+  /** The picker's value, kept in step with what is actually open. */
+  selected: '',
+  workspacePath: null,
 };
 
 // ---------------------------------------------------------------------------
 // Loading and saving
 // ---------------------------------------------------------------------------
 
+/**
+ * The one control that says what is open.
+ *
+ * Projects and bundled scenarios are both a `scenario.yaml` on disk; what
+ * differs is which folder it lives in and whether there is a workshop around
+ * it. Grouping them keeps the two apart visually without pretending they are
+ * two separate questions — and, more importantly, means the answer cannot be
+ * two things at once. The old pair of boxes did not clear each other, so the
+ * project box could name a project while Save wrote into the repo.
+ */
+function renderPicker() {
+  const groups = [];
+
+  groups.push(
+    h(
+      'optgroup',
+      { label: state.workspacePath ? `Projects — ${state.workspacePath}` : 'Projects' },
+      state.projects.length === 0
+        ? [h('option', { value: '', disabled: true }, 'no projects in this folder')]
+        : state.projects.map((p) =>
+            h(
+              'option',
+              { value: `project:${p.name}` },
+              // A trailing dot marks a folder with a scenario but no
+              // project.yaml — a project the editor can open but not yet track.
+              p.ok ? `${p.title}${p.hasProjectFile ? '' : ' ·'}` : `${p.name} (broken)`,
+            ),
+          ),
+    ),
+  );
+
+  if (state.scenarios.length > 0) {
+    groups.push(
+      h(
+        'optgroup',
+        { label: 'Bundled scenarios — served by the game server' },
+        state.scenarios.map((s) =>
+          h('option', { value: `scenario:${s.folder}` }, s.ok ? s.title : `${s.folder} (broken)`),
+        ),
+      ),
+    );
+  }
+
+  $('picker').replaceChildren(h('option', { value: '' }, '— nothing open —'), ...groups);
+  $('picker').value = state.selected ?? '';
+}
+
+/** Keeps the box showing what is actually open, however it came to be open. */
+function markSelected(value) {
+  state.selected = value;
+  $('picker').value = value;
+}
+
 async function loadList() {
   const response = await fetch('/api/scenarios');
   const { scenarios, dir } = await response.json();
   $('source-path').textContent = dir;
 
-  const picker = $('picker');
-  picker.replaceChildren(
-    ...scenarios.map((s) =>
-      h('option', { value: s.folder }, s.ok ? s.title : `${s.folder} (broken)`),
-    ),
-  );
+  state.scenarios = scenarios;
+  renderPicker();
   return scenarios;
 }
 
 async function openFolder(folder) {
   state.folder = folder;
   state.projectName = null;
+  markSelected(`scenario:${folder}`);
+  // A bundled scenario has no workshop around it. Closing the project first
+  // keeps the board and the storyboard from describing a different file than
+  // the one now in the source pane.
+  await openProject('');
   const response = await fetch(`/api/scenarios/${encodeURIComponent(folder)}/source`);
   if (!response.ok) {
     setStatus('bad', 'could not open');
@@ -470,7 +531,15 @@ for (const tab of document.querySelectorAll('.tab')) {
 }
 
 $('source').addEventListener('input', scheduleAnalyze);
-$('picker').addEventListener('change', (event) => void openFolder(event.target.value));
+$('picker').addEventListener('change', (event) => {
+  const value = event.target.value;
+  if (value.startsWith('project:')) void openProject(value.slice('project:'.length));
+  else if (value.startsWith('scenario:')) void openFolder(value.slice('scenario:'.length));
+  else {
+    markSelected('');
+    void openProject('');
+  }
+});
 $('save').addEventListener('click', () => void save());
 $('revert').addEventListener('click', () => {
   $('source').value = state.saved;
@@ -563,6 +632,10 @@ async function boot() {
   initAssets({
     onScenario: (source, name) => {
       state.projectName = name;
+      // A project owns its scenario, so the bundled folder is no longer what
+      // Save is aiming at. Leaving it set is how a save lands in the repo.
+      state.folder = null;
+      markSelected(`project:${name}`);
       state.saved = source;
       $('source').value = source;
       markClean();
@@ -579,11 +652,18 @@ async function boot() {
     },
   });
 
-  const workspaceState = await initPicker({
-    onWorkspace: (next) => setProjects(next.projects, next.workspace),
-  });
+  const applyWorkspace = (next) => {
+    state.projects = next.projects;
+    state.workspacePath = next.workspace;
+    // Whatever was open lived in the old folder.
+    state.selected = '';
+    state.projectName = null;
+    setProjects(next.projects, next.workspace);
+    renderPicker();
+  };
 
-  setProjects(workspaceState.projects, workspaceState.workspace);
+  const workspaceState = await initPicker({ onWorkspace: applyWorkspace });
+  applyWorkspace(workspaceState);
 
   // First run: no folder has ever been chosen, so there is nothing to show and
   // no way to guess. Ask before the editor looks broken.
