@@ -33,6 +33,7 @@ import {
   GenerateError,
 } from '../tools/editor/generate.ts';
 import { modelById, modelsFor, modelStatus } from '../tools/editor/models.ts';
+import { isConsoleNoise } from '../tools/editor/sidecar.ts';
 import { buildOverview } from '../tools/editor/sections.ts';
 
 const SCENARIO = ScenarioSchema.parse({
@@ -287,6 +288,77 @@ describe('making a reference clip when you have no recordings', () => {
     // Below the minimum the clone is poorer, but a poor clone an author can
     // hear beats a refusal they cannot do anything about.
     assert.match(referenceTextFor(terse, 'rus')!, /standing into danger/);
+  });
+});
+
+/**
+ * What the editor's terminal shows while a model loads.
+ *
+ * The failure this guards is not a crash. A model's dependency tree prints a
+ * paragraph of somebody else's deprecation notices on every load, and an author
+ * who reads a screen ending in a warning concludes their clip failed — while a
+ * filter tuned one notch too wide throws away the traceback that was the whole
+ * reason to look.
+ */
+describe('the noise between a model and a traceback', () => {
+  const real = [
+    'loading weights from Hugging Face (cache: C:\\ML Models\\huggingface)',
+    'loaded PerthNet (Implicit) at step 250,000',
+    'Traceback (most recent call last):',
+    '  File "C:\\voice\\server.py", line 98, in main',
+    '    backend = load(args.backend)',
+    'RuntimeError: CUDA error: no kernel image is available for execution on the device',
+  ];
+
+  test('a traceback survives in full, source lines included', () => {
+    // Indented source lines look exactly like the line Python prints under a
+    // warning. Suppressing them by shape would delete the middle of every
+    // traceback — and a traceback missing its middle is how a two-minute fix
+    // becomes an evening.
+    let afterWarning = false;
+    const shown = real.filter((line) => {
+      const noise = isConsoleNoise(line, afterWarning);
+      afterWarning = noise;
+      return !noise;
+    });
+    assert.deepEqual(shown, real);
+  });
+
+  test('a library deprecation notice and its source line both go', () => {
+    const noisy = [
+      'C:\\voice-env\\Lib\\site-packages\\perth\\__init__.py:1: UserWarning: pkg_resources is deprecated',
+      '  from pkg_resources import resource_filename',
+      'loaded PerthNet (Implicit) at step 250,000',
+    ];
+    let afterWarning = false;
+    const shown = noisy.filter((line) => {
+      const noise = isConsoleNoise(line, afterWarning);
+      afterWarning = noise;
+      return !noise;
+    });
+    // The warning, and the source line printed under it. What is left is the
+    // one line that says something happened.
+    assert.deepEqual(shown, ['loaded PerthNet (Implicit) at step 250,000']);
+  });
+
+  test('the two notices that do not announce themselves as warnings', () => {
+    // Neither carries Python's `file:line: SomeWarning:` prefix — one is
+    // huggingface_hub writing straight to stderr, the other transformers'
+    // logger — so neither is caught by shape, and both appear on every load.
+    assert.equal(
+      isConsoleNoise('Warning: You are sending unauthenticated requests to the HF Hub.', false),
+      true,
+    );
+    assert.equal(
+      isConsoleNoise('\`sdpa\` attention does not support \`output_attentions=True\`.', false),
+      true,
+    );
+  });
+
+  test('an ordinary line after a swallowed warning still shows', () => {
+    // Only *indented* lines belong to the warning above them. A flush-left line
+    // has moved on to something else, and that something else may be the error.
+    assert.equal(isConsoleNoise('RuntimeError: out of memory', true), false);
   });
 });
 

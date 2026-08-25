@@ -102,6 +102,44 @@ const PROGRESS = /\d+%\|.*\|\s*\d+\/\d+/;
  */
 const THIRD_PARTY_WARNING = /^.*:\d+: (Future|Deprecation|User|Runtime|Pending\w*)Warning: /;
 
+/**
+ * Library chatter that does not announce itself as a warning.
+ *
+ * Python's own warnings carry a `file:line: SomeWarning:` prefix, which is what
+ * makes them recognisable. These two do not — one is huggingface_hub writing
+ * straight to stderr, the other is transformers' logger — so they are matched
+ * by hand, and the list stays short and literal on purpose. Anything vaguer
+ * would eventually swallow the one line somebody needed.
+ *
+ * Both describe deliberate choices rather than problems: downloads here are
+ * anonymous because a token is a thing to manage, and the attention
+ * implementation is the fast one that happens not to expose attention weights
+ * nobody is asking for.
+ */
+const KNOWN_CHATTER = [
+  /You are sending unauthenticated requests to the HF Hub/,
+  /attention does not support `output_attentions=True`/,
+];
+
+/**
+ * Whether a line of the child's stderr is worth putting on the screen.
+ *
+ * Exported because this is the piece with the judgement in it, and the
+ * judgement is a trade: hide too little and the useful lines are buried, hide
+ * too much and the one line somebody needed is gone. A traceback's source lines
+ * look exactly like a warning's, so the continuation rule is anchored on what
+ * came *before* rather than on the shape of the line itself.
+ *
+ * Everything is kept in the ring buffer regardless. This decides what is
+ * echoed, never what is remembered.
+ */
+export function isConsoleNoise(line: string, afterWarning: boolean): boolean {
+  if (THIRD_PARTY_WARNING.test(line)) return true;
+  if (KNOWN_CHATTER.some((pattern) => pattern.test(line))) return true;
+  // Python prints the offending source line under its warning, indented.
+  return afterWarning && /^\s/.test(line);
+}
+
 export class SidecarError extends Error {
   /** The child's stderr, which is where a Python traceback actually lands. */
   readonly detail: string;
@@ -146,6 +184,8 @@ class Sidecar {
   private stderr: string[] = [];
   /** Serialises requests: one GPU, one line at a time. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** When the current process was spawned, for the line that says it is up. */
+  private startedAt = 0;
 
   constructor(key: string, options: SidecarOptions) {
     this.key = key;
@@ -207,6 +247,7 @@ class Sidecar {
 
     this.child = child;
     this.stderr = [];
+    this.startedAt = Date.now();
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
@@ -230,7 +271,7 @@ class Sidecar {
         this.stderr.push(line);
         if (this.stderr.length > 200) this.stderr.shift();
 
-        const quiet = THIRD_PARTY_WARNING.test(line) || (this.afterWarning && /^\s/.test(line));
+        const quiet = isConsoleNoise(line, this.afterWarning);
         this.afterWarning = quiet;
         if (quiet) continue;
 
@@ -302,6 +343,13 @@ class Sidecar {
 
     if (message.event === 'ready') {
       this.info = message as unknown as SidecarInfo;
+      // Loading a model prints a paragraph of somebody else's chatter and then
+      // stops. Without a line saying it worked, the last thing on the screen is
+      // a warning, and the only honest reading of that is "something went
+      // wrong" — which is exactly how it was read.
+      const seconds = ((Date.now() - this.startedAt) / 1000).toFixed(1);
+      const where = this.info.device ? ` on ${this.info.device}` : '';
+      console.log(`  [${this.options.backend}] ready in ${seconds}s${where}`);
       settle(undefined, this.info);
       return;
     }

@@ -57,7 +57,7 @@ class Backend:
             if not path.is_file():
                 raise RuntimeError(f"missing {path.name} in {root}")
 
-        log(f"loading kokoro from {root}")
+        log(f"loading weights from {root}")
         self._kokoro = Kokoro(str(model), str(voices))
         self.sample_rate = 24000
 

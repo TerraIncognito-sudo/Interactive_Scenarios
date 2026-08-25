@@ -325,6 +325,31 @@ the same recipe for all of them, so it is the same decision.
 
 ---
 
+## Reading the editor's terminal
+
+A model load looks like this, and all three lines are good news:
+
+```
+  [chatterbox] loading weights from Hugging Face (cache: C:\ML Models\huggingface)
+  [chatterbox] loaded PerthNet (Implicit) at step 250,000
+  [chatterbox] ready in 16.9s on cuda
+```
+
+**`ready in …` is the line that matters.** It only prints when the model has loaded and can
+be spoken to, so if you see it, nothing is wrong. Generation after that is silent — the board
+reports each clip, and a terminal narrating ninety of them would bury the one that failed.
+
+Anything a model's dependencies print on the way — deprecation notices about
+`pkg_resources`, `LoRACompatibleLinear`, `sdp_kernel`, or a note that downloads are
+anonymous — is suppressed. None of it is actionable by anyone here, all of it appears on
+every single load, and a screen that ends on a warning reads as a failure whether or not one
+happened. It is all still kept, and a failure arrives with it attached.
+
+A **real** failure is unmistakable: no `ready` line, a red status in the editor, and the
+Python traceback underneath it.
+
+---
+
 ## Troubleshooting
 
 **`uv is not on PATH`** — install uv and restart the editor, not just the terminal.

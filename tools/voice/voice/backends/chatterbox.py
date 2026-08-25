@@ -53,10 +53,10 @@ class Backend:
 
         local = Path(model_path) if model_path else None
         if local and local.is_dir() and any(local.iterdir()):
-            log(f"loading chatterbox from {local}")
+            log(f"loading weights from {local}")
             self._model = ChatterboxTTS.from_local(str(local), self.device)
         else:
-            log(f"loading chatterbox from Hugging Face (cache: {os.environ.get('HF_HOME')})")
+            log(f"loading weights from Hugging Face (cache: {os.environ.get('HF_HOME')})")
             self._model = ChatterboxTTS.from_pretrained(device=self.device)
 
         self.sample_rate = int(getattr(self._model, "sr", 24000))
