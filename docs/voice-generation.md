@@ -15,9 +15,10 @@ the scenario declares. Nothing is overwritten along the way.
 
 **[uv](https://docs.astral.sh/uv/)** must be on PATH. It manages the sidecar's Python
 environment, including fetching a Python version of its own — you do not need to install
-one, and the one you already have is not used. (The sidecar asks for Python 3.14
-specifically: `chatterbox-tts` pins `torch==2.6.0` on anything older, and torch 2.6 has no
-kernels for a 50-series card.)
+one, and the one you already have is not necessarily the one used.
+
+**No compiler is needed**, and the pinned Python version is what keeps it that way. See
+[Why Python 3.13](#why-python-313) if you ever want to move it.
 
 ```bash
 uv --version
@@ -107,10 +108,10 @@ palette of voices gives you a palette, not a cast.
 npm run voice:install -- chatterbox
 ```
 
-Several minutes and about 3 GB. It pulls PyTorch from the CUDA 12.8 index rather than
-PyPI, which matters more than it sounds like: the default Windows wheel is CPU-only, and
-on a 50-series card the older CUDA builds have no kernels at all. `tools/voice/uv.lock`
-pins the combination that works.
+Several minutes and about 3 GB, all of it prebuilt wheels. It pulls PyTorch from the
+CUDA 12.8 index rather than PyPI, which matters more than it sounds like: the default
+Windows wheel is CPU-only, and on a 50-series card the older CUDA builds have no kernels at
+all. `tools/voice/uv.lock` pins the combination that works.
 
 Use the npm script rather than `uv sync` directly — it is what points uv at the
 environment outside the repo.
@@ -123,15 +124,19 @@ environment outside the repo.
 npm run voice:check -- chatterbox
 ```
 
-The first run downloads the weights into the models root and takes a few minutes. Look at
-the `device` line:
+The first run downloads about 2 GB of weights into the models root. Look at the `device`
+line:
 
 ```
   models root    C:\ML Models
   weights        C:\ML Models\huggingface\hub\models--ResembleAI--chatterbox
-  loaded in      31.4s
+  loaded in      15.0s
   device         NVIDIA GeForce RTX 5080
 ```
+
+Loading takes about a minute the first time and around fifteen seconds after that. The
+model then stays resident between lines, so generation runs at roughly the length of the
+clip — a few seconds a line, five minutes for an act.
 
 If it says `cpu`, stop and fix that now — see [Troubleshooting](#troubleshooting). It will
 work on CPU, at roughly a minute a line, and ninety lines is a wasted evening.
@@ -250,6 +255,13 @@ npm run voice:install
 If that does not lift it, `soundfile` is pinned too low in `tools/voice/uv.lock`; raise the
 floor in `pyproject.toml` and re-lock.
 
+**`Microsoft Visual C++ 14.0 or greater is required`** — something in the tree has no
+prebuilt wheel for the Python being used, so uv fell back to compiling it. Do not install
+the build tools; the fix is the Python version. `spacy-pkuseg`, which chatterbox pulls in
+for Chinese word segmentation, publishes wheels only up to cp313, which is why
+`tools/voice/pyproject.toml` pins `>=3.13,<3.14`. If you see this, that pin has been
+widened or uv is being run against a different interpreter.
+
 **The generator stopped (exit 1)** — the Python traceback is printed in the terminal the
 editor is running in, and the last lines of it are almost always the whole answer.
 
@@ -259,6 +271,35 @@ which means it is crashing. Check the editor's terminal.
 
 **Getting the GPU back** — press **Unload model** on the Models strip. Closing the editor
 also does it: the sidecar talks over a pipe, so it cannot outlive its parent.
+
+---
+
+## Why Python 3.13
+
+The version is pinned in `tools/voice/pyproject.toml`, and it is wedged between two
+failures that both look like something else.
+
+`chatterbox-tts` pins `torch==2.6.0` on Python below 3.14, and `torch>=2.9` on 3.14.
+**Torch 2.6 ships no sm_120 kernels**, so on a 50-series card it installs perfectly and
+then fails at the first generate with *no kernel image is available for execution on this
+device*. That argues for 3.14.
+
+But **`spacy-pkuseg` has no cp314 wheel**. On 3.14 uv falls back to building it from
+source, which needs the MSVC build tools — a multi-gigabyte GUI install, to support a
+language this show does not speak.
+
+So the sidecar takes 3.13, where every C extension in the tree has a wheel, and lifts the
+torch pin with an override:
+
+```toml
+[tool.uv]
+override-dependencies = ["torch>=2.9", "torchaudio>=2.9"]
+```
+
+That override is safe rather than hopeful: chatterbox asks for `torch>=2.9` itself on 3.14,
+so it demonstrably runs on modern torch. The `==2.6.0` is a tested baseline, not an
+incompatibility. If a future release genuinely breaks, the symptom will be an import error
+rather than silence.
 
 ---
 

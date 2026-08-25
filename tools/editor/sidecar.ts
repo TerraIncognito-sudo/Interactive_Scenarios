@@ -68,6 +68,19 @@ export type SpeakResult = {
   hold: number;
 };
 
+/**
+ * A tqdm progress bar, redrawing itself.
+ *
+ * On a terminal these overwrite one line with a carriage return. Through a
+ * pipe every redraw is a separate line, so one clip arrives as two hundred of
+ * them — which buries the warnings that matter and makes the kept stderr ring
+ * useless exactly when a traceback needs it.
+ *
+ * The last one is kept, because "Sampling: 100%" is worth seeing and the
+ * ninety-nine before it are not.
+ */
+const PROGRESS = /\d+%\|.*\|\s*\d+\/\d+/;
+
 export class SidecarError extends Error {
   /** The child's stderr, which is where a Python traceback actually lands. */
   readonly detail: string;
@@ -150,6 +163,9 @@ class Sidecar {
         // Out of the repo, which is inside OneDrive. uv's default would put
         // three gigabytes of CUDA wheels next to the code and sync every byte.
         UV_PROJECT_ENVIRONMENT: voiceEnvDir(),
+        // Said once in the walkthrough; repeating it on every model load
+        // trains people to ignore the warnings around it.
+        HF_HUB_DISABLE_SYMLINKS_WARNING: '1',
         PYTHONIOENCODING: 'utf-8',
         PYTHONUNBUFFERED: '1',
       },
@@ -165,8 +181,22 @@ class Sidecar {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/)) {
+      // Carriage returns as well as newlines: a redrawing progress bar sends
+      // its frames separated by \r, and splitting only on \n would deliver a
+      // hundred of them glued into a single unreadable line.
+      for (const line of chunk.split(/\r?\n|\r/)) {
         if (!line.trim()) continue;
+
+        if (PROGRESS.test(line)) {
+          // Replace the previous frame rather than appending another.
+          if (this.stderr.length > 0 && PROGRESS.test(this.stderr[this.stderr.length - 1]!)) {
+            this.stderr[this.stderr.length - 1] = line;
+          } else {
+            this.stderr.push(line);
+          }
+          continue;
+        }
+
         this.stderr.push(line);
         if (this.stderr.length > 200) this.stderr.shift();
         // Echoed as well as kept. A model that will not load is debugged from
