@@ -36,6 +36,7 @@ import {
   type Recipe,
 } from './project.ts';
 import { modelById, modelStatus } from './models.ts';
+import { portraitFilesOf } from './sprites.ts';
 import { speak, SidecarError, type SidecarOptions } from './sidecar.ts';
 
 export class GenerateError extends Error {
@@ -165,7 +166,12 @@ export async function generateAsset(options: {
   }
 
   const status = await modelStatus(options.modelsRoot, spec);
-  const recipe = resolveRecipe(project, section, file);
+  // The same derivation the board uses. Two answers here would mean the hash
+  // the board shows and the hash a take is filed under disagree, and every
+  // asset would read as stale the moment it was made.
+  const recipe = resolveRecipe(project, section, file, {
+    portrait: portraitFilesOf(scenario).has(file),
+  });
   checkVoice(recipe, file, spec);
 
   const hash = recipeHash(recipe);

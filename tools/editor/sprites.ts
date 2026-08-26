@@ -19,23 +19,59 @@
  * radio; never seen as a face". Wiring a portrait for every character who
  * speaks would invent three faces the document deliberately withheld — and the
  * one for the ship would be a person.
+ *
+ * **A portrait is a cutout, so it is a PNG.** The display draws it over the
+ * scene with a drop shadow that follows its outline, which is the whole reason
+ * that shadow is a `drop-shadow` and not a `box-shadow`. Give it a JPEG and the
+ * silhouette is a rectangle: a bust card with a hard edge and a shadow around
+ * all four sides, sitting on top of a harbour at dawn. That reads as a
+ * deliberate frame rather than as a mistake, which is exactly why it would
+ * survive to the projector.
  */
 
 import { isMap, isScalar, parseDocument } from 'yaml';
+import { assetReferencesOf } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
 import { applyEdits, indentOf, insertionAfter, pairFor, type Edit } from './yaml-edit.ts';
 import { filed } from './storyboard.ts';
+import { isPortrait } from './size.ts';
 
 export type WiredSprite = { character: string; sheet: string; file: string };
 
 export type SpriteWiring = {
   source: string;
   wired: WiredSprite[];
-  /** Characters that already had a portrait, left exactly as they were. */
+  /** Characters that already had a usable portrait, left exactly as they were. */
   untouched: string[];
+  /**
+   * Portraits re-pointed from a format that cannot hold a cutout.
+   *
+   * The rest of the pipeline follows these: recipe rows, ledger entries and
+   * published files are all keyed by filename, so a rename that only touched
+   * the scenario would orphan an afternoon of prompt tuning.
+   */
+  moved: { from: string; to: string }[];
   /** Sheets with no character to attach to, and why. */
   skipped: { sheet: string; why: string }[];
 };
+
+/**
+ * Formats with no alpha channel to have.
+ *
+ * Narrow on purpose: anything not on this list is left exactly as the author
+ * wrote it. A `.webp` portrait may well be a cutout, and re-pointing one to a
+ * PNG would be this file overruling a decision it has no evidence about.
+ */
+const FLAT_FORMATS = new Set(['jpg', 'jpeg', 'bmp']);
+
+/** Every file the scenario shows as somebody's face. */
+export function portraitFilesOf(scenario: Scenario): Set<string> {
+  return new Set(
+    assetReferencesOf(scenario)
+      .filter((ref) => isPortrait([ref.origin]))
+      .map((ref) => ref.file),
+  );
+}
 
 /**
  * Which character a sheet labelled `Beaudoin` belongs to.
@@ -84,11 +120,12 @@ export function wireSpritesInto(
   const doc = parseDocument(source);
   const characters = doc.get('characters');
   if (!isMap(characters)) {
-    return { source, wired: [], untouched: [], skipped: [] };
+    return { source, wired: [], untouched: [], moved: [], skipped: [] };
   }
 
   const wired: WiredSprite[] = [];
   const untouched: string[] = [];
+  const moved: { from: string; to: string }[] = [];
   const skipped: { sheet: string; why: string }[] = [];
   const edits: Edit[] = [];
 
@@ -101,14 +138,28 @@ export function wireSpritesInto(
       continue;
     }
 
-    if (scenario.characters[found]?.sprite) {
-      untouched.push(found);
-      continue;
-    }
-
     const entry = characters.get(found, true);
     if (!isMap(entry)) {
       skipped.push({ sheet: label, why: `"${found}" is not written out as a map to add a key to` });
+      continue;
+    }
+
+    const already = scenario.characters[found]?.sprite;
+    if (already) {
+      // Portraits declared before this editor knew a sprite had to be a cutout
+      // are pointed at a `.jpg`. Re-point them — but only the ones that are
+      // plainly this action's own earlier work, matched by the sheet name it
+      // would have written. A portrait the author aimed somewhere else is
+      // theirs, and a `.webp` may already be a cutout.
+      const swap = repointed(already, found);
+      const value = pairFor(entry, 'sprite')?.value;
+      if (!swap || !isScalar(value) || !value.range) {
+        untouched.push(found);
+        continue;
+      }
+      edits.push({ at: value.range[0], end: value.range[1], text: swap });
+      moved.push({ from: already, to: swap });
+      wired.push({ character: found, sheet: label, file: swap });
       continue;
     }
 
@@ -121,7 +172,7 @@ export function wireSpritesInto(
       continue;
     }
 
-    const file = filed('images', `${found}-sheet.jpg`);
+    const file = sheetName(found);
     const nameKey = pairFor(entry, 'name')?.key;
     const keyAt = isScalar(nameKey) ? nameKey.range?.[0] : undefined;
     const indent = at.flow ? '' : indentOf(source, keyAt ?? at.at);
@@ -132,5 +183,27 @@ export function wireSpritesInto(
     wired.push({ character: found, sheet: label, file });
   }
 
-  return { source: applyEdits(source, edits), wired, untouched, skipped };
+  return { source: applyEdits(source, edits), wired, untouched, moved, skipped };
+}
+
+/** `images/beau-sheet.png` — filed by media type, and transparent by extension. */
+export function sheetName(character: string): string {
+  return filed('images', `${character}-sheet.png`);
+}
+
+/**
+ * The PNG an already-declared portrait should become, or nothing.
+ *
+ * Only a file this action would itself have written, in a format that cannot
+ * hold a cutout. The folder is kept rather than re-filed: an author who put
+ * their portraits somewhere else meant it, and this is not the action that
+ * moves things.
+ */
+function repointed(current: string, character: string): string | undefined {
+  const match = /^(.*?)([^/]+)\.([A-Za-z0-9]+)$/.exec(current);
+  if (!match) return undefined;
+  const [, dir, base, extension] = match;
+  if (base !== `${character}-sheet`) return undefined;
+  if (!FLAT_FORMATS.has(extension!.toLowerCase())) return undefined;
+  return `${dir}${base}.png`;
 }

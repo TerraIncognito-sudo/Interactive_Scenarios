@@ -177,6 +177,19 @@ faces the author deliberately withheld, and one of them would be a person for a 
 a sheet labelled `Beaudoin` to `beau` is the one guess, so it is narrow — the id outright, or a
 whole word of the name — and ambiguity is refused rather than resolved.
 
+**A portrait is a cutout, so it is a transparent PNG.** The display draws it over the scene with
+a `drop-shadow`, which follows the alpha; a JPEG has no outline, only four corners, so it arrives
+as a bust card with a shadow around all four sides — a failure that reads as a deliberate frame,
+which is why it would survive to a projector. `isPortrait` in `size.ts` is the one predicate, and
+both consequences hang off it: the size (`PORTRAIT` rather than `STAGE`) and the cutout. The
+composer asks for a picture that *mattes* cleanly rather than for transparency itself, because
+most image models cannot emit alpha and asking for it produces a painted checkerboard. `portrait`
+is on the Recipe, so it is in the hash — and it comes from the scenario, which means every caller
+of `resolveRecipe` must derive it the same way (`portraitFilesOf`) or the board and the generator
+will disagree about what is finished. Re-pointing an existing `.jpg` is a rename, so
+`carryRename` takes the recipe row, the ledger entry, the takes folder and the published file
+with it; a portrait aimed at some other name is the author's and is left alone.
+
 **Every picture declares a size, and the file is measured against it.** Art is made in another
 program and dropped into the takes folder, and every web UI opens on a square — so a still
 arrives 1024x1024, lands in a 16:9 show, and is letterboxed or cropped through the subject with

@@ -19,6 +19,13 @@
  * all of them. Pasting the bible into twenty hull shots means re-tuning it
  * twenty times, and the resolved text is folded into the recipe so editing it
  * marks every shot that uses it stale — which is exactly what it is.
+ *
+ * The same file also adds what no storyboard says: a portrait is a cutout. A
+ * character sheet is written as a reference image — a neutral field behind the
+ * subject, which is right for a reference — and the file it produces is also
+ * the one the display floats over a harbour at dawn. That instruction belongs
+ * to the production rather than to any one character, so it is composed in
+ * rather than pasted into three rows.
  */
 
 import type { Recipe } from './project.ts';
@@ -104,6 +111,7 @@ export function composePrompt(recipe: Recipe): ComposedPrompt {
   const unresolved: string[] = [];
   const style = recipe.style.trim();
   const declared = new Set(declaredIn(recipe.prompt));
+  const negatives: string[] = [recipe.negative];
 
   let positive = recipe.prompt.replaceAll(TOKEN, (whole, name: string) => {
     if (name === 'NEGATIVE') return '';
@@ -127,14 +135,62 @@ export function composePrompt(recipe: Recipe): ComposedPrompt {
     positive = positive.trim() ? `${style} ${positive.trim()}` : style;
   }
 
+  // A portrait is a cutout, and no storyboard says so. A character sheet is
+  // written as a reference image — "neutral slate background", which is right
+  // for the thing it is a reference *for* — and the same file is what the
+  // display floats over the scene. Asking for the cutout here rather than in
+  // three hand-edited rows is the same argument as the style: it is a fact
+  // about the production, so one edit has to change all of them.
+  if (recipe.portrait && !MENTIONS_CUTOUT.test(recipe.prompt)) {
+    positive = `${positive.trim()} ${CUTOUT}`;
+    negatives.push(CUTOUT_NEGATIVE);
+  }
+
   return {
     positive: tidy(positive),
-    negative: tidy(recipe.negative),
+    negative: tidy(negatives.filter((part) => part.trim()).join(', ')),
     unresolved: [...new Set(unresolved)],
   };
 }
 
 const TOKEN_MENTIONS_STYLE = /\bSTYLE\.(?=\s|$)/;
+
+/** An author who has already asked for one in their own words keeps theirs. */
+const MENTIONS_CUTOUT = /\b(transparent|transparency|cutout|cut-out|alpha channel)\b/i;
+
+/**
+ * What a portrait has to be, over and above what it is a picture of.
+ *
+ * Most image models cannot emit an alpha channel at all, so this does not ask
+ * for one — it asks for the picture that is trivial to matte into one: a
+ * subject fully inside the frame, on a flat even field, casting nothing onto
+ * it. Background removal on that is one click and a clean edge. Asking a model
+ * for "transparent background" instead reliably produces a checkerboard,
+ * painted in, at 832×1216.
+ */
+const CUTOUT =
+  'Bust portrait cut out from its surroundings: subject fully within frame, ' +
+  'isolated on a flat even background of a single solid colour, crisp clean ' +
+  'edges, no cast shadow on the background, no vignette. To be matted onto ' +
+  'transparency.';
+
+/**
+ * Whether a portrait's prompt is asking for the very thing the cutout removes.
+ *
+ * "neutral slate background" is a storyboard describing a *reference* image,
+ * and it is right about that — it is only wrong about the file, which is also
+ * what the display floats over a harbour. Worth one warning; not worth a
+ * machine rewriting the sentence, which is how prose that was already true
+ * eventually gets rewritten too.
+ */
+export function asksForBackground(prompt: string): boolean {
+  if (MENTIONS_CUTOUT.test(prompt)) return false;
+  return /(?<!\bno\s)(?<!\bwithout\s)\b(?:background|backdrop)\b/i.test(prompt);
+}
+
+const CUTOUT_NEGATIVE =
+  'busy background, scenery, room, furniture, gradient backdrop, texture behind ' +
+  'subject, drop shadow, cropped head, cropped shoulders, border, frame, vignette';
 
 /**
  * Collapses the whitespace expansion leaves behind.

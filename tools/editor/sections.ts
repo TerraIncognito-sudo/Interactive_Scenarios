@@ -24,8 +24,8 @@ import {
   type AssetSection,
 } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
-import { composePrompt } from './prompt.ts';
-import { defaultSizeFor, formatSize, parseSize, readImageSize } from './size.ts';
+import { asksForBackground, composePrompt } from './prompt.ts';
+import { defaultSizeFor, formatSize, isPortrait, parseSize, readImageInfo } from './size.ts';
 import {
   fromProject,
   NARRATION_VOICE,
@@ -90,6 +90,10 @@ export type AssetView = {
     actual?: string;
     /** True when the file on disk is not the size the row asked for. */
     mismatched?: boolean;
+    /** True for a portrait, which the display draws as a cutout over the scene. */
+    cutout?: boolean;
+    /** True when a portrait's file is in a format with no alpha channel to have. */
+    flat?: boolean;
   };
   takes: TakeView[];
   selected?: string;
@@ -264,18 +268,25 @@ async function sizeReport(
     ...(suggested ? { suggested: formatSize(suggested) } : {}),
   };
 
+  // A portrait is a cutout, and the file has to be able to hold one. Stated
+  // whether or not anything has been made yet: this is what the author needs to
+  // know *before* they go and draw it, not after.
+  if (isPortrait(origins)) report.cutout = true;
+
   // Only stills. A clip's dimensions live several nested atoms deep in its
   // container, and reporting a correct one as the wrong shape would send an
   // author off to re-render something that was already right.
   if (section !== 'images' || !selected) return report;
 
-  const actual = await readImageSize(join(takesDir(paths, section, file), selected));
+  const actual = await readImageInfo(join(takesDir(paths, section, file), selected));
   if (!actual) return report;
 
   report.actual = formatSize(actual);
   if (declared && (declared.width !== actual.width || declared.height !== actual.height)) {
     report.mismatched = true;
   }
+  // `undefined` is "this reader could not tell", which is not a fault to report.
+  if (report.cutout && actual.alpha === false) report.flat = true;
   return report;
 }
 
@@ -384,7 +395,8 @@ export async function buildOverview(
     for (const file of files) {
       const info = grouped.get(file)!;
       const row = project.assets[file];
-      const recipe = resolveRecipe(project, section, file);
+      const portrait = isPortrait(info.origins);
+      const recipe = resolveRecipe(project, section, file, { portrait });
       const hash = recipeHash(recipe);
 
       const entry = ledger.assets[file];
@@ -461,13 +473,36 @@ export async function buildOverview(
 
   for (const view of sections) {
     for (const asset of view.assets) {
-      if (!asset.size?.mismatched) continue;
-      problems.push({
-        level: 'warning',
-        message:
-          `"${asset.file}" is ${asset.size.actual} but the row asks for ${asset.size.declared}. ` +
-          `On a 1920×1080 stage that is letterboxed or cropped through the subject.`,
-      });
+      if (asset.size?.mismatched) {
+        problems.push({
+          level: 'warning',
+          message:
+            `"${asset.file}" is ${asset.size.actual} but the row asks for ${asset.size.declared}. ` +
+            `On a 1920×1080 stage that is letterboxed or cropped through the subject.`,
+        });
+      }
+      if (asset.size?.flat) {
+        problems.push({
+          level: 'warning',
+          message:
+            `"${asset.file}" has no transparency. A portrait is drawn over the scene with a ` +
+            `shadow following its outline, so a filled background arrives as a bust card. ` +
+            `Matte it out and save it as a PNG.`,
+        });
+      }
+      // The storyboard writes a character sheet as a *reference* image, and a
+      // reference wants a neutral field behind it. The same file is what floats
+      // over the harbour. Reported rather than reworded: the composed prompt is
+      // already asking for the cutout, and two instructions pulling opposite
+      // ways is a picture nobody can predict.
+      if (asset.size?.cutout && asksForBackground(asset.row.prompt ?? '')) {
+        problems.push({
+          level: 'warning',
+          message:
+            `"${asset.file}" is a portrait but its prompt asks for a background. ` +
+            `It is composed as a cutout regardless — drop the phrase so the two agree.`,
+        });
+      }
     }
   }
 

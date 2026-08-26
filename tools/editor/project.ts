@@ -299,6 +299,11 @@ export type Recipe = {
   params: Params;
   /** In the recipe, so re-sizing a shot marks what was made at the old size stale. */
   size?: string;
+  /**
+   * Whether this picture is somebody's face, from the scenario rather than the
+   * row — a portrait is composed as a cutout, and that changes what is made.
+   */
+  portrait?: boolean;
   text?: string;
   voice?: string;
   /**
@@ -324,16 +329,26 @@ export type Recipe = {
   model: { backend: string; file?: string };
 };
 
+/**
+ * `portrait` comes from the scenario, not from `project.yaml`, so it has to be
+ * handed in. Every caller has to pass the same answer or the hash means nothing
+ * — the board would call a picture finished that the generator would make
+ * differently — so there is one derivation of it, `portraitFilesOf`.
+ */
+export type RecipeContext = { portrait?: boolean };
+
 export function resolveRecipe(
   project: Project,
   section: AssetSection,
   file: string,
+  context: RecipeContext = {},
 ): Recipe {
   const row = project.assets[file] ?? AssetRowSchema.parse({});
   const model = project.sections[section];
   const voice = row.voice ? project.voices[row.voice] : undefined;
   return {
     section,
+    ...(context.portrait ? { portrait: true } : {}),
     prompt: row.prompt ?? '',
     negative: row.negative ?? model?.negative ?? '',
     style: model?.style ?? '',

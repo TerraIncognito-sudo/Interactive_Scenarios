@@ -584,10 +584,21 @@ $('wire-sprites').addEventListener('click', () => {
     if (!result) return;
 
     const parts = [];
-    if (result.wired.length > 0) {
+    const moved = result.moved ?? [];
+    const fresh = result.wired.filter((entry) => !moved.some((move) => move.to === entry.file));
+    if (fresh.length > 0) {
       parts.push(
-        `${result.wired.length} portrait${result.wired.length === 1 ? '' : 's'} declared — ` +
-          result.wired.map((entry) => entry.character).join(', '),
+        `${fresh.length} portrait${fresh.length === 1 ? '' : 's'} declared — ` +
+          fresh.map((entry) => entry.character).join(', '),
+      );
+    }
+    // Worth its own line rather than folded into the count. A rename carries
+    // the recipe row and the takes with it, and somebody looking at the board
+    // afterwards should know why the filenames changed.
+    if (moved.length > 0) {
+      parts.push(
+        `${moved.length} re-pointed to transparent PNG — ` +
+          moved.map((move) => move.to).join(', '),
       );
     }
     const placed = result.seeded?.filled?.length ?? result.seeded?.added?.length ?? 0;

@@ -964,6 +964,17 @@ function sizeField(asset) {
     !size.declared && size.suggested
       ? h('span', { class: 'size-hint' }, `${size.suggested} suits the stage`)
       : null,
+    // A portrait is drawn over the scene with a shadow following its outline,
+    // so the file has to have an outline. Said on the row rather than only once
+    // the wrong file has arrived: this is what somebody needs to know before
+    // they go and draw it.
+    size.cutout
+      ? h(
+          'span',
+          { class: `size-actual${size.flat ? ' bad' : ''}` },
+          size.flat ? 'no transparency — matte it out and save as PNG' : 'transparent PNG',
+        )
+      : null,
   );
 }
 

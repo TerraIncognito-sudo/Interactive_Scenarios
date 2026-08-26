@@ -155,7 +155,12 @@ export function sortIntoFolders(source: string, scenario: Scenario): FolderSort 
  * hold an afternoon of prompt tuning and a comment saying why, and both live in
  * the bytes around the key rather than in the parsed value.
  */
-export function renameRows(source: string, moves: FolderMove[]): string {
+export function renameRows(
+  source: string,
+  // Not `FolderMove[]`: a portrait re-pointed to a PNG is a rename with no
+  // change of section, and it needs exactly this.
+  moves: { from: string; to: string; section?: AssetSection }[],
+): string {
   const doc = parseDocument(source);
   const assets = doc.get('assets');
   if (!isMap(assets)) return source;

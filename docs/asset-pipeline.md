@@ -450,6 +450,24 @@ Matching `Beaudoin` to `beau` is the one guess in it, and it is narrow: the id o
 whole word of the character's name. Two characters that both match is reported, not resolved —
 a face on the wrong person lasts the whole show.
 
+**A portrait is a transparent PNG**, because the display draws it over the scene with a shadow
+that follows its outline. Give it a JPEG and the silhouette is a rectangle: a bust card with a
+hard edge and a shadow around all four sides, sitting on a harbour at dawn. That reads as a
+deliberate frame rather than as a mistake, which is exactly why it would survive to the
+projector. So the sheet is named `.png`, one already pointed at a `.jpg` is re-pointed — the
+recipe row, the ledger entry and any published file follow the rename — and the board reports a
+selected take whose format has no alpha channel to have.
+
+The prompt says so too, without the storyboard having to. A character sheet is written as a
+*reference* image, and "neutral slate background" is right for a reference; the same file is
+also what floats over the harbour. So the composer appends the cutout instruction — subject
+fully in frame, flat even field, no cast shadow, crisp edges — and the background terms go into
+the negative. It asks for a picture that mattes cleanly rather than for transparency itself,
+because most image models cannot emit an alpha channel and asking for one produces a
+checkerboard, painted in. An author who has already asked in their own words keeps theirs, and a
+sheet prompt still naming a background gets one warning rather than a machine rewriting the
+sentence.
+
 ### File assets by media type
 
 A finished show is a few hundred files. Flat, `assets/` is a folder where finding the bed for

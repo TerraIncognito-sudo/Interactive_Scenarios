@@ -17,6 +17,7 @@ import { deflateSync } from 'node:zlib';
 import {
   defaultSizeFor,
   formatSize,
+  imageOf,
   parseSize,
   readImageSize,
   sizeOf,
@@ -28,7 +29,7 @@ import { ProjectSchema, EMPTY_LEDGER, pathsOf, takesDir } from '../tools/editor/
 import { buildOverview } from '../tools/editor/sections.ts';
 
 /** A real PNG of the given size — header and one IDAT, which is all that is read. */
-function png(width: number, height: number): Buffer {
+function png(width: number, height: number, colour = 6): Buffer {
   const chunk = (type: string, body: Buffer): Buffer => {
     const withType = Buffer.concat([Buffer.from(type, 'latin1'), body]);
     const length = Buffer.alloc(4);
@@ -43,7 +44,9 @@ function png(width: number, height: number): Buffer {
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
-  ihdr[9] = 6;
+  // 6 is RGBA, 2 is RGB, 3 is a palette. The one byte that decides whether a
+  // portrait can have a hole in it.
+  ihdr[9] = colour;
 
   const rows = Buffer.alloc(height * (1 + width * 4));
   return Buffer.concat([
@@ -94,6 +97,19 @@ describe('reading a size off a file', () => {
 
   test('a file that is not there', async () => {
     assert.equal(await readImageSize(join(tmpdir(), 'nope-there-is-no-such-file.png')), undefined);
+  });
+});
+
+describe('whether a picture can have a hole in it', () => {
+  test('a PNG says which it is', () => {
+    assert.equal(imageOf(png(832, 1216, 6))?.alpha, true);
+    assert.equal(imageOf(png(832, 1216, 2))?.alpha, false);
+  });
+
+  test('a JPEG is a flat no, not an unknown', () => {
+    // The distinction matters: `false` is reported to the author as a fault,
+    // `undefined` is never reported at all. A JPEG portrait is always a fault.
+    assert.equal(imageOf(jpeg(832, 1216))?.alpha, false);
   });
 });
 
@@ -181,6 +197,54 @@ describe('a picture that is the wrong shape', () => {
     assert.match(
       overview.problems.map((problem) => problem.message).join('\n'),
       /is 1024x1024 but the row asks for 1920x1080/,
+    );
+  });
+
+  test('a portrait with no transparency is caught the same way', async () => {
+    // Most image models cannot emit alpha at all, so this is the *expected*
+    // first result — the picture is right and the matte has not been done yet.
+    // Nothing else on the board would ever mention it.
+    const portrait = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      characters: { beau: { name: 'Beaudoin', sprite: 'images/beau-sheet.png' } },
+      scenes: {},
+      nodes: [{ id: 'a', type: 'end', text: 'Done' }],
+    });
+    const proj = ProjectSchema.parse({
+      project: 'demo',
+      scenario: 'scenario.yaml',
+      publish: 'assets',
+      generated: 'generated',
+      assets: { 'images/beau-sheet.png': { prompt: 'a captain', size: '832x1216' } },
+    });
+
+    const root = mkdtempSync(join(tmpdir(), 'is-alpha-'));
+    const paths = pathsOf(join(root, 'project.yaml'), proj);
+    const takes = takesDir(paths, 'images', 'images/beau-sheet.png');
+    mkdirSync(takes, { recursive: true });
+    writeFileSync(join(takes, 'abc-01.png'), png(832, 1216, 2));
+
+    const ledger = structuredClone(EMPTY_LEDGER);
+    ledger.assets['images/beau-sheet.png'] = {
+      selected: 'abc-01.png',
+      takes: [{ id: 'abc-01.png', hash: 'abc', at: '2026-01-01T00:00:00.000Z', params: {} }],
+    };
+
+    const overview = await buildOverview(portrait, proj, ledger, paths);
+    rmSync(root, { recursive: true, force: true });
+
+    const asset = overview.sections
+      .find((view) => view.section === 'images')!
+      .assets.find((entry) => entry.file === 'images/beau-sheet.png')!;
+
+    assert.equal(asset.size?.cutout, true);
+    assert.equal(asset.size?.flat, true);
+    assert.equal(asset.size?.mismatched, undefined, 'the size was right; only the alpha was not');
+    assert.match(
+      overview.problems.map((problem) => problem.message).join('\n'),
+      /has no transparency/,
     );
   });
 

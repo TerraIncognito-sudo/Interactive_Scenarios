@@ -1151,8 +1151,67 @@ export async function wireSprites(name: string): Promise<SpriteWork> {
     throw new ProjectError('Declaring portraits would have broken the scenario', check.problems);
   }
 
+  // A re-pointed portrait is a rename, and everything else in the project is
+  // keyed by the filename: the recipe row holding the prompt, the ledger entry
+  // holding the takes, the published file the show opens. Rewriting only the
+  // scenario would leave the row behind as an orphan and the prompt with it.
+  await carryRename(file, paths, report.moved);
+
   await writeAtomic(paths.scenario, wired);
   return { ...report, seeded: await syncFromStoryboard(name) };
+}
+
+/**
+ * Follows a filename change through the rest of the project.
+ *
+ * Published file, recipe row, takes folder, ledger entry — in that order, so a
+ * failure that is going to happen happens before the scenario has been rewritten
+ * to point at a name nothing has moved to yet.
+ */
+async function carryRename(
+  projectFile: string,
+  paths: ProjectPaths,
+  moves: { from: string; to: string }[],
+): Promise<void> {
+  if (moves.length === 0) return;
+
+  for (const move of moves) {
+    const from = join(paths.publish, move.from);
+    if ((await stat(from).catch(() => null))?.isFile()) {
+      await mkdir(dirname(join(paths.publish, move.to)), { recursive: true });
+      await rename(from, join(paths.publish, move.to));
+    }
+  }
+
+  const projectSource = await readFile(projectFile, 'utf8').catch(() => undefined);
+  if (projectSource !== undefined) {
+    await writeAtomic(projectFile, renameRows(projectSource, moves));
+  }
+
+  // Unlike filing by media type, this one really does move takes: the folder is
+  // named for the file, and the file's extension is what changed. The takes
+  // inside keep their own names — a flat portrait is exactly the work this is
+  // asking to be redone, and the recipe hash already says so.
+  for (const move of moves) {
+    const fromDir = takesDir(paths, 'images', move.from);
+    const toDir = takesDir(paths, 'images', move.to);
+    if (fromDir === toDir) continue;
+    if (!(await stat(fromDir).catch(() => null))?.isDirectory()) continue;
+    if ((await stat(toDir).catch(() => null)) !== null) continue;
+    await mkdir(dirname(toDir), { recursive: true });
+    await rename(fromDir, toDir);
+  }
+
+  const { ledger } = await loadLedger(paths.ledger);
+  let touched = false;
+  for (const move of moves) {
+    const entry = ledger.assets[move.from];
+    if (!entry) continue;
+    ledger.assets[move.to] = entry;
+    delete ledger.assets[move.from];
+    touched = true;
+  }
+  if (touched) await saveLedger(paths.ledger, ledger);
 }
 
 export type VoiceWiring = {
