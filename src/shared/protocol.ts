@@ -121,6 +121,26 @@ export type SnapshotBeat =
       /** ms since epoch on the server clock; clients correct with `serverNow`. */
       endsAt: number;
     }
+  | {
+      /**
+       * A poll's result, held on screen before the story continues.
+       *
+       * A beat with a duration rather than a client-side animation, because
+       * the server is the clock: while this was a `setTimeout` in the display,
+       * the next line's hold was already running behind the bar chart.
+       */
+      kind: 'result';
+      nodeId: string;
+      pollId: string;
+      winner: string;
+      winnerLabel: string;
+      counts: Record<string, number>;
+      total: number;
+      usedDefault: boolean;
+      usedTiebreak: boolean;
+      scene?: string;
+      durationMs: number;
+    }
   | { kind: 'end'; nodeId: string; text?: string; scene?: string };
 
 /**

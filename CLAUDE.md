@@ -419,6 +419,23 @@ from the runtime the board measured and the gap the row declares. A client that 
 number itself is a client that can write a beat nothing on the board agrees with — and the
 arithmetic would then exist in two places, which is one more than it can be right in.
 
+
+**Anything the audience is looking at is a beat the server clocks.** The result of a poll used
+to be a `setTimeout` inside the display and nothing else knew about it, so the server started
+the next line's `hold` the instant the poll closed — while the projector was still showing the
+bar chart. Every first line after a vote lost 2.6 seconds: truncated where its hold was longer,
+never drawn at all where it was shorter, which after retiming is most of them. It looked like a
+polling bug because rewinding and picking manually made it go away — the display had already
+revealed that poll once and skipped the animation the second time. `REVEAL_MS` is now a real
+beat with a `revealing` phase, and the display renders what it is told. A client-side animation
+that holds the screen is a second clock, and the two will disagree in front of a room.
+
+**A phase is restored, never assumed.** `pollClosed` enters the node the vote chose and then
+sits on the reveal, so the node is already correct while the bar chart is up. `restingPhase` is
+the one place that says what a node settles into afterwards — and `Room.apply` opens a poll on
+*entering the polling phase* rather than on the node id changing, because by the time the reveal
+ends the node has not changed for some time. Keyed the old way, a vote leading into a second
+poll left that poll's deadline at the zero it is stamped with on entry, and it never closed.
 What an action must *not* do is edit the author's prose. A migration that removes a scene
 leaves any comment describing it factually wrong, and the temptation is to fix the sentence —
 but a machine that rewrites prose to keep it true will eventually rewrite prose that was

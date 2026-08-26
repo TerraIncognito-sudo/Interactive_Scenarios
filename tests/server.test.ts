@@ -892,3 +892,87 @@ describe('admin session control', () => {
     assert.equal(response.status, 404);
   });
 });
+describe('the result of a poll is a beat, not an animation', () => {
+  test('closing a poll shows the result before the next line', async () => {
+    // The bug this exists for. The reveal was a `setTimeout` inside the display
+    // and nothing else knew about it, so the server started the next line's
+    // `hold` the instant the poll closed — while the projector was still
+    // showing the bar chart. The first line after every vote lost that time:
+    // truncated where its hold was longer, never drawn at all where it was
+    // shorter, which is most of them.
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    const reveal = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'result',
+    );
+
+    assert.equal(reveal.beatInfo.kind, 'result');
+    if (reveal.beatInfo.kind === 'result') {
+      assert.equal(reveal.beatInfo.pollId, 'vote', 'names the poll, not the node it moved to');
+      assert.ok(reveal.beatInfo.durationMs > 0, 'and it lasts a measurable length of time');
+      assert.equal(typeof reveal.beatInfo.winnerLabel, 'string');
+    }
+
+    host.close();
+  });
+
+  test('the line after a vote gets its whole hold, measured from the reveal ending', async () => {
+    // The assertion that would have caught it. The dialogue beat must not
+    // arrive until the reveal is over — if it arrives with the reveal, its hold
+    // is already running behind a screen the audience cannot read it through.
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    const reveal = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'result',
+    );
+    const revealAt = Date.now();
+    const revealMs = reveal.beatInfo.kind === 'result' ? reveal.beatInfo.durationMs : 0;
+
+    // Keyed on the beat number, not merely the kind: the host has been
+    // connected since the lobby and its buffer already holds the dialogue
+    // beats from before the vote, which `next` would match at once.
+    const line = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'dialogue' && m.beat > reveal.beat,
+      revealMs + 4000,
+    );
+    const waited = Date.now() - revealAt;
+
+    assert.ok(
+      waited >= revealMs - 150,
+      `the line waited ${waited}ms for a ${revealMs}ms reveal — it used to arrive at once`,
+    );
+    assert.equal(line.beatInfo.kind, 'dialogue');
+    assert.ok(line.beat > reveal.beat, 'and it is a beat of its own, so the display redraws');
+
+    host.close();
+  });
+
+  test('a vote leading into another poll opens that poll only once the reveal is done', async () => {
+    // The reveal happens on the node the vote chose, so a second poll's clock
+    // must not start while the first poll's result is still up. Opening was
+    // keyed on the node changing, which by then had already happened.
+    const room = await createRoom('twopolls');
+    const host = await runToPoll(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'result');
+
+    const second = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'poll',
+      6000,
+    );
+    assert.equal(second.beatInfo.kind, 'poll');
+    if (second.beatInfo.kind === 'poll') {
+      assert.ok(
+        second.beatInfo.endsAt > second.serverNow,
+        'the second poll must have a live deadline, not the zero it is stamped with on entry',
+      );
+    }
+
+    host.close();
+  });
+});

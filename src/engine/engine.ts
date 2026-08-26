@@ -12,7 +12,19 @@ import { lineDuration, type Line, type Scenario, type ScenarioNode } from '../sc
 import { testCondition, type Value } from './expr.ts';
 import { variablesFrom, type Counts, type PollResult } from './votes.ts';
 
-export type Phase = 'idle' | 'playing' | 'polling' | 'paused' | 'finished';
+export type Phase = 'idle' | 'playing' | 'revealing' | 'polling' | 'paused' | 'finished';
+
+/**
+ * How long the result of a poll stays on screen before the story continues.
+ *
+ * This used to be a `setTimeout` inside the display and nothing else knew about
+ * it — so the server started the next line's `hold` the instant the poll closed,
+ * while the projector was still showing the bar chart. The first line after
+ * every vote lost this many milliseconds: truncated where its hold was longer,
+ * and never drawn at all where it was shorter. Anything the audience is looking
+ * at has to be a beat with a duration the server clocks, or the two disagree.
+ */
+export const REVEAL_MS = 2600;
 
 export type RunState = {
   nodeId: string;
@@ -75,6 +87,15 @@ export type Beat =
       scene?: string;
       endsAt: number;
     }
+  | {
+      kind: 'result';
+      nodeId: string;
+      /** The poll that just closed, not the node the show has moved to. */
+      pollId: string;
+      result: PollResult;
+      scene?: string;
+      durationMs: number;
+    }
   | { kind: 'end'; nodeId: string; text?: string; scene?: string };
 
 /** Guards against a scenario whose branch nodes point at each other in a cycle. */
@@ -104,6 +125,23 @@ export function initialState(scenario: Scenario): RunState {
  * Branches are instantaneous by design — they are control flow, not content,
  * and must never occupy stage time.
  */
+/**
+ * The phase a node settles into once nothing is holding the show back.
+ *
+ * One place, because `enterNode` and the end of a reveal have to agree: if
+ * they ever disagreed, a vote leading into a second poll would resume as
+ * `playing` and the poll would never open.
+ */
+function restingPhase(node: ScenarioNode): Phase {
+  switch (node.type) {
+    case 'poll':
+      return 'polling';
+    case 'end':
+      return 'finished';
+    default:
+      return 'playing';
+  }
+}
 function enterNode(scenario: Scenario, state: RunState, nodeId: string): RunState {
   let targetId = nodeId;
   const history = [...state.history];
@@ -160,6 +198,11 @@ export function reduce(scenario: Scenario, state: RunState, event: EngineEvent):
     }
 
     case 'advance': {
+      // The reveal is a beat like any other: its time runs out and the story
+      // resumes, on the node the vote already chose.
+      if (state.phase === 'revealing') {
+        return { ...state, phase: restingPhase(nodeById(scenario, state.nodeId)), beat: state.beat + 1 };
+      }
       if (state.phase !== 'playing') return state;
       const node = nodeById(scenario, state.nodeId);
 
@@ -190,7 +233,12 @@ export function reduce(scenario: Scenario, state: RunState, event: EngineEvent):
         lastPoll: { nodeId: node.id, result: event.result },
         poll: undefined,
       };
-      return enterNode(scenario, withVars, option.next);
+      // The show moves to the node the vote chose — vars, history and scene
+      // are all correct from here — but it sits on the reveal first. The
+      // resting phase the node implies is restored by the `advance` that ends
+      // it, so a vote leading to another poll does not start that poll's clock
+      // while the bar chart is still up.
+      return { ...enterNode(scenario, withVars, option.next), phase: 'revealing' };
     }
 
     case 'jump': {
@@ -240,6 +288,19 @@ export function beatOf(scenario: Scenario, state: RunState): Beat {
   if (state.phase === 'idle') return { kind: 'idle' };
 
   const node = nodeById(scenario, state.nodeId);
+
+  // Ahead of the node, because the show has already moved to whichever node
+  // the vote chose — the reveal is what is on screen, not what that node says.
+  if (state.phase === 'revealing' && state.lastPoll) {
+    return {
+      kind: 'result',
+      nodeId: node.id,
+      pollId: state.lastPoll.nodeId,
+      result: state.lastPoll.result,
+      scene: node.type === 'branch' ? undefined : node.scene,
+      durationMs: REVEAL_MS,
+    };
+  }
 
   switch (node.type) {
     case 'dialogue': {
