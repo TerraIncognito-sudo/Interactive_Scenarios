@@ -978,6 +978,20 @@ function sizeField(asset) {
   );
 }
 
+/**
+ * How much bigger what the model gets is than what the row says.
+ *
+ * `268 → 1223 chars` is the evidence. A storyboard writes `STYLE. SHIP.` and
+ * means four hundred characters of palette and three hundred of hull; the row
+ * keeps the shorthand because that is what one edit has to change all of, and
+ * without a number beside it the expansion is invisible from the board.
+ */
+function expansion(asset) {
+  const from = (asset.row?.prompt ?? '').trim().length;
+  const to = asset.composed?.positive?.length ?? 0;
+  return from && to > from ? `${from} → ${to} chars` : `${to} chars`;
+}
+
 function promptPreview(asset) {
   const composed = asset.composed;
   if (!composed) return null;
@@ -1001,7 +1015,15 @@ function promptPreview(asset) {
       },
       open ? '▾' : '▸',
       ' what the model gets',
-      h('span', { class: 'preview-size' }, `${composed.positive.length} chars`),
+      h(
+        'span',
+        { class: 'preview-size' },
+        // Both numbers, because one of them is the whole point. The box above
+        // still holds the storyboard's shorthand and always will — it is what
+        // gets edited — so a row that only said "1223 chars" left the author
+        // looking at `STYLE. SHIP.` with no evidence anything had expanded.
+        expansion(asset),
+      ),
       // A name nothing defines reaches the model as a word, and this is the
       // row it belongs to. The board says it too, but a warning about a prompt
       // is most useful next to the prompt.
@@ -1013,6 +1035,12 @@ function promptPreview(asset) {
           )
         : null,
     ),
+    // Collapsed still shows it. The invariant is that the board shows the
+    // composed prompt — every complaint about the art this pipeline makes has
+    // started with not being able to see what the model was given — and a
+    // disclosure triangle under a textarea full of `STYLE. SHIP.` reads as a
+    // footnote about the thing above it rather than as the thing itself.
+    !open ? h('p', { class: 'preview-peek' }, composed.positive) : null,
     open
       ? h(
           'div',
