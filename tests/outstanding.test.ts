@@ -181,62 +181,86 @@ describe('a clip that was regenerated but never chosen', () => {
   });
 });
 
-describe('a beat that is too short for its line', () => {
-  test('is flagged when the clip overruns the hold outright', async () => {
+describe('a beat that does not match its clip', () => {
+  const clip = (over: Partial<AssetView>) =>
+    asset({
+      file: 'voice/a.mp3',
+      status: 'ready',
+      selected: 't1',
+      publishedTake: 't1',
+      ...over,
+    } as Partial<AssetView> & Pick<AssetView, 'file' | 'status'>);
+
+  test('is its own group, with the number it should be', async () => {
     const result = outstandingOf(
-      overview([
-        asset({
-          file: 'voice/tran-c4-01.mp3',
-          status: 'ready',
-          selected: 't1',
-          publishedTake: 't1',
-          seconds: 7.4,
-          hold: 6,
-          notes: [
-            'c4_alert line 1 holds 6s for a 7.4s clip — the beat ends 1.4s before the line ' +
-              'does, and the reading is cut off mid-word',
-          ],
-        }),
-      ]),
+      overview([clip({ seconds: 4.2, hold: 4, gap: 1, targetHold: 5.2 })]),
     );
-    assert.deepEqual(groupsOf(result), { quality: 1 });
-    assert.match(result.groups[0]!.items[0]!.detail!, /cut off mid-word/);
+    assert.deepEqual(groupsOf(result), { timing: 1 });
+    const group = result.groups[0]!;
+    assert.equal(group.action, 'retime');
+    assert.equal(group.level, 'error');
+    // The client draws the sum from these rather than looking the row up
+    // again, so they have to travel with the item.
+    assert.deepEqual(
+      { seconds: group.items[0]!.seconds, hold: group.items[0]!.hold, gap: group.items[0]!.gap, target: group.items[0]!.target },
+      { seconds: 4.2, hold: 4, gap: 1, target: 5.2 },
+    );
   });
 
-  test('and when it merely leaves under a second of headroom', async () => {
+  test('says so plainly when the clip is being cut off', async () => {
     const result = outstandingOf(
-      overview([
-        asset({
-          file: 'voice/narr-a1-02.mp3',
-          status: 'ready',
-          selected: 't1',
-          publishedTake: 't1',
-          seconds: 4.8,
-          hold: 5,
-          notes: ['a1_jetty line 2 holds 5s for a 4.8s clip, leaving 0.2s'],
-        }),
-      ]),
+      overview([clip({ seconds: 7.4, hold: 6, gap: 1, targetHold: 8.4 })]),
     );
-    assert.equal(result.total, 1);
+    assert.match(result.groups[0]!.items[0]!.detail!, /cutting it off — should be 8.4s/);
   });
 
-  test('a comfortable one says nothing at all', async () => {
+  test('a beat that is merely long is still wrong, because exactly is the rule', async () => {
+    // The point of the whole group: a hold of 9 on a 4.2s clip is not 'safe',
+    // it is four and a half seconds of dead air in front of a room.
     const result = outstandingOf(
-      overview([
-        asset({
-          file: 'voice/fine.mp3',
-          status: 'ready',
-          selected: 't1',
-          publishedTake: 't1',
-          seconds: 3.2,
-          hold: 6,
-        }),
-      ]),
+      overview([clip({ seconds: 4.2, hold: 9, gap: 1, targetHold: 5.2 })]),
+    );
+    assert.deepEqual(groupsOf(result), { timing: 1 });
+    assert.match(result.groups[0]!.items[0]!.detail!, /holds 9s, should be 5.2s/);
+  });
+
+  test('a line with no hold at all names the number to write', async () => {
+    const result = outstandingOf(
+      overview([clip({ seconds: 3, gap: 1, targetHold: 4 })]),
+    );
+    assert.match(result.groups[0]!.items[0]!.detail!, /no hold — should be 4s/);
+  });
+
+  test('a custom gap moves the target, and nothing else', async () => {
+    const result = outstandingOf(
+      overview([clip({ seconds: 4.2, hold: 6.7, gap: 2.5, targetHold: 6.7, timed: true })]),
+    );
+    assert.equal(result.total, 0, 'two and a half seconds is a choice, not a fault');
+  });
+
+  test('a matching beat is silent', async () => {
+    const result = outstandingOf(
+      overview([clip({ seconds: 4.2, hold: 5.2, gap: 1, targetHold: 5.2, timed: true })]),
     );
     assert.equal(result.total, 0);
   });
-});
 
+  test('a clip nobody could measure is never flagged', async () => {
+    // Sending somebody to re-cut a line that was already right is worse than
+    // not telling them.
+    const result = outstandingOf(overview([clip({ hold: 4 })]));
+    assert.equal(result.total, 0);
+  });
+
+  test('timing is additive: a shipped clip can still be mistimed', async () => {
+    const result = outstandingOf(
+      overview([
+        clip({ file: 'voice/b.mp3', status: 'missing', published: false, seconds: 3, gap: 1, targetHold: 4 }),
+      ]),
+    );
+    assert.deepEqual(groupsOf(result), { missing: 1, timing: 1 }, 'both, and they are different jobs');
+  });
+});
 describe('a take chosen after the last publish', () => {
   test('is called out, because the room would still hear the old one', async () => {
     const result = outstandingOf(
@@ -353,6 +377,16 @@ describe('the contract', () => {
             selected: 't2',
             publishedTake: 't1',
             republish: true,
+          }),
+          asset({
+            file: 'voice/mistimed.mp3',
+            status: 'ready',
+            selected: 't1',
+            publishedTake: 't1',
+            seconds: 4.2,
+            hold: 4,
+            gap: 1,
+            targetHold: 5.2,
           }),
           asset({
             file: 'voice/note.mp3',

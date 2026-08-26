@@ -64,6 +64,7 @@ import {
 import { wireVoiceInto, type WiredLine } from './wire.ts';
 import { wireSpritesInto, type SpriteWiring } from './sprites.ts';
 import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
+import { retimeInto, type Retimed } from './timing.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
 
 /**
@@ -672,8 +673,13 @@ export async function editSectionField(
 
 export type FieldEdit = {
   file: string;
-  field: 'prompt' | 'negative' | 'size' | 'text' | 'voice' | 'notes' | 'freeze';
-  value: string | boolean;
+  field: 'prompt' | 'negative' | 'size' | 'text' | 'voice' | 'notes' | 'freeze' | 'gap';
+  /**
+   * A number stays a number. `gap` is arithmetic the board does — written as
+   * a string it would load back as one and fail the schema, so the row would
+   * silently stop counting the moment anybody set it.
+   */
+  value: string | number | boolean;
 };
 
 /**
@@ -690,6 +696,9 @@ export async function editAssetField(name: string, edit: FieldEdit): Promise<voi
   const doc = parseDocument(source);
 
   const path = ['assets', edit.file, edit.field];
+  // An empty box means 'back to the default' rather than 'zero': a gap of 0
+  // is a real choice somebody might make, and it has to be distinguishable
+  // from never having chosen.
   if (edit.value === '' || edit.value === false) {
     doc.deleteIn(path);
   } else {
@@ -1381,6 +1390,93 @@ export async function wireVoice(name: string): Promise<VoiceWiring> {
  * project starts and the place its intent is written down, so it is edited
  * here rather than in another window.
  */
+export type RetimeWork = {
+  changed: Retimed[];
+  /** Clips asked for whose line could not be found, so nothing was written. */
+  skipped: string[];
+  /** The rewritten scenario, for the editor pane to take back. */
+  source: string;
+  /**
+   * Lines whose comment now describes a beat that has changed.
+   *
+   * Reported, never rewritten. A machine that edits prose to keep it true will
+   * eventually edit prose that was already true, and a comment saying why a
+   * beat is four seconds is exactly the sentence a person should reread.
+   */
+  comments: number[];
+};
+
+/**
+ * Sets each beat to the length of the clip that plays in it.
+ *
+ * The target comes from the board rather than from the caller: the client
+ * sends which clips to retime, never what to, so the number written is the one
+ * computed from the runtime the board measured and the gap the row declares.
+ * A client that could send the number itself is a client that can write a beat
+ * nothing on the board agrees with.
+ */
+export async function retime(name: string, files?: string[]): Promise<RetimeWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const { overview } = await openProject(name);
+  const asked = files ? new Set(files) : undefined;
+
+  const wanted = new Map<string, number>();
+  for (const view of overview.sections) {
+    if (view.section !== 'voice') continue;
+    for (const asset of view.assets) {
+      if (asset.targetHold === undefined) continue;
+      if (asked && !asked.has(asset.file)) continue;
+      wanted.set(asset.file, asset.targetHold);
+    }
+  }
+
+  const source = await readFile(paths.scenario, 'utf8');
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const result = retimeInto(source, parsed.scenario, wanted);
+  if (result.changed.length === 0) {
+    return { changed: [], skipped: result.skipped, source, comments: [] };
+  }
+
+  // Validated before it reaches the author's file, the same rule every other
+  // action that rewrites a scenario follows. A beat is a number in a schema
+  // with bounds, and one that fails them must never be written.
+  const after = parseScenarioSource(result.source);
+  if (!after.ok) throw new ProjectError(after.message, after.problems);
+
+  await writeAtomic(paths.scenario, result.source);
+
+  return {
+    changed: result.changed,
+    skipped: result.skipped,
+    source: result.source,
+    comments: commentedBeats(source, result.changed),
+  };
+}
+
+/**
+ * Line numbers where a comment sits beside a beat that just changed.
+ *
+ * Scenarios in this codebase carry sentences like "seven seconds, because the
+ * pause after it is the point". Retiming makes some of those wrong, and the
+ * honest thing is to say which ones rather than to quietly reword them.
+ */
+function commentedBeats(source: string, changed: Retimed[]): number[] {
+  if (changed.length === 0) return [];
+  const lines = source.split(/\r?\n/);
+  const found: number[] = [];
+  lines.forEach((text, index) => {
+    if (!/^\s*hold:\s*[\d.]+\s*#/.test(text)) return;
+    found.push(index + 1);
+  });
+  return found;
+}
+
 export async function saveStoryboardSource(name: string, source: string): Promise<void> {
   const dir = projectDir(name);
   const file = join(dir, 'project.yaml');

@@ -1731,3 +1731,78 @@ button.small {
     background-color: transparent;
   }
 }
+
+/* --------------------------------------------------------------- timing -- */
+
+/* The sum the author is reading: clip, plus a gap they choose, equals the
+   beat. Laid out as arithmetic because that is what it is. */
+.timing-item {
+  gap: 0.4rem;
+}
+
+.timing-sum {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.timing-clip {
+  color: var(--text-dim);
+}
+
+.timing-op {
+  color: var(--text-faint);
+}
+
+.timing-target {
+  color: var(--good);
+}
+
+.timing-now {
+  color: var(--accent-warm);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gap-box {
+  width: 4.2rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gap-box:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.gap-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.gap-field label {
+  color: var(--text-dim);
+}
+
+.gap-sum {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.gap-ok {
+  color: var(--good);
+}

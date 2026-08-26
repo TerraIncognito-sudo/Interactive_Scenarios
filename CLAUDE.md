@@ -393,6 +393,32 @@ selected take is certainly not that take. Matching sizes are taken as the same f
 hashed: two readings of one line landing on the same byte count is a coincidence, and re-reading
 ninety published files on every board build to rule it out is a cost paid every time.
 
+
+**A beat is the clip plus a gap, and the editor writes it.** Nothing on the server opens an
+audio file, so the two numbers only agree if somebody puts them in agreement — which meant
+reading a runtime off the board, doing the addition and typing it into `scenario.yaml`, eighty
+times, without transposing any of them. `retimeInto` in `timing.ts` writes `hold:` by source
+offset like every other scenario action, so a comment beside a beat stays exactly where it is;
+which of those comments the change has made *wrong* is reported by line number and never
+reworded. One decimal throughout: clip runtimes are real numbers and rounding a beat down to
+the whole second below it is how a line gets cut off by a rounding decision nobody made.
+`holdMatches` compares at that same precision, or a hold of 5.8 against a target of
+5.800000000000001 is a mismatch no edit can ever fix and the board asks for it forever.
+
+**The gap is per clip, and it is timing rather than audio.** A second is the default because
+the last word of a line needs somewhere to land, but a beat before a poll wants to breathe and
+a three-word interruption wants to land on top of what follows — so `gap` is a field on the
+asset row. It is deliberately **not** in `resolveRecipe`, and a test says so: it changes how
+long a beat lasts and nothing whatever about the audio, so folding it into the hash would mark
+ninety finished clips stale for a timing edit and make re-timing a show cost a re-record of it.
+An empty box clears the field rather than writing zero, because a gap of nothing is a real
+choice and has to stay distinguishable from never having made one.
+
+**The client sends which clips to retime, never what to.** The target is computed server-side
+from the runtime the board measured and the gap the row declares. A client that could send the
+number itself is a client that can write a beat nothing on the board agrees with — and the
+arithmetic would then exist in two places, which is one more than it can be right in.
+
 What an action must *not* do is edit the author's prose. A migration that removes a scene
 leaves any comment describing it factually wrong, and the temptation is to fix the sentence —
 but a machine that rewrites prose to keep it true will eventually rewrite prose that was
@@ -426,6 +452,7 @@ the file the first time anyone touches a text box. A test guards this.
 | `tools/editor/reconcile.ts` | What the scenario owns on a recipe row, re-derived on every save |
 | `tools/editor/outstanding.ts` | The command centre — the board projected into one list of what is left |
 | `tools/editor/duration.ts` | How long a clip runs, from its header — the other half of the `hold` check |
+| `tools/editor/timing.ts` | Clip + gap = beat, and writing it into `scenario.yaml` |
 | `src/shared/protocol.ts` | Message unions, Zod-validated in both directions |
 | `scenarios/` | Content. Adding a scenario is adding a folder — no code changes |
 

@@ -150,6 +150,20 @@ export const AssetRowSchema = z.strictObject({
   /** Voice only: the spoken text, and which configured voice says it. */
   text: z.string().optional(),
   voice: z.string().min(1).optional(),
+  /**
+   * Voice only: seconds of room after this clip before the beat ends.
+   *
+   * The beat written into `scenario.yaml` is the clip plus this. A second is
+   * the default and is right for most lines; where it is not, it is wrong per
+   * line rather than per show — a beat before a poll wants to breathe, and a
+   * three-word interruption wants to land on top of what follows.
+   *
+   * Deliberately absent from `resolveRecipe`, and a test says so. It changes
+   * how long a beat lasts and nothing whatever about the audio, so folding it
+   * into the hash would mark ninety finished clips stale for a timing edit and
+   * make re-timing a show cost a re-record of it.
+   */
+  gap: z.number().min(0).max(60).optional(),
   notes: z.string().optional(),
   /**
    * Character sheets and ship plates. Everything downstream was matched to

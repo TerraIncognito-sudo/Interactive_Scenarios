@@ -27,6 +27,7 @@ import type { Scenario } from '../../src/scenario/schema.ts';
 import { asksForBackground, composePrompt } from './prompt.ts';
 import { defaultSizeFor, formatSize, isPortrait, parseSize, readImageInfo } from './size.ts';
 import { readDuration } from './duration.ts';
+import { DEFAULT_GAP, holdMatches, targetHoldFor } from './timing.ts';
 import {
   fromProject,
   NARRATION_VOICE,
@@ -126,6 +127,23 @@ export type AssetView = {
    * beat it was written for.
    */
   hold?: number;
+  /**
+   * Seconds of room after the clip, from the row or the one-second default.
+   *
+   * Always present on a measurable voice clip, so the board never has to
+   * decide what the default is a second time.
+   */
+  gap?: number;
+  /**
+   * What `hold` should be: the clip plus the gap, at one decimal.
+   *
+   * The pair of this and `hold` is the whole timing check, and having the
+   * server compute it means the button that writes it and the row that
+   * displays it can never disagree about the arithmetic.
+   */
+  targetHold?: number;
+  /** True when the declared beat already matches. */
+  timed?: boolean;
   /**
    * A take that already matches the current recipe but is not the one chosen.
    *
@@ -280,12 +298,16 @@ function holdOf(
  *
  * Read straight from the parsed scenario rather than by matching the checker's
  * prose, so a reworded warning cannot quietly stop appearing on the board.
+ *
+ * Timing is deliberately not here any more. A beat that disagrees with its clip
+ * is a specific job with a button that does it, and it belongs in the group
+ * that does it — left as a note it was one line of prose among twenty others,
+ * with nothing to press.
  */
 function notesFor(
   scenario: Scenario,
   section: AssetSection,
   origins: AssetOrigin[],
-  seconds: number | undefined,
 ): string[] {
   if (section !== 'voice') return [];
   const notes: string[] = [];
@@ -294,38 +316,10 @@ function notesFor(
     if (origin.kind !== 'voice') continue;
     const node = scenario.nodes.find((n) => n.id === origin.node);
     if (node?.type !== 'dialogue') continue;
-    const hold = node.lines[origin.line]?.hold;
-
-    if (hold === undefined) {
+    if (node.lines[origin.line]?.hold === undefined) {
       notes.push(
         `${origin.node} line ${origin.line + 1} has no hold — the beat will end on a ` +
           `reading-speed estimate, not on this clip's real length`,
-      );
-      continue;
-    }
-
-    // Nothing on the server opens the clip: the beat ends when `hold` says it
-    // does. Every `hold` in a scenario starts as a reading-speed guess, and a
-    // generated clip is routinely a second or two away from the guess — so
-    // this is the one check that compares the two, and it can only be made
-    // once the audio exists.
-    //
-    // A second of headroom rather than none, because equal is not safe: the
-    // last word needs somewhere to land, and a clip that ends exactly on its
-    // beat is one that sounds clipped even when it technically is not.
-    if (seconds === undefined) continue;
-    const spare = hold - seconds;
-    if (spare < 0) {
-      notes.push(
-        `${origin.node} line ${origin.line + 1} holds ${hold}s for a ${seconds.toFixed(1)}s ` +
-          `clip — the beat ends ${Math.abs(spare).toFixed(1)}s before the line does, and the ` +
-          `reading is cut off mid-word`,
-      );
-    } else if (spare < 1) {
-      notes.push(
-        `${origin.node} line ${origin.line + 1} holds ${hold}s for a ${seconds.toFixed(1)}s ` +
-          `clip, leaving ${spare.toFixed(1)}s — a beat wants at least a second after the ` +
-          `words stop`,
       );
     }
   }
@@ -507,7 +501,14 @@ export async function buildOverview(
       const seconds = measurable ? await readDuration(measurable) : undefined;
 
       const hold = holdOf(scenario, section, info.origins);
-      const notes = notesFor(scenario, section, info.origins, seconds);
+      const notes = notesFor(scenario, section, info.origins);
+      // Only for a clip that was actually measured. A beat cannot be checked
+      // against a runtime nobody could read, and guessing produces a board that
+      // sends people to re-cut lines that were already right.
+      const gap = section === 'voice' && seconds !== undefined ? (row?.gap ?? DEFAULT_GAP) : undefined;
+      const targetHold = gap !== undefined && seconds !== undefined
+        ? targetHoldFor(seconds, gap)
+        : undefined;
       const size = await sizeReport(paths, section, file, row, info.origins, entry?.selected);
       // Voice has no prompt in this sense — its text is the line — and running
       // a composer over it would offer to expand words in the dialogue.
@@ -567,6 +568,9 @@ export async function buildOverview(
         ...(republish ? { republish: true } : {}),
         ...(seconds !== undefined ? { seconds } : {}),
         ...(hold !== undefined ? { hold } : {}),
+        ...(gap !== undefined ? { gap } : {}),
+        ...(targetHold !== undefined ? { targetHold } : {}),
+        ...(targetHold !== undefined && holdMatches(hold, targetHold) ? { timed: true } : {}),
         ...(fresh ? { matchingTake: fresh.id } : {}),
         notes,
       };

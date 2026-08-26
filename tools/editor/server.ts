@@ -48,6 +48,7 @@ import {
   selectTake,
   syncFromStoryboard,
   pruneOrphans,
+  retime,
   wireVoice,
 } from './projects.ts';
 import {
@@ -338,7 +339,10 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         await editAssetField(name, {
           file: body.file,
           field: body.field as 'prompt',
-          value: typeof body.value === 'boolean' ? body.value : String(body.value ?? ''),
+          value:
+            typeof body.value === 'boolean' || typeof body.value === 'number'
+              ? body.value
+              : String(body.value ?? ''),
         });
         return sendJson(response, 200, await openProject(name));
       }
@@ -394,6 +398,17 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 
+      if (action === 'retime' && request.method === 'POST') {
+        const body = (await readBody(request)) as { files?: unknown };
+        // Omitted means every mistimed clip. The numbers are never sent —
+        // they are computed from the runtimes the board measured, so a client
+        // cannot write a beat nothing on the board agrees with.
+        const files = Array.isArray(body.files)
+          ? body.files.filter((entry): entry is string => typeof entry === 'string')
+          : undefined;
+        const result = await retime(name, files);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
       if (action === 'sync' && request.method === 'POST') {
         const result = await syncFromStoryboard(name);
         return sendJson(response, 200, { ...result, project: await openProject(name) });

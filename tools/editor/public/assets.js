@@ -19,6 +19,9 @@
 import { $, h } from './dom.js';
 import { openPicker } from './picker.js';
 
+/** Matches `DEFAULT_GAP` in timing.ts — the placeholder every gap box shows. */
+const DEFAULT_GAP = 1;
+
 const SECTION_LABELS = {
   images: 'Images',
   video: 'Video',
@@ -189,12 +192,14 @@ export async function migrateShots() {
  * without refreshing it leaves the author looking at the version from before —
  * and the next Save writes that stale copy back over the change.
  */
-async function runOnScenario(action) {
+async function runOnScenario(action, body) {
   if (!state.name) return null;
-  const result = await api(
-    `/api/projects/${encodeURIComponent(state.name)}/${action}`,
-    { method: 'POST' },
-  );
+  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/${action}`, {
+    method: 'POST',
+    ...(body
+      ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+      : {}),
+  });
   state.data = result.project;
   // Awaited, because refreshing the pane re-analyses the scenario and the
   // analysis writes the status line. Reporting what the action did before that
@@ -1110,6 +1115,36 @@ function assetActions(asset, generable) {
  * needed would send them to hand-edit `project.yaml` — which is the hole this
  * whole editor exists to close.
  */
+/**
+ * The gap after this clip, and the beat that follows from it.
+ *
+ * Only where there is a runtime to add it to. A gap box on a clip nobody can
+ * measure is a control whose effect cannot be shown, and the number it would
+ * produce is one the retime button will refuse to write.
+ */
+function gapField(asset) {
+  if (asset.section !== 'voice' || asset.seconds === undefined) return null;
+  const matches = asset.timed;
+  return h(
+    'div',
+    { class: 'gap-field' },
+    h('label', {}, 'Gap after'),
+    gapBox(asset),
+    h('span', { class: 'gap-sum' }, `${asset.seconds.toFixed(1)}s clip → hold ${asset.targetHold}s`),
+    matches
+      ? h('span', { class: 'gap-ok' }, 'the scenario agrees')
+      : h(
+          'button',
+          {
+            type: 'button',
+            class: 'ghost small',
+            title: 'Write this beat into scenario.yaml',
+            onclick: () => void onRetime([asset.file]),
+          },
+          asset.hold === undefined ? 'Set the hold' : `Change hold ${asset.hold}s → ${asset.targetHold}s`,
+        ),
+  );
+}
 function sizeField(asset) {
   const size = asset.size;
   if (!size) return null;
@@ -1379,6 +1414,7 @@ function assetRow(asset, generable = false) {
         )
       : null,
     box,
+    gapField(asset),
     sizeField(asset),
     promptPreview(asset),
     takesStrip(asset),
@@ -2335,6 +2371,7 @@ async function onCommandPrune(items) {
 }
 
 const COMMAND_RUNNERS = {
+  retime: onRetime,
   generate: onCommandGenerate,
   'use-newest': onCommandUseNewest,
   publish: onCommandPublish,
@@ -2342,6 +2379,7 @@ const COMMAND_RUNNERS = {
 };
 
 const ACTION_LABELS = {
+  retime: 'Set',
   generate: 'Generate',
   'use-newest': 'Use newest',
   publish: 'Publish',
@@ -2402,6 +2440,137 @@ function commandItem(group, item) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Timing
+// ---------------------------------------------------------------------------
+
+/**
+ * Sets beats to the length of the clips that play in them.
+ *
+ * `runOnScenario` rather than a plain POST, because this writes the scenario
+ * and the pane holds its own copy: refresh it late and the analysis overwrites
+ * the status line, do not refresh it at all and the next Save reverts every
+ * beat this just set.
+ *
+ * The numbers are never sent. The server computes each one from the runtime it
+ * measured and the gap the row declares, so the board and the file cannot end
+ * up disagreeing about arithmetic done in two places.
+ */
+async function onRetime(files) {
+  if (!state.name) return;
+  const many = !files || files.length > 1;
+  const count = files ? files.length : (timingGroup()?.items.length ?? 0);
+  if (count === 0) return;
+  if (
+    many &&
+    !confirm(
+      `Set ${count} beat${count === 1 ? '' : 's'} to match ${count === 1 ? 'its' : 'their'} ` +
+        `clip${count === 1 ? '' : 's'}?\n\nThis rewrites hold: in scenario.yaml. Any comment ` +
+        `beside one that changes is reported, not edited.`,
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const result = await runOnScenario('retime', files ? { files } : undefined);
+    if (!result) return;
+    const changed = result.changed?.length ?? 0;
+    const parts = [`${changed} beat${changed === 1 ? '' : 's'} set`];
+    if (result.skipped?.length) parts.push(`${result.skipped.length} had no line to write to`);
+    if (result.comments?.length) {
+      // The house rule: report the prose, never rewrite it.
+      parts.push(
+        `comments beside a beat at line${result.comments.length === 1 ? '' : 's'} ` +
+          `${result.comments.join(', ')} may now be wrong`,
+      );
+    }
+    state.onStatus(result.comments?.length ? 'warn' : 'ok', parts.join(' · '));
+  } catch (err) {
+    state.onStatus('bad', err.message);
+  }
+}
+
+function timingGroup() {
+  return (state.data?.outstanding?.groups ?? []).find((group) => group.group === 'timing');
+}
+
+/**
+ * The gap after one clip, in seconds.
+ *
+ * Saved on change rather than on every keystroke — each save rewrites
+ * `project.yaml` — and an empty box clears the field rather than writing zero,
+ * because a gap of nothing is a real choice and has to stay distinguishable
+ * from never having made one.
+ */
+function gapBox(asset, extra = {}) {
+  const box = h('input', {
+    type: 'number',
+    class: 'gap-box',
+    step: '0.1',
+    min: '0',
+    max: '60',
+    title:
+      'Seconds after this clip before the beat ends. Blank is the one-second default. ' +
+      'Changing it does not make the clip stale — it is timing, not audio.',
+    placeholder: String(DEFAULT_GAP),
+    onchange: (event) => {
+      const raw = event.target.value.trim();
+      const value = raw === '' ? '' : Number(raw);
+      if (value !== '' && !Number.isFinite(value)) return;
+      void editField(asset.file, 'gap', value);
+    },
+    ...extra,
+  });
+  // Only when the row has actually set one, so the placeholder can say what
+  // the default is rather than the box asserting it as a choice.
+  box.value = asset.row?.gap ?? asset.gap ?? '';
+  if (asset.row?.gap === undefined) box.value = '';
+  return box;
+}
+
+/** One mistimed beat, with the two ways of fixing it side by side. */
+function timingItem(item) {
+  const asset = assetsByFile().get(item.file);
+  return h(
+    'li',
+    { class: 'command-item timing-item' },
+    h(
+      'button',
+      { type: 'button', class: 'command-link', title: 'Show me', onclick: () => jumpTo(item) },
+      item.label,
+    ),
+    h(
+      'span',
+      { class: 'timing-sum' },
+      h('span', { class: 'timing-clip' }, `${(item.seconds ?? 0).toFixed(1)}s`),
+      h('span', { class: 'timing-op' }, '+'),
+      asset ? gapBox(asset) : null,
+      h('span', { class: 'timing-op' }, '='),
+      h('span', { class: 'timing-target' }, `${item.target}s`),
+    ),
+    h(
+      'span',
+      { class: 'timing-now' },
+      item.hold === undefined ? 'no hold' : `now ${item.hold}s`,
+    ),
+    h('span', { class: 'spacer' }),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        disabled: state.run ? true : undefined,
+        onclick: (event) => {
+          event.stopPropagation();
+          void onRetime([item.file]);
+        },
+      },
+      'Set',
+    ),
+  );
+}
+
 function commandGroup(group) {
   const open = state.commandOpen.has(group.group);
   const shown = open ? group.items : group.items.slice(0, COMMAND_PEEK);
@@ -2419,7 +2588,16 @@ function commandGroup(group) {
       commandGroupButton(group),
     ),
     h('p', { class: 'command-hint' }, group.hint),
-    h('ul', { class: 'command-list' }, shown.map((item) => commandItem(group, item))),
+    h(
+      'ul',
+      { class: 'command-list' },
+      // Timing rows are editable rather than merely actionable: the gap is the
+      // number the author is deciding, and making them open a row to change it
+      // is making them leave the list they are working down.
+      shown.map((item) =>
+        group.group === 'timing' ? timingItem(item) : commandItem(group, item),
+      ),
+    ),
     hidden > 0 || open
       ? h(
           'button',

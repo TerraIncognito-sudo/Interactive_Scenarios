@@ -32,6 +32,7 @@ export const OUTSTANDING_GROUPS = [
   'publish',
   'unmanaged',
   'cast',
+  'timing',
   'quality',
   'orphan',
 ] as const;
@@ -43,7 +44,13 @@ export type OutstandingGroup = (typeof OUTSTANDING_GROUPS)[number];
  * uses. `open` means there is nothing to press — the fix is an edit somebody
  * has to make — and the item is a link to where they make it.
  */
-export type OutstandingAction = 'generate' | 'use-newest' | 'publish' | 'prune' | 'open';
+export type OutstandingAction =
+  | 'generate'
+  | 'use-newest'
+  | 'publish'
+  | 'prune'
+  | 'retime'
+  | 'open';
 
 export type OutstandingItem = {
   group: OutstandingGroup;
@@ -54,6 +61,18 @@ export type OutstandingItem = {
   label: string;
   /** Why it is here, when the group heading does not already say it. */
   detail?: string;
+  /**
+   * The three numbers a timing row is edited with.
+   *
+   * Carried on the item rather than looked up from the board by the client:
+   * the list is what the author is reading, and a gap box that had to find its
+   * own row first is a gap box that shows the wrong number the moment the two
+   * fall a render apart.
+   */
+  seconds?: number;
+  hold?: number;
+  gap?: number;
+  target?: number;
 };
 
 export type OutstandingSection = {
@@ -128,6 +147,15 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
     level: 'error',
     action: 'open',
   },
+  timing: {
+    label: 'Beats that do not match their clip',
+    hint:
+      'Nothing on the server opens an audio file — a beat ends when `hold` says it does. ' +
+      'Setting one writes it straight into scenario.yaml. The gap after each clip is a ' +
+      'second unless the row says otherwise.',
+    level: 'error',
+    action: 'retime',
+  },
   quality: {
     label: 'Made, but not right',
     hint: 'These play. They are the wrong shape, the wrong format, or timed off an estimate rather than the clip.',
@@ -184,6 +212,7 @@ export function outstandingOf(overview: Overview): Outstanding {
     publish: [],
     unmanaged: [],
     cast: [],
+    timing: [],
     quality: [],
     orphan: [],
   };
@@ -222,6 +251,26 @@ export function outstandingOf(overview: Overview): Outstanding {
         });
       } else if (!asset.published) {
         items.publish.push({ group: 'publish', ...where });
+      }
+
+      // Additive, like quality: a clip can be made, chosen, published and
+      // still play in a beat that is the wrong length for it.
+      if (asset.targetHold !== undefined && !asset.timed) {
+        const spare = asset.hold === undefined ? undefined : asset.hold - (asset.seconds ?? 0);
+        items.timing.push({
+          group: 'timing',
+          ...where,
+          detail:
+            asset.hold === undefined
+              ? `no hold — should be ${asset.targetHold}s`
+              : spare !== undefined && spare < 0
+                ? `holds ${asset.hold}s for a ${asset.seconds!.toFixed(1)}s clip, cutting it off — should be ${asset.targetHold}s`
+                : `holds ${asset.hold}s, should be ${asset.targetHold}s`,
+          seconds: asset.seconds,
+          hold: asset.hold,
+          gap: asset.gap,
+          target: asset.targetHold,
+        });
       }
 
       for (const detail of qualityOf(asset)) {
