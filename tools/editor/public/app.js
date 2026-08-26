@@ -16,6 +16,7 @@ import {
   seedFromStoryboard,
   wireVoice,
   migrateShots,
+  wireSprites,
   sortFolders,
   pruneOrphans,
   refreshModels,
@@ -574,6 +575,34 @@ $('migrate-shots').addEventListener('click', () => {
       attention.length > 0 ? 'warn' : 'ok',
       [...done, ...attention].join(' · '),
     );
+  })();
+});
+
+$('wire-sprites').addEventListener('click', () => {
+  void (async () => {
+    const result = await wireSprites();
+    if (!result) return;
+
+    const parts = [];
+    if (result.wired.length > 0) {
+      parts.push(
+        `${result.wired.length} portrait${result.wired.length === 1 ? '' : 's'} declared — ` +
+          result.wired.map((entry) => entry.character).join(', '),
+      );
+    }
+    const placed = result.seeded?.filled?.length ?? result.seeded?.added?.length ?? 0;
+    if (placed > 0) parts.push(`${placed} sheet prompt${placed === 1 ? '' : 's'} placed`);
+    if (result.untouched.length > 0) {
+      parts.push(`${result.untouched.join(', ')} already had one`);
+    }
+    // A sheet with nobody to attach to is the author's to resolve: a label the
+    // scenario has no character for is either a typo or a part that was cut.
+    const stuck = (result.skipped ?? []).map((entry) => `${entry.sheet}: ${entry.why}`);
+
+    if (parts.length === 0 && stuck.length === 0) {
+      return setStatus('warn', 'every character the storyboard drew already has a portrait');
+    }
+    setStatus(stuck.length > 0 ? 'warn' : 'ok', [...parts, ...stuck].join(' · '));
   })();
 });
 

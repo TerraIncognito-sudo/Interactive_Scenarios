@@ -63,6 +63,17 @@ export type StoryboardParse = {
    * from; `prompt.ts` is where they go back in.
    */
   tokens: Record<string, string>;
+  /**
+   * Character reference sheets, keyed by the label the document uses —
+   * `Beaudoin`, `Tran`. A neutral portrait per character, generated first and
+   * reused as the reference for every later shot so faces do not drift.
+   *
+   * Keyed by label rather than by character id because a storyboard writes
+   * "Beaudoin sheet" and the scenario calls her `beau`. Joining the two is a
+   * guess, so it happens once, out loud, in `sprites.ts` — and what it cannot
+   * match is reported rather than attached to the wrong face.
+   */
+  sheets: Record<string, string>;
   /** Things the parser understood but that look like mistakes. */
   warnings: string[];
 };
@@ -77,6 +88,15 @@ export type StoryboardParse = {
  * it, and anything else stays furniture.
  */
 const TOKEN_DEFINITION = /^([A-Z][A-Z0-9_]{2,}):\s*([\s\S]*)$/;
+
+/**
+ * `- **Beaudoin sheet:** \`STYLE. Character reference sheet…\``
+ *
+ * The prompt runs past the line it starts on — these are the longest single
+ * prompts in a storyboard — so the opening backtick is all this matches and
+ * `readInlineCode` finds the close.
+ */
+const SHEET = /^[-*]\s+\*\*(.+?)\s+sheets?:\*\*\s*`/i;
 
 const SHOT_HEADING = /^###\s+Shot\s+([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:[—–-]\s*(.*))?$/;
 /**
@@ -173,6 +193,37 @@ function readDelivery(lines: string[], index: number): { text: string; next: num
   return text ? { text, next: i + 1 } : undefined;
 }
 
+/**
+ * Collects a single-backtick span that may be wrapped across lines.
+ *
+ * Hand-wrapped prose is the normal case in a document for people, and a
+ * character sheet is four lines of it. Requiring the closing backtick on the
+ * opening line drops exactly the longest and most useful prompts, silently —
+ * the import looks like it worked and three portraits never reach the board.
+ */
+function readInlineCode(lines: string[], index: number, from: number): { text: string; next: number } {
+  const first = lines[index]!.slice(from);
+  const close = first.indexOf('`');
+  if (close >= 0) return { text: first.slice(0, close).trim(), next: index + 1 };
+
+  const collected = [first.trim()];
+  let i = index + 1;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const end = line.indexOf('`');
+    if (end >= 0) {
+      collected.push(line.slice(0, end).trim());
+      return { text: dedent(collected).replaceAll(/\s*\n\s*/g, ' '), next: i + 1 };
+    }
+    // An unterminated span is a typo, not a prompt. Stopping at the first thing
+    // that is plainly something else keeps it from swallowing the document.
+    if (!line.trim() || line.trimStart().startsWith('#')) break;
+    collected.push(line.trim());
+    i += 1;
+  }
+  return { text: '', next: index + 1 };
+}
+
 /** Collects a ``` fenced block starting at the fence line. */
 function readFence(lines: string[], index: number): { text: string; next: number } {
   const collected: string[] = [];
@@ -188,6 +239,7 @@ export function parseStoryboard(source: string): StoryboardParse {
   const lines = source.split(/\r?\n/);
   const shots: StoryboardShot[] = [];
   const tokens: Record<string, string> = {};
+  const sheets: Record<string, string> = {};
   const warnings: string[] = [];
 
   let act: string | undefined;
@@ -231,6 +283,16 @@ export function parseStoryboard(source: string): StoryboardParse {
       // negative and its design bibles. The parser used to skip all of it,
       // which is how twenty-six prompts reached the board with `STYLE.` in
       // them and nothing anywhere that said what STYLE was.
+      const sheet = SHEET.exec(line);
+      if (sheet) {
+        const opened = raw.indexOf('`', raw.indexOf('**', raw.indexOf('**') + 2));
+        const span = readInlineCode(lines, i, opened + 1);
+        if (span.text) sheets[sheet[1]!.trim()] = span.text;
+        else warnings.push(`The ${sheet[1]} sheet's prompt is never closed with a backtick`);
+        i = span.next;
+        continue;
+      }
+
       if (line.startsWith('```')) {
         const fence = readFence(lines, i);
         const defined = TOKEN_DEFINITION.exec(fence.text);
@@ -316,7 +378,7 @@ export function parseStoryboard(source: string): StoryboardParse {
     if (!entry.image) warnings.push(`Shot ${entry.id} has no **IMAGE** prompt`);
   }
 
-  return { shots, tokens, warnings };
+  return { shots, tokens, sheets, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -543,7 +605,25 @@ function deliveryFor(shot: StoryboardShot, who: string | undefined): string | un
  * free to invent names precisely because it writes the scenario that references
  * them. Both routes end with the two files agreeing; neither guesses.
  */
-export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedResult {
+export function seedRowsFor(
+  scenario: Scenario,
+  shots: StoryboardShot[],
+  sheets: Record<string, string> = {},
+): SeedResult {
+  // Keyed by character rather than by the document's label, so the walk below
+  // can look one up by the id the scenario uses. The join itself belongs to
+  // `sprites.ts`, which is the file that had to make it to declare the sprite
+  // in the first place — doing it twice would be two chances to disagree.
+  const sheetFor = new Map<string, string>();
+  for (const [label, prompt] of Object.entries(sheets)) {
+    for (const [id, character] of Object.entries(scenario.characters)) {
+      const words = character.name.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+      if (id.toLowerCase() === label.toLowerCase() || words.includes(label.toLowerCase())) {
+        sheetFor.set(id, prompt);
+      }
+    }
+  }
+
   const byNode = shotsByNode(shots);
   const rows: SeedRow[] = [];
   const used = new Set<string>();
@@ -608,6 +688,12 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
       row.source.line = origin.line;
       const note = shot ? deliveryFor(shot, spoken.who) : undefined;
       if (note) row.prompt = note;
+    } else if (origin.kind === 'sprite') {
+      // A portrait has no shot: it is generated before any of them, and every
+      // shot the character appears in is matched to it rather than the other
+      // way round.
+      const sheet = sheetFor.get(origin.character);
+      if (sheet) row.prompt = sheet;
     } else if (shot) {
       // A node's own still or clip belongs to that node, not merely to the
       // place — record it so the board can click through to the right beat.

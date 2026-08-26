@@ -405,6 +405,28 @@ The prose in a scenario is the author's — several comments in a real one recor
 the length it is — and a machine that edits prose to keep it true will eventually edit prose
 that was already true. It names the lines and stops there.
 
+### Give speakers a portrait
+
+The display has drawn portraits since the beginning: bottom right, over the dialogue box,
+sliding in when someone speaks — the shape every 2D RPG and visual novel has used for thirty
+years. What it never had was a picture. `sprite:` is optional on a character, no scenario ever
+declared one, and a portrait nothing declares is one nobody notices is missing.
+
+A storyboard that plans for this writes a **character sheet** per character — one neutral
+three-quarter portrait, generated first and reused as the reference for every later shot so
+faces do not drift between scenes. **Give speakers a portrait** turns those paragraphs into
+files the show will open: a `sprite:` on each character, then a re-seed so the sheet's prompt
+lands on the name it just declared.
+
+Only the characters the storyboard drew. Arctic Sentinel has six speaking parts and three
+sheets — the narrator has no face, the ship is a ship, and the Russian officer is "heard only
+over radio; never seen as a face". Giving every speaker a portrait would invent three the
+author deliberately withheld.
+
+Matching `Beaudoin` to `beau` is the one guess in it, and it is narrow: the id outright, or a
+whole word of the character's name. Two characters that both match is reported, not resolved —
+a face on the wrong person lasts the whole show.
+
 ### File assets by media type
 
 A finished show is a few hundred files. Flat, `assets/` is a folder where finding the bed for

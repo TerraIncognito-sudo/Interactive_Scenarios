@@ -37,6 +37,7 @@ import {
   migrateShots,
   recordReference,
   sortAssets,
+  wireSprites,
   openProject,
   resolveMedia,
   saveProjectSource,
@@ -372,6 +373,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'shots' && request.method === 'POST') {
         const result = await migrateShots(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'sprites' && request.method === 'POST') {
+        const result = await wireSprites(name);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 

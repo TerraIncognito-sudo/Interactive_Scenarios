@@ -382,9 +382,72 @@ describe('media reaches the projector', () => {
     assert.deepEqual(body.assets.sort(), [
       'ambience/harbour.mp3',
       'images/harbour.jpg',
+      'images/narrator.png',
       'video/harbour.mp4',
       'voice/open-1.mp3',
     ]);
+  });
+
+  test('a speaker carries their portrait into the snapshot', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+
+    const first = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 0,
+    );
+    // The display draws it bottom-right over the dialogue box while the line
+    // plays, which is the shape every 2D RPG has used for thirty years. It has
+    // been able to do that from the beginning; what no scenario ever did was
+    // declare a picture for it to draw.
+    assert.equal(first.beatInfo.kind === 'dialogue' && first.beatInfo.speaker?.sprite,
+      'images/narrator.png');
+
+    // And it is in the prefetch list, so the portrait is decoded before the
+    // show starts rather than popping in a beat late.
+    const response = await fetch(
+      `${baseUrl}/scenario-assets/media/assets/images/narrator.png`,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+
+    host.close();
+  });
+
+  test('a line with no speaker carries no portrait', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+
+    // Narration is a voice without a face. A portrait that stayed on screen
+    // through it would attribute the line to whoever spoke last.
+    const second = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 1,
+    );
+    assert.equal(second.beatInfo.kind === 'dialogue' && second.beatInfo.speaker, undefined);
+
+    host.close();
+  });
+
+  test('the base and the manifest join into a URL that actually serves', async () => {
+    // The bug this exists for: `assetBase` stopped one level above `assets/`,
+    // so every name in the manifest resolved to a 404. It went unnoticed for
+    // months because no scenario had a single asset made yet — the first one
+    // would have been a missing picture in front of a room.
+    //
+    // So the assertion is the join itself, done exactly as the display does it,
+    // for every asset the scenario declares.
+    const room = await createRoom('media');
+    const response = await fetch(
+      `${baseUrl}/api/rooms/${room.code}/scenario?token=${room.displayToken}`,
+    );
+    const body = (await response.json()) as { assets: string[]; assetBase: string };
+
+    const made = ['images/narrator.png', 'voice/open-1.mp3'];
+    for (const file of body.assets.filter((name) => made.includes(name))) {
+      const asset = await fetch(`${baseUrl}${body.assetBase}${file}`);
+      assert.equal(asset.status, 200, `${body.assetBase}${file} did not serve`);
+    }
   });
 
   test('an asset filed in a folder is served from one', async () => {

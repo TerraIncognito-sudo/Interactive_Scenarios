@@ -190,6 +190,17 @@ async function runOnScenario(action) {
 }
 
 /**
+ * Declares a portrait for every character the storyboard drew a sheet for.
+ *
+ * `scenario.yaml` again: the display has drawn portraits since the beginning
+ * and no scenario ever declared one, so the feature has been there and
+ * invisible. This is the line that connects them.
+ */
+export async function wireSprites() {
+  return runOnScenario('sprites');
+}
+
+/**
  * Files every asset under a folder named for its media type.
  *
  * Writes to `scenario.yaml` like the other two, because the folder is part of

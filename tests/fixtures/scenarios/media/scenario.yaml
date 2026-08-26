@@ -18,6 +18,7 @@ settings:
 characters:
   narrator:
     name: Narrator
+    sprite: images/narrator.png
     color: '#B0BEC5'
 
 scenes:

@@ -163,6 +163,20 @@ who wanted to hear a line read aloud.
 to other machines and is opened a year later, so it names a model (`chatterbox`) while the
 editor's own config holds the path. The same reasoning as the workspace, for the same reason.
 
+**`assetBase` goes down to `assets/`.** The display joins it to a name straight out of
+`scenario.yaml`, so a base one level short makes every asset a 404. It was one level short for
+months and nothing noticed, because no scenario had a single asset made — the first would have
+been a missing picture in front of a room. A test now fetches `assetBase + file` for real, which
+is the only form of this assertion that could have caught it.
+
+**Who gets a portrait is the storyboard's decision.** `sprites.ts` declares a `sprite:` for each
+character the document drew a *character sheet* for, and only those. Arctic Sentinel has six
+speaking parts and three sheets: the narrator has no face, the ship is a ship, and the Russian
+officer is "heard only over radio; never seen as a face". Wiring every speaker would invent three
+faces the author deliberately withheld, and one of them would be a person for a warship. Matching
+a sheet labelled `Beaudoin` to `beau` is the one guess, so it is narrow — the id outright, or a
+whole word of the name — and ambiguity is refused rather than resolved.
+
 **A prompt is not what the model gets.** A storyboard writes `STYLE. SHIP. Pre-dawn at a
 jetty…` and defines STYLE and SHIP once, hundreds of characters each, because the style belongs
 to the production rather than to any one shot. Handed to a model unchanged that is five dead

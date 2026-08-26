@@ -53,6 +53,7 @@ import {
   type ReferenceClip,
 } from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
+import { wireSpritesInto, type SpriteWiring } from './sprites.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
 
 /**
@@ -387,7 +388,7 @@ async function seedFromStoryboard(
   if (!parsed.ok) return nothing;
 
   const document = parseStoryboard(storyboard);
-  const seeded = seedRowsFor(parsed.scenario, document.shots);
+  const seeded = seedRowsFor(parsed.scenario, document.shots, document.sheets);
   const placement = placeTokens(document.tokens);
 
   const rows: Record<string, Record<string, unknown>> = {};
@@ -1093,6 +1094,64 @@ export async function recordReference(
   await editVoiceField(name, { voice: request.voice, field: 'preset', value: clip.preset });
 
   return clip;
+}
+
+export type SpriteWork = Omit<SpriteWiring, 'source'> & {
+  /** The seeding run that follows, which is what puts the sheet on the board. */
+  seeded?: StoryboardSync;
+};
+
+/**
+ * Gives every character the storyboard drew a sheet for a portrait to show.
+ *
+ * The display has drawn portraits from the start and no scenario has ever
+ * declared one, so the feature has been present and invisible. This is the step
+ * that connects them — and like wiring voice it writes to `scenario.yaml`,
+ * because the scenario is the manifest and a picture nothing declares is a
+ * picture nothing can track.
+ *
+ * It re-seeds afterwards for the same reason the shot migration does: declaring
+ * three filenames and leaving three written prompts unattached is half the job,
+ * and the half nobody remembers.
+ */
+export async function wireSprites(name: string): Promise<SpriteWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to wire');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const storyboard = project.storyboard
+    ? await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined)
+    : undefined;
+  if (!storyboard) {
+    throw new ProjectError('This project has no storyboard to take its character sheets from');
+  }
+
+  const sheets = parseStoryboard(storyboard).sheets;
+  if (Object.keys(sheets).length === 0) {
+    throw new ProjectError(
+      'The storyboard describes no character sheets. A sheet is a bullet like ' +
+        '**Beaudoin sheet:** followed by the prompt in backticks.',
+    );
+  }
+
+  const result = wireSpritesInto(source, parsed.scenario, sheets);
+  const { source: wired, ...report } = result;
+  if (report.wired.length === 0) return report;
+
+  const check = parseScenarioSource(wired);
+  if (!check.ok) {
+    throw new ProjectError('Declaring portraits would have broken the scenario', check.problems);
+  }
+
+  await writeAtomic(paths.scenario, wired);
+  return { ...report, seeded: await syncFromStoryboard(name) };
 }
 
 export type VoiceWiring = {
