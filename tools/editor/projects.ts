@@ -22,7 +22,10 @@
  * anyone touched a text box.
  */
 
+import { createWriteStream } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile, rename, stat } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { parseDocument, Scalar, stringify as stringifyYaml } from 'yaml';
 import { ASSET_SECTIONS, parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
@@ -1291,6 +1294,110 @@ export async function saveStoryboardSource(name: string, source: string): Promis
  * moved. Changing your mind about a take is meant to be free, which is what
  * makes keeping every attempt worth doing in the first place.
  */
+/**
+ * Copies a finished file in from anywhere on the machine, as a take.
+ *
+ * The workflow for everything the editor cannot generate: art is made in
+ * another program and has to get into a folder named after a filename, nested
+ * two deep, that the author has to find first. **Copy folder** made that one
+ * paste instead of twenty-six; this makes it a file picker.
+ *
+ * The bytes arrive over the wire rather than the path. The browser's file
+ * dialog is the system one and hands the page a `File`, never a path — which
+ * is also the safer half of the trade: nothing here opens a location the user
+ * typed, so there is no path from this route to a file they did not choose.
+ *
+ * It lands in the takes folder and nothing else changes. `scanTakes` already
+ * picks up whatever is in there, marked `manual`, so an import is exactly the
+ * drop-it-in-by-hand path with the hunting removed. The one exception is a
+ * first take for an asset with nothing selected, which is selected for the same
+ * reason generating does it: an asset with one take and no selection is a row
+ * reporting work still to do that has already been done.
+ */
+export async function importTake(
+  name: string,
+  request: { section: AssetSection; file: string; filename: string },
+  body: Readable,
+): Promise<{ take: string; bytes: number; selected: boolean }> {
+  if (!(ASSET_SECTIONS as readonly string[]).includes(request.section)) {
+    throw new ProjectError('Unknown section');
+  }
+  if (!safeAsset(request.file)) throw new ProjectError('Bad asset name');
+
+  const take = takeNameFrom(request.filename);
+  const type = MEDIA_TYPES[extname(take).toLowerCase()];
+  if (!type) {
+    throw new ProjectError(
+      `The editor does not handle "${extname(take) || 'files with no extension'}". ` +
+        `It reads ${[...new Set(Object.keys(MEDIA_TYPES))].join(', ')}.`,
+    );
+  }
+
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const folder = takesDir(paths, request.section, request.file);
+  await mkdir(folder, { recursive: true });
+
+  // Never over an existing take. A second import of `final.png` is a second
+  // attempt, and silently replacing the first would throw away the one the
+  // author may have already selected.
+  const chosen = await freeName(folder, take);
+
+  // Through a temporary file, so a copy that fails halfway — a full disk, a
+  // network drive going away mid-transfer — does not leave a truncated file in
+  // the folder looking exactly like a take.
+  const temp = join(folder, `.importing-${Date.now()}`);
+  let bytes = 0;
+  try {
+    body.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+    });
+    await pipeline(body, createWriteStream(temp));
+    await rename(temp, join(folder, chosen));
+  } catch (err) {
+    await rm(temp, { force: true });
+    throw err;
+  }
+
+  const { ledger } = await loadLedger(paths.ledger);
+  const entry = (ledger.assets[request.file] ??= { takes: [] });
+  const selected = entry.selected === undefined;
+  if (selected) {
+    entry.selected = chosen;
+    await saveLedger(paths.ledger, ledger);
+  }
+
+  return { take: chosen, bytes, selected };
+}
+
+/**
+ * A filename from a file dialog, made into a take id.
+ *
+ * The author's own name is kept — `beaudoin-v3-final.png` is what they will
+ * look for — but it has to survive `join()` and the take guard, so anything
+ * that is not a plain name becomes a dash.
+ */
+function takeNameFrom(filename: string): string {
+  const base = basename(filename.replaceAll('\\', '/')).trim();
+  const cleaned = base.replaceAll(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '');
+  if (!cleaned || !safeTake(cleaned)) throw new ProjectError('That filename cannot be used');
+  return cleaned;
+}
+
+/** `shot.png`, then `shot-2.png`, and so on. */
+async function freeName(folder: string, wanted: string): Promise<string> {
+  const extension = extname(wanted);
+  const stem = wanted.slice(0, wanted.length - extension.length);
+  let candidate = wanted;
+  for (let n = 2; await stat(join(folder, candidate)).catch(() => null); n += 1) {
+    candidate = `${stem}-${n}${extension}`;
+  }
+  return candidate;
+}
+
 /**
  * Throws away one take.
  *

@@ -36,6 +36,7 @@ import {
   listProjects,
   migrateShots,
   deleteTake,
+  importTake,
   recordReference,
   sortAssets,
   wireSprites,
@@ -455,6 +456,25 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
           section: body.section as 'voice',
           files: body.files.map(String),
         });
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // The bytes, raw, rather than JSON or a multipart envelope. A still is a
+      // couple of megabytes and a clip is a hundred; base64 in a JSON body
+      // would inflate that by a third and buffer all of it in memory to gain
+      // nothing, when the metadata is three short strings that fit in a query.
+      if (action === 'import' && request.method === 'POST') {
+        const section = url.searchParams.get('section') ?? '';
+        const file = url.searchParams.get('file') ?? '';
+        const filename = url.searchParams.get('name') ?? '';
+        if (!section || !file || !filename) {
+          return sendJson(response, 400, { error: 'Expected ?section=&file=&name=' });
+        }
+        const result = await importTake(
+          name,
+          { section: section as AssetSection, file, filename },
+          request,
+        );
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 

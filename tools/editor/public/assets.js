@@ -356,6 +356,84 @@ async function selectTake(asset, take) {
   render();
 }
 
+/**
+ * The system file dialog, and what comes back from it.
+ *
+ * One `<input type="file">` reused for the whole board, created once and never
+ * attached to a row: `render()` replaces the tree on every state change, and an
+ * input inside it would be destroyed the moment the picker opened — taking the
+ * change event with it and doing nothing at all, silently.
+ *
+ * The dialog is the operating system's, and it hands the page a `File` and
+ * never a path. That is the safer half of the trade as well as the easier one:
+ * the bytes come over the wire, so no route here opens a location somebody
+ * typed.
+ */
+const chooser = (() => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.hidden = true;
+  document.body.append(input);
+  return input;
+})();
+
+/** What a section will take, so the dialog does not offer the rest of the disk. */
+const ACCEPTS = {
+  images: 'image/*,.png,.jpg,.jpeg,.webp',
+  video: 'video/*,.mp4,.webm',
+  voice: 'audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac',
+  music: 'audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac',
+  ambience: 'audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac',
+  sfx: 'audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac',
+};
+
+function importInto(asset) {
+  chooser.accept = ACCEPTS[asset.section] ?? '';
+  chooser.value = '';
+  // Re-bound each time rather than dispatched from a shared handler, because
+  // the row it belongs to is the only thing that changes between uses.
+  chooser.onchange = () => {
+    const file = chooser.files?.[0];
+    chooser.onchange = null;
+    if (file) void onImport(asset, file);
+  };
+  chooser.click();
+}
+
+async function onImport(asset, file) {
+  state.busy.add(asset.file);
+  render();
+  state.onStatus('warn', `importing ${file.name}…`);
+  try {
+    const query = new URLSearchParams({
+      section: asset.section,
+      file: asset.file,
+      name: file.name,
+    });
+    const result = await api(
+      `/api/projects/${encodeURIComponent(state.name)}/import?${query}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      },
+    );
+    state.data = result.project;
+    state.onStatus(
+      'ok',
+      `${asset.file}: imported ${result.take} (${Math.round(result.bytes / 1024)} KB)` +
+        // Said out loud, because it is the one thing an import changes beyond
+        // adding a file — and only ever when there was nothing to overrule.
+        (result.selected ? ' · selected, nothing else was' : ' · not selected'),
+    );
+  } catch (err) {
+    state.onStatus('bad', said(asset.file, err.message));
+  } finally {
+    state.busy.delete(asset.file);
+    render();
+  }
+}
+
 async function deleteTake(section, asset, take) {
   state.data = await api(`/api/projects/${encodeURIComponent(state.name)}/delete-take`, {
     method: 'POST',
@@ -951,10 +1029,26 @@ function assetActions(asset, generable) {
     );
   }
 
-  // Where to put a picture made somewhere else. Only for a section with no
-  // generator wired up, because that is the section where this is the workflow
-  // rather than a fallback — and hunting for a nested path under a folder named
-  // for a filename is not something to do twenty-six times by hand.
+  // A file made somewhere else, brought in as a take. On every row: there is
+  // no asset for which "I already have this one" is the wrong answer, and a
+  // recorded line is as real a take as a generated one.
+  actions.push(
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        disabled: busy ? true : undefined,
+        title: 'Pick a finished file and copy it in as a take',
+        onclick: () => importInto(asset),
+      },
+      'Import…',
+    ),
+  );
+
+  // The folder, for dropping several in at once — which a file dialog is worse
+  // at than a paste into an explorer window. Only where nothing generates,
+  // because that is where this is the workflow rather than the fallback.
   if (!generable) {
     actions.push(
       h(
@@ -962,7 +1056,7 @@ function assetActions(asset, generable) {
         {
           type: 'button',
           class: 'ghost small',
-          title: 'Copy the folder to drop a finished file into',
+          title: 'Copy the folder to drop finished files into',
           onclick: () => void copyText(takesFolder(asset), 'takes folder'),
         },
         'Copy folder',

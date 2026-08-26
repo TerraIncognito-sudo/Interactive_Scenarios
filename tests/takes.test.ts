@@ -10,7 +10,16 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+} from 'node:fs';
+import { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -98,6 +107,137 @@ async function workshop() {
   };
   return { root, dir, takes, deleteTake, openProject, ledger, done };
 }
+
+describe('importing a finished file', () => {
+  /** What the route hands `importTake`: the request, which is a stream. */
+  const bytes = (content: string) => Readable.from([Buffer.from(content)]);
+
+  test('lands in the takes folder, which it creates', async () => {
+    const shop = await workshop();
+    try {
+      const { importTake } = await import('../tools/editor/projects.ts');
+      const result = await importTake(
+        'demo',
+        { section: 'images', file: 'images/a1-jetty.png', filename: 'jetty-v3-final.png' },
+        bytes('a picture'),
+      );
+
+      const folder = join(shop.dir, 'generated', 'images', 'a1-jetty.png');
+      assert.equal(result.take, 'jetty-v3-final.png', 'the author’s own name is kept');
+      assert.equal(readFileSync(join(folder, 'jetty-v3-final.png'), 'utf8'), 'a picture');
+      assert.equal(result.bytes, 9);
+    } finally {
+      shop.done();
+    }
+  });
+
+  test('a second import of the same name is a second take, not a replacement', async () => {
+    // Two attempts called `final.png` is the normal case, and overwriting the
+    // first would throw away a reading the author may already have selected.
+    const shop = await workshop();
+    try {
+      const { importTake } = await import('../tools/editor/projects.ts');
+      const one = await importTake(
+        'demo',
+        { section: 'images', file: 'images/a1-jetty.png', filename: 'final.png' },
+        bytes('first'),
+      );
+      const two = await importTake(
+        'demo',
+        { section: 'images', file: 'images/a1-jetty.png', filename: 'final.png' },
+        bytes('second'),
+      );
+
+      assert.equal(one.take, 'final.png');
+      assert.equal(two.take, 'final-2.png');
+      const folder = join(shop.dir, 'generated', 'images', 'a1-jetty.png');
+      assert.equal(readFileSync(join(folder, 'final.png'), 'utf8'), 'first');
+      assert.equal(readFileSync(join(folder, 'final-2.png'), 'utf8'), 'second');
+    } finally {
+      shop.done();
+    }
+  });
+
+  test('the first take is selected, and later ones never steal it', async () => {
+    const shop = await workshop();
+    try {
+      const { importTake } = await import('../tools/editor/projects.ts');
+      const first = await importTake(
+        'demo',
+        { section: 'images', file: 'images/a1-jetty.png', filename: 'one.png' },
+        bytes('first'),
+      );
+      const second = await importTake(
+        'demo',
+        { section: 'images', file: 'images/a1-jetty.png', filename: 'two.png' },
+        bytes('second'),
+      );
+
+      assert.equal(first.selected, true, 'an asset with one take and no selection is a false gap');
+      assert.equal(second.selected, false);
+      assert.equal(shop.ledger().assets['images/a1-jetty.png'].selected, 'one.png');
+    } finally {
+      shop.done();
+    }
+  });
+
+  test('a name from a dialog is made into a take id, or refused', async () => {
+    const shop = await workshop();
+    try {
+      const { importTake } = await import('../tools/editor/projects.ts');
+      // A path is a filename here — the dialog gives a bare name, but nothing
+      // downstream should depend on that being true.
+      const result = await importTake(
+        'demo',
+        { section: 'images', file: 'images/a1-jetty.png', filename: '../../etc/pass wd.png' },
+        bytes('x'),
+      );
+      assert.equal(result.take, 'pass-wd.png');
+
+      await assert.rejects(
+        () =>
+          importTake(
+            'demo',
+            { section: 'images', file: 'images/a1-jetty.png', filename: 'notes.txt' },
+            bytes('x'),
+          ),
+        /does not handle/,
+      );
+    } finally {
+      shop.done();
+    }
+  });
+
+  test('a transfer that fails leaves no half-written take behind', async () => {
+    // A truncated file in a takes folder looks exactly like a take, and the
+    // author would find out by selecting it and hearing nothing.
+    const shop = await workshop();
+    try {
+      const { importTake } = await import('../tools/editor/projects.ts');
+      const broken = new Readable({
+        read() {
+          this.push(Buffer.from('half a '));
+          this.destroy(new Error('network drive went away'));
+        },
+      });
+
+      await assert.rejects(
+        () =>
+          importTake(
+            'demo',
+            { section: 'images', file: 'images/a1-jetty.png', filename: 'half.png' },
+            broken,
+          ),
+        /network drive went away/,
+      );
+
+      const folder = join(shop.dir, 'generated', 'images', 'a1-jetty.png');
+      assert.deepEqual(readdirSync(folder), [], 'not even the temporary file');
+    } finally {
+      shop.done();
+    }
+  });
+});
 
 describe('deleting a take', () => {
   test('the file goes, and so does its line in the ledger', async () => {

@@ -149,6 +149,15 @@ one is its own act with its own count. **Publish covers every clip with a select
 ones that "look like they need it": `ready` means the selected take matches the recipe and says
 nothing about whether it was ever copied to the published name, which nothing on the board knows.
 
+**Importing sends bytes, never a path.** The browser's file dialog is the system one and hands
+the page a `File` with no path in it, so `importTake` takes a stream and the metadata rides in the
+query — raw `application/octet-stream`, because base64 in JSON inflates a hundred-megabyte clip by
+a third and buffers all of it to gain nothing. That is also the safer half: no route here opens a
+location somebody typed. It writes through a temporary file and renames, since a truncated file in
+a takes folder looks exactly like a take. The one `<input type="file">` is created once and kept
+out of the render tree — `render()` replaces the tree on every state change, and an input inside it
+is destroyed the moment the picker opens, taking its change event with it, silently.
+
 **A destructive route validates the name itself.** `deleteTake` takes a string that reaches
 `join()` on the way to an `rm`. `safeTake` rejects `.` and `..` — the dot is in the character
 class because a take has an extension, which is the same trap `safeAsset` had — and the result is
