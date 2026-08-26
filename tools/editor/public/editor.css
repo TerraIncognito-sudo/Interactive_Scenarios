@@ -856,43 +856,135 @@ textarea.prompt:focus {
   color: var(--accent);
 }
 
-/*
- * A part, and every line in it.
- *
- * Indented under the section rather than styled as another section: the unit
- * of work is the voice, but the thing being made is still a voice clip, and a
- * heading that competed with the section's would say otherwise.
- */
-.actor {
-  border-left: 2px solid var(--border);
-  margin: 0.5rem 0 0.9rem;
-  padding-left: 0.7rem;
-}
+/* --------------------------------------------------------- character sheets */
 
-.actor-head {
+.cast-sheets {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  padding: 0.25rem 0;
-  user-select: none;
+  flex-direction: column;
+  gap: 0.9rem;
 }
 
-.actor-head h4 {
+.sheet {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  padding: 0.8rem 0.9rem;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+/*
+ * The face, small.
+ *
+ * A portrait is the one thing on this board that cannot be checked by reading,
+ * so it is shown rather than named — at the aspect the display draws it, so a
+ * picture that will be squashed on the projector is squashed here too. The
+ * checkerboard is the same one the viewer uses: without it a cutout would be a
+ * silhouette against the card and a filled rectangle would look correct.
+ */
+.sheet-face {
+  flex: none;
+  width: 62px;
+  height: 92px;
+  border-radius: 6px;
+  overflow: hidden;
+  background-image: linear-gradient(45deg, #2a2f3a 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2f3a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2f3a 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2f3a 75%);
+  background-size: 14px 14px;
+  background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+}
+
+.sheet-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+}
+
+.sheet-face.empty {
+  border: 1px dashed var(--border);
+  background: none;
+}
+
+.sheet-who h3 {
   margin: 0;
-  font-size: 0.86rem;
-  font-weight: 600;
+  font-size: 0.98rem;
 }
 
-.actor-id,
-.actor-count {
+.sheet-id {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--text-faint);
 }
 
-.actor.collapsed {
-  margin-bottom: 0.3rem;
+.sheet-tally {
+  margin: 0.25rem 0 0;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+
+.subtabs {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0.7rem 0 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.subtab {
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.subtab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.subtab-note {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  margin-left: 0.35rem;
+  color: var(--text-faint);
+}
+
+.sheet-body {
+  padding-top: 0.7rem;
+}
+
+.sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+
+/* Where a section's rows went, said in the section they left. */
+.section-moved {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .take-row {

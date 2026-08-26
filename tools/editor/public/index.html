@@ -49,7 +49,14 @@
       <!-- Analysis ----------------------------------------------------- -->
       <section class="pane">
         <div class="tabs" role="tablist">
-          <button class="tab" data-tab="nodes" role="tab" aria-selected="true">Nodes</button>
+          <!--
+            First, because a show is people. Everything a part needs — the
+            voice it is read in, the face it wears, and every line of it — is
+            one sheet, and the two halves of that are made at a desk weeks
+            apart by different models. The rest of the tabs are the machinery.
+          -->
+          <button class="tab" data-tab="cast" role="tab" aria-selected="true">Characters</button>
+          <button class="tab" data-tab="nodes" role="tab" aria-selected="false">Nodes</button>
           <button class="tab" data-tab="vars" role="tab" aria-selected="false">Variables</button>
           <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
           <button class="tab" data-tab="assets" role="tab" aria-selected="false">Assets</button>
@@ -59,7 +66,16 @@
         <div class="tab-body">
           <div class="problems" id="problems" hidden></div>
 
-          <div class="tab-panel" id="panel-nodes">
+          <div class="tab-panel" id="panel-cast">
+            <p class="hint" id="cast-hint">
+              Everyone who speaks, and everything that makes them them. A voice is set once
+              and used by every line they have; a portrait is the face the display shows
+              while they say it.
+            </p>
+            <div class="cast-sheets" id="cast-sheets"></div>
+          </div>
+
+          <div class="tab-panel" id="panel-nodes" hidden>
             <p class="overview" id="overview"></p>
             <ul class="nodes" id="nodes"></ul>
           </div>

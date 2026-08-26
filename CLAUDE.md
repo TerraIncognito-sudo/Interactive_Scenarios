@@ -127,15 +127,27 @@ Flat names stay legal, because every scenario written before this is one. `folde
 migration and `filed()` in `storyboard.ts` is what makes new projects born that way; `takesDir`
 drops the section from a name that already carries it, so filing a project costs it no takes.
 
-**Voice is grouped by the part, not by the filename.** A voice is set once, belongs to one
-person, and changing it makes every line they speak stale at once — so the part is the unit of
-work, and `byActor` in `assets.js` groups by `row.voice` in the cast's own order. The three
-actor-level actions are the re-voicing job written down in the order it happens: **Regenerate**
-(stale ones when there are any, all of them otherwise), **Use newest**, **Publish**. *Use newest*
-is separate from generating on purpose — generating never steals a selection, so moving one is
-its own act with its own count. **Publish covers every clip with a selection**, not the ones that
-"look like they need it": `ready` means the selected take matches the recipe and says nothing
-about whether it was ever copied to the published name, which nothing on the board knows.
+**A part is the unit of work, and the Characters tab is where it lives.** A voice is set once,
+belongs to one person, and changing it makes every line they speak stale at once; a portrait is
+that same person's face. Those two halves are made weeks apart by different models and used to
+sit under two different sections, joined only by an id the author carried in their head — so
+`renderCast` puts them on one sheet, with a thumbnail (a face is the one thing on the board that
+cannot be checked by reading) and a sub-tab for each half. It is the **first** tab: a show is
+people, and the rest is machinery.
+
+**Portraits and stills split in presentation, never in production.** `isPortraitAsset` reads the
+scenario's own `origins`, so a portrait leaves the Images list and appears on its character's
+sheet — but its *section* stays `images`, because it is made by the same model with the same
+style, and a face that does not match the film reads as clip art the moment it slides in. Every
+row has exactly one home (`rowsFor`); listing one in two places is two views that disagree about
+what is selected the moment either is a click behind, and the section it left says where it went.
+
+**The three actor-level actions are the re-voicing job in order**: **Regenerate** (stale ones when
+there are any, all of them otherwise — the label says which), **Use newest**, **Publish**. *Use
+newest* is separate from generating on purpose — generating never steals a selection, so moving
+one is its own act with its own count. **Publish covers every clip with a selection**, not the
+ones that "look like they need it": `ready` means the selected take matches the recipe and says
+nothing about whether it was ever copied to the published name, which nothing on the board knows.
 
 **A destructive route validates the name itself.** `deleteTake` takes a string that reaches
 `join()` on the way to an `rm`. `safeTake` rejects `.` and `..` — the dot is in the character

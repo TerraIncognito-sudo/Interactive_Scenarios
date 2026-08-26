@@ -49,6 +49,8 @@ const state = {
   collapsed: new Set(),
   /** Rows whose composed-prompt preview is open. */
   expanded: new Set(),
+  /** Which half of a character's sheet is showing: their voice or their face. */
+  sub: new Map(),
   /**
    * A section-wide generate in flight: which section, how far, and whether the
    * author has asked it to stop. One at a time — there is one GPU, and two runs
@@ -57,6 +59,7 @@ const state = {
    */
   run: null,
   onScenario: () => {},
+  onTab: () => {},
   onStoryboard: () => {},
   onStatus: () => {},
 };
@@ -90,7 +93,9 @@ export async function openProject(name) {
     // The project owns its scenario, so opening one takes over the source pane
     // rather than leaving the author editing a different file than the board
     // they are looking at.
-    state.onScenario(data.scenarioSource, name, data.paths.scenario);
+    // 'cast' rather than the board: opening a project is not an action, and
+    // the first question anybody has about a show is who is in it.
+    state.onScenario(data.scenarioSource, name, data.paths.scenario, 'cast');
     state.onStoryboard(data.storyboardSource, data.paths.storyboard);
     render();
   } catch (err) {
@@ -576,57 +581,6 @@ function castMember(member, model) {
   );
 }
 
-/** The cast, above the voice rows, because it is what has to be set up first. */
-function castPanel(model) {
-  const cast = state.data?.overview?.cast ?? [];
-  if (cast.length === 0) return null;
-
-  const clones = model?.clones === true;
-  const palette = (state.models?.models ?? []).find((entry) => (entry.voices ?? []).length > 0);
-
-  return h(
-    'div',
-    { class: 'cast-panel' },
-    h(
-      'p',
-      { class: 'hint' },
-      'Every character who speaks. A voice is set once here and used by every line ',
-      'they have — which is also why changing one makes all of their clips stale.',
-    ),
-
-    // The way out of the chicken-and-egg a cloning model creates: it wants a
-    // recording of a voice that does not exist yet. A palette model has thirty
-    // that do, so one of them reads the character's own lines and the result
-    // becomes the reference.
-    clones && palette && !palette.installed
-      ? h(
-          'p',
-          { class: 'cast-offer' },
-          `No recordings? ${palette.title} can make them — about ${palette.sizeGb} GB, no GPU needed. `,
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'ghost small',
-              onclick: (event) => void onDownload(palette.id, event.target),
-            },
-            `Download ${palette.title}`,
-          ),
-        )
-      : null,
-
-    h(
-      'div',
-      { class: 'cast-list' },
-      cast.map((member) =>
-        castMember(member, {
-          clones,
-          voices: palette?.installed ? (palette.voices ?? []) : model?.voices ?? [],
-        }),
-      ),
-    ),
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Hearing it
@@ -1446,6 +1400,7 @@ function sectionBlock(section) {
   const collapsed = state.collapsed.has(section.section);
   const model = section.model;
   const label = SECTION_LABELS[section.section] ?? section.section;
+  const shown = rowsFor(section);
 
   const head = h(
     'header',
@@ -1545,15 +1500,292 @@ function sectionBlock(section) {
     { class: `section${collapsed ? ' collapsed' : ''}` },
     head,
     collapsed ? null : modelLine,
-    collapsed || section.section !== 'voice' ? null : castPanel(chosen),
+    collapsed ? null : elsewhere(section),
     collapsed
       ? null
-      : section.assets.length === 0
-        ? h('p', { class: 'empty' }, 'Nothing in the scenario asks for this yet.')
-        : section.section === 'voice'
-          ? byActor(section).map((group) => actorBlock(group, section, generable))
-          : section.assets.map((asset) => assetRow(asset, generable)),
+      : shown.length > 0
+        ? shown.map((asset) => assetRow(asset, generable))
+        : // Only when the section is *actually* empty. A voice section holding
+          // ninety-two clips that live on another tab is not "nobody speaks
+          // yet", and the note above has already said where they went.
+          section.assets.length === 0
+          ? h('p', { class: 'empty' }, emptyNote(section))
+          : null,
   );
+}
+
+/**
+ * The rows this section still shows here.
+ *
+ * Voice and portraits belong to a part, and a part has a sheet of its own now.
+ * Listing them in both places would be two views of one thing that can disagree
+ * about what is selected the moment either is a click behind — so each row has
+ * exactly one home, and the section says where.
+ */
+function rowsFor(section) {
+  if (section.section === 'voice') return [];
+  if (section.section === 'images') return section.assets.filter((asset) => !isPortraitAsset(asset));
+  return section.assets;
+}
+
+function elsewhere(section) {
+  const moved =
+    section.section === 'voice'
+      ? section.assets.length
+      : section.section === 'images'
+        ? section.assets.filter(isPortraitAsset).length
+        : 0;
+  if (moved === 0) return null;
+
+  return h(
+    'p',
+    { class: 'section-moved' },
+    section.section === 'voice'
+      ? `All ${moved} clip${moved === 1 ? '' : 's'} are on the `
+      : `${moved} portrait${moved === 1 ? '' : 's'} ${moved === 1 ? 'is' : 'are'} on the `,
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'linkish',
+        onclick: (event) => {
+          event.stopPropagation();
+          state.onTab('cast');
+        },
+      },
+      'Characters',
+    ),
+    ' tab, with the part they belong to. The model and the section-wide run stay here.',
+  );
+}
+
+function emptyNote(section) {
+  if (section.section === 'voice') return 'Nobody in this scenario speaks yet.';
+  return 'Nothing in the scenario asks for this yet.';
+}
+
+// ---------------------------------------------------------------------------
+// Characters
+// ---------------------------------------------------------------------------
+
+/**
+ * A portrait is a picture of a person, which is not the same job as a picture
+ * of a place.
+ *
+ * They share a *section* deliberately — same model, same style, same negative,
+ * because a face that does not match the film reads as clip art the moment it
+ * slides in — so this is a split in where they are shown, not in how they are
+ * made. `origins` is the scenario's own answer to which is which, so the board
+ * and the generator cannot disagree about it.
+ */
+function isPortraitAsset(asset) {
+  return (asset.origins ?? []).some((origin) => origin.kind === 'sprite');
+}
+
+/** The portrait row belonging to one character, if the scenario declares one. */
+function portraitFor(id) {
+  for (const view of state.data?.overview?.sections ?? []) {
+    for (const asset of view.assets) {
+      if ((asset.origins ?? []).some((o) => o.kind === 'sprite' && o.character === id)) {
+        return asset;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** The picture to show for a portrait: the take being auditioned, else the shipped one. */
+function portraitUrl(asset) {
+  if (!asset) return null;
+  if (asset.selected) {
+    return mediaUrl({ section: asset.section, file: asset.file, take: asset.selected });
+  }
+  return asset.published ? mediaUrl({ section: asset.section, file: asset.file }) : null;
+}
+
+/** What the voice section is set to, which the cast controls all depend on. */
+function voiceModel() {
+  const section = (state.data?.overview?.sections ?? []).find((view) => view.section === 'voice');
+  const available = (state.models?.models ?? []).filter((entry) => entry.section === 'voice');
+  const chosen = available.find((entry) => entry.id === section?.model?.file);
+  const generable =
+    Boolean(state.models?.root) &&
+    Boolean(chosen) &&
+    (section?.model?.backend ?? 'manual') !== 'manual';
+  return { section, chosen, generable };
+}
+
+export function renderCast() {
+  const container = $('cast-sheets');
+  if (!container) return;
+
+  if (!state.data) {
+    return void container.replaceChildren(h('p', { class: 'empty' }, 'No project open.'));
+  }
+
+  const { section, chosen, generable } = voiceModel();
+  const groups = section ? byActor(section) : [];
+  if (groups.length === 0) {
+    return void container.replaceChildren(
+      h('p', { class: 'empty' }, 'Nobody in this scenario speaks yet.'),
+    );
+  }
+
+  const clones = chosen?.clones === true;
+  const palette = (state.models?.models ?? []).find((entry) => (entry.voices ?? []).length > 0);
+
+  container.replaceChildren(
+    ...groups.map((group) =>
+      characterSheet(group, { clones, palette, chosen, generable, section }),
+    ),
+  );
+}
+
+/**
+ * One character, whole.
+ *
+ * The two halves are made weeks apart by different models and were, until now,
+ * in two different places on the board — a voice under Voice, a face under
+ * Images, joined only by an id the author had to carry in their head. What a
+ * part actually is is both at once, so the sheet is both at once, and the
+ * thumbnail is there because a face is the one thing on this board you cannot
+ * check by reading.
+ */
+function characterSheet(group, context) {
+  const which = state.sub.get(group.id) ?? 'voice';
+  const portrait = group.id === UNCAST ? undefined : portraitFor(group.id);
+  const url = portraitUrl(portrait);
+  const ready = group.assets.filter((asset) => asset.status === 'ready').length;
+
+  const tab = (key, label, note) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: `subtab${which === key ? ' on' : ''}`,
+        role: 'tab',
+        'aria-selected': String(which === key),
+        onclick: () => {
+          state.sub.set(group.id, key);
+          render();
+        },
+      },
+      label,
+      note ? h('span', { class: 'subtab-note' }, note) : null,
+    );
+
+  return h(
+    'section',
+    { class: 'sheet' },
+    h(
+      'header',
+      { class: 'sheet-head' },
+      h(
+        'div',
+        { class: `sheet-face${url ? '' : ' empty'}` },
+        url
+          ? h('img', {
+              src: url,
+              alt: `${group.name}'s portrait`,
+              // The board's own answer to "did that come out right" — clicking
+              // it opens the same viewer every other picture uses.
+              onclick: () => openViewer(portrait, url, portrait.file),
+            })
+          : h('span', { class: 'sheet-noface' }, portrait ? '—' : ''),
+      ),
+      h(
+        'div',
+        { class: 'sheet-who' },
+        h('h3', {}, group.id === UNCAST ? 'no voice set' : group.name),
+        h('code', { class: 'sheet-id' }, group.id),
+        h(
+          'p',
+          { class: 'sheet-tally' },
+          `${group.assets.length} line${group.assets.length === 1 ? '' : 's'} · ${ready} ready`,
+          portrait ? ` · portrait ${portrait.status}` : ' · no portrait',
+        ),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'subtabs', role: 'tablist' },
+      tab('voice', 'Voice', `${ready}/${group.assets.length}`),
+      tab('portrait', 'Portrait', portrait ? portrait.status : 'none'),
+    ),
+    which === 'voice'
+      ? voiceSheet(group, context)
+      : portraitSheet(group, portrait, context),
+  );
+}
+
+function voiceSheet(group, context) {
+  const member = group.member;
+  const work = actorWork(group);
+
+  return h(
+    'div',
+    { class: 'sheet-body' },
+    member
+      ? castMember(member, {
+          clones: context.clones,
+          voices: context.palette?.installed
+            ? (context.palette.voices ?? [])
+            : (context.chosen?.voices ?? []),
+        })
+      : h(
+          'p',
+          { class: 'hint' },
+          'These lines have no voice set, so nothing can read them. ' +
+            'Declare a voice: on them — the Give every line a voice button does it.',
+        ),
+    group.id === UNCAST
+      ? null
+      : h(
+          'div',
+          { class: 'sheet-actions' },
+          actorActions(group, context.section, context.generable, work),
+        ),
+    h(
+      'div',
+      { class: 'sheet-lines' },
+      group.assets.map((asset) => assetRow(asset, context.generable)),
+    ),
+  );
+}
+
+/**
+ * The half nothing generates yet.
+ *
+ * Which makes the folder the important thing on it: a portrait is made in
+ * another program and dropped in, so the row's takes strip, its size check and
+ * the path to put a file in are the whole workflow.
+ */
+function portraitSheet(group, portrait, context) {
+  if (group.id === UNCAST) {
+    return h(
+      'div',
+      { class: 'sheet-body' },
+      h('p', { class: 'hint' }, 'Lines with no voice set belong to no character, so no face.'),
+    );
+  }
+
+  if (!portrait) {
+    return h(
+      'div',
+      { class: 'sheet-body' },
+      h(
+        'p',
+        { class: 'hint' },
+        `The scenario declares no sprite: for ${group.name}, so the display shows no face `,
+        'while they speak. Who gets a portrait is the storyboard’s decision — it is the ',
+        'characters it drew a character sheet for. If it drew one for them, ',
+        h('strong', {}, 'Give speakers a portrait'),
+        ' on the Assets tab will declare it.',
+      ),
+    );
+  }
+
+  return h('div', { class: 'sheet-body' }, assetRow(portrait, false));
 }
 
 // ---------------------------------------------------------------------------
@@ -1623,38 +1855,6 @@ function actorWork(group) {
     (asset) => asset.selected && asset.status !== 'unselected',
   );
   return { files, stale, superseded, publishable };
-}
-
-function actorBlock(group, section, generable) {
-  const key = `actor:${section.section}:${group.id}`;
-  const collapsed = state.collapsed.has(key);
-  const work = actorWork(group);
-  const ready = group.assets.filter((asset) => asset.status === 'ready').length;
-
-  const head = h(
-    'header',
-    {
-      class: 'actor-head',
-      onclick: () => {
-        if (collapsed) state.collapsed.delete(key);
-        else state.collapsed.add(key);
-        render();
-      },
-    },
-    h('span', { class: 'section-caret' }, collapsed ? '▸' : '▾'),
-    h('h4', {}, group.id === UNCAST ? 'no voice set' : group.name),
-    h('span', { class: 'actor-id' }, group.id === UNCAST ? '' : group.id),
-    h('span', { class: 'actor-count' }, `${ready}/${group.assets.length} ready`),
-    h('span', { class: 'spacer' }),
-    actorActions(group, section, generable, work),
-  );
-
-  return h(
-    'div',
-    { class: `actor${collapsed ? ' collapsed' : ''}` },
-    head,
-    collapsed ? null : group.assets.map((asset) => assetRow(asset, generable)),
-  );
 }
 
 /**
@@ -1793,6 +1993,10 @@ function render() {
   const totals = $('totals');
   const container = $('sections');
   renderModelsBar();
+  // Both panels come off one `state.data`, so they are drawn together. Drawing
+  // the cast only when its tab is showing would leave a stale sheet behind
+  // every action taken from the other one.
+  renderCast();
 
   if (!state.data) {
     totals.hidden = true;
@@ -1877,8 +2081,9 @@ export function setProjects(projects, workspacePath) {
   render();
 }
 
-export function initAssets({ onScenario, onStoryboard, onStatus }) {
+export function initAssets({ onScenario, onStoryboard, onStatus, onTab }) {
   state.onStatus = onStatus ?? (() => {});
+  state.onTab = onTab ?? (() => {});
   state.onScenario = onScenario ?? (() => {});
   state.onStoryboard = onStoryboard ?? (() => {});
 

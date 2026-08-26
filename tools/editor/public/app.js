@@ -705,9 +705,12 @@ $('models-stop').addEventListener('click', () => {
 async function boot() {
   initAssets({
     onStatus: (kind, text) => setStatus(kind, text),
+    // So a section that has given its rows away can hand somebody to where
+    // they went, rather than only telling them the name of another tab.
+    onTab: (name) => showTab(name),
     // Returns the analysis it kicks off, so an action that rewrites the
     // scenario can wait for it before saying what it did.
-    onScenario: (source, name, path) => {
+    onScenario: (source, name, path, tab = 'assets') => {
       state.projectName = name;
       markSelected(name);
       // The pane header names the file being edited, not a folder the editor
@@ -716,7 +719,10 @@ async function boot() {
       state.saved = source;
       $('source').value = source;
       markClean();
-      showTab('assets');
+      // Where an action leaves you is where its status line is, which is the
+      // Assets tab — but *opening* a project is not an action, and the first
+      // thing anybody wants to see is the cast.
+      showTab(tab);
       return analyze();
     },
     onStoryboard: (source, path) => {
