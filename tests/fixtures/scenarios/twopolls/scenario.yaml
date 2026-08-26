@@ -1,0 +1,36 @@
+# A vote that leads straight into another vote.
+#
+# The reveal after a poll happens on the node the vote already chose, so this
+# is the shape that proves the second poll's clock does not start while the
+# first poll's result is still on screen.
+id: twopolls
+title: Two Polls
+start: first
+
+settings:
+  minLineSeconds: 0.05
+  maxLineSeconds: 0.2
+  wordsPerMinute: 600
+
+nodes:
+  - id: first
+    type: poll
+    question: Which way?
+    duration: 1
+    options:
+      - { key: on, label: Press on, next: second }
+      - { key: back, label: Turn back, next: second }
+    default: on
+
+  - id: second
+    type: poll
+    question: And now?
+    duration: 1
+    options:
+      - { key: yes, label: Yes, next: done }
+      - { key: no, label: 'No', next: done }
+    default: 'yes'
+
+  - id: done
+    type: end
+    text: Done.

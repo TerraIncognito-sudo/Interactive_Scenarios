@@ -12,7 +12,7 @@ import {
   initialState,
   openPoll,
   reduce,
-  activeScene,
+  sceneMediaOf,
   type Beat,
   type RunState,
 } from '../engine/engine.ts';
@@ -184,6 +184,17 @@ export class Room {
           sfx: beat.line.sfx,
         };
       }
+      case 'result':
+        // The label is already on the result — `resolvePoll` put it there, and
+        // looking the option up again would be a second chance to disagree.
+        return {
+          kind: 'result',
+          nodeId: beat.nodeId,
+          pollId: beat.pollId,
+          scene: beat.scene,
+          durationMs: beat.durationMs,
+          ...beat.result,
+        };
       case 'pause':
       case 'poll':
       case 'end':
@@ -194,8 +205,9 @@ export class Room {
 
   snapshot(): Snapshot {
     const beat = beatOf(this.scenario, this.state);
-    const sceneId = activeScene(this.scenario, this.state);
-    const scene = sceneId ? this.scenario.scenes[sceneId] : undefined;
+    // Resolved rather than read straight off the scene: the node playing right
+    // now may carry its own still and clip.
+    const scene = sceneMediaOf(this.scenario, this.state);
 
     return {
       type: 'snapshot',
@@ -208,15 +220,7 @@ export class Room {
         description: this.scenario.description,
       },
       beatInfo: this.describeBeat(beat),
-      scene: sceneId
-        ? {
-            id: sceneId,
-            background: scene?.background,
-            video: scene?.video,
-            music: scene?.music,
-            ambience: scene?.ambience,
-          }
-        : undefined,
+      scene,
       tally: this.box
         ? { counts: this.box.counts(), voters: this.box.voterCount }
         : undefined,
@@ -298,10 +302,13 @@ export class Room {
       return;
     }
 
-    if (this.state.phase !== 'playing') return;
+    if (this.state.phase !== 'playing' && this.state.phase !== 'revealing') return;
 
     const beat = beatOf(this.scenario, this.state);
-    if (beat.kind !== 'dialogue' && beat.kind !== 'pause') return;
+    // The reveal is here rather than special-cased above because it is an
+    // ordinary timed beat: it ends, and the story goes on. Leaving it out is
+    // what made the next line's hold run behind the bar chart.
+    if (beat.kind !== 'dialogue' && beat.kind !== 'pause' && beat.kind !== 'result') return;
 
     this.beatDeadline = now + beat.durationMs;
     this.timer = setTimeout(() => this.guard(() => this.onBeatElapsed()), beat.durationMs);
@@ -350,7 +357,11 @@ export class Room {
     let next = reduce(this.scenario, before, event);
 
     // Entering a poll node stamps its deadline and opens a fresh ballot box.
-    if (next.phase === 'polling' && next.nodeId !== before.nodeId) {
+    // Keyed on entering the polling phase rather than on the node changing.
+    // A vote that leads to another poll now passes through the reveal on that
+    // same node — so the node id is already correct by the time the poll opens,
+    // and the old test would have left its clock at zero forever.
+    if (next.phase === 'polling' && (before.phase !== 'polling' || next.nodeId !== before.nodeId)) {
       next = openPoll(this.scenario, next, Date.now());
       this.rehydrateBox(next.nodeId);
     } else if (next.phase !== 'polling') {
@@ -377,7 +388,9 @@ export class Room {
 
   /** Restores the clock after a process restart. */
   resumeClock(): void {
-    if (this.state.phase === 'polling' || this.state.phase === 'playing') this.schedule();
+    if (this.state.phase !== 'idle' && this.state.phase !== 'paused' && this.state.phase !== 'finished') {
+      this.schedule();
+    }
   }
 
   // -------------------------------------------------------------------------

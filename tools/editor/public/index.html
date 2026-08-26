@@ -10,12 +10,15 @@
     <header class="bar">
       <span class="brand">Scenario editor</span>
 
-      <select id="project-picker" aria-label="Project"></select>
-      <button id="change-workspace" type="button" class="ghost" title="Choose the folder your scenarios live in">
+      <!--
+        Projects only. The editor cannot reach the repo's scenarios/ folder —
+        that belongs to the live server, and this tool is not allowed to touch
+        a show that might be running.
+      -->
+      <select id="picker" aria-label="Project"></select>
+      <button id="change-workspace" type="button" class="ghost" title="Choose the folder your projects live in">
         Folder…
       </button>
-
-      <select id="picker" aria-label="Scenario"></select>
 
       <span class="status" id="status">…</span>
 
@@ -46,17 +49,43 @@
       <!-- Analysis ----------------------------------------------------- -->
       <section class="pane">
         <div class="tabs" role="tablist">
-          <button class="tab" data-tab="nodes" role="tab" aria-selected="true">Nodes</button>
+          <!--
+            First, because a show is people. Everything a part needs — the
+            voice it is read in, the face it wears, and every line of it — is
+            one sheet, and the two halves of that are made at a desk weeks
+            apart by different models. The rest of the tabs are the machinery.
+          -->
+          <button class="tab" data-tab="cast" role="tab" aria-selected="true">Characters</button>
+          <button class="tab" data-tab="nodes" role="tab" aria-selected="false">Nodes</button>
           <button class="tab" data-tab="vars" role="tab" aria-selected="false">Variables</button>
           <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
           <button class="tab" data-tab="assets" role="tab" aria-selected="false">Assets</button>
           <button class="tab" data-tab="story" role="tab" aria-selected="false">Storyboard</button>
+          <!--
+            Last, and pushed to the far edge, because it is not a stage of the
+            work — it is the answer to "am I done", which is a question you ask
+            from wherever you happen to be. The badge is the whole point: it is
+            readable without opening the tab, and it reads zero exactly when
+            the show is ready to run.
+          -->
+          <button class="tab tab-end" data-tab="command" role="tab" aria-selected="false">
+            Command centre <span class="tab-badge" id="command-badge" hidden></span>
+          </button>
         </div>
 
         <div class="tab-body">
           <div class="problems" id="problems" hidden></div>
 
-          <div class="tab-panel" id="panel-nodes">
+          <div class="tab-panel" id="panel-cast">
+            <p class="hint" id="cast-hint">
+              Everyone who speaks, and everything that makes them them. A voice is set once
+              and used by every line they have; a portrait is the face the display shows
+              while they say it.
+            </p>
+            <div class="cast-sheets" id="cast-sheets"></div>
+          </div>
+
+          <div class="tab-panel" id="panel-nodes" hidden>
             <p class="overview" id="overview"></p>
             <ul class="nodes" id="nodes"></ul>
           </div>
@@ -87,6 +116,20 @@
               the story asks for it, which is why it can never drift out of date.
             </p>
             <div class="totals" id="totals" hidden></div>
+
+            <!-- Model weights are neither content nor code: machine-specific,
+                 tens of gigabytes, and they must never land in the project
+                 folder or the repo. One root, chosen once, per machine. -->
+            <div class="models-bar" id="models-bar" hidden>
+              <span class="models-label">Models</span>
+              <code class="models-root" id="models-root">not set</code>
+              <button id="models-change" type="button" class="ghost">Change…</button>
+              <span class="models-state" id="models-state"></span>
+              <span class="spacer"></span>
+              <button id="models-stop" type="button" class="ghost" hidden>
+                Unload model
+              </button>
+            </div>
             <div class="board-bar" id="board-bar" hidden>
               <button id="wire-voice" type="button" class="ghost">
                 Declare voice clips
@@ -95,12 +138,47 @@
                 Gives every spoken line a <code>voice:</code> file and the
                 <code>hold:</code> one needs. Safe to press twice.
               </span>
+              <button id="migrate-shots" type="button" class="ghost">
+                Give each shot its own picture
+              </button>
+              <span class="hint">
+                Hangs a <code>background:</code> and <code>video:</code> on the node that
+                plays each storyboard shot, so a second angle in one room stops needing a
+                scene of its own. Safe to press twice.
+              </span>
+              <button id="wire-sprites" type="button" class="ghost">
+                Give speakers a portrait
+              </button>
+              <span class="hint">
+                Declares a <code>sprite:</code> for each character the storyboard drew a sheet
+                for, so the display shows their portrait while they speak. Only the ones it
+                drew — a narrator has no face. Portraits are transparent PNGs, because the
+                display draws them over the scene; one already pointed at a <code>.jpg</code>
+                is re-pointed, and its prompt and takes come along. Safe to press twice.
+              </span>
+              <button id="sort-folders" type="button" class="ghost">
+                File assets by media type
+              </button>
+              <span class="hint">
+                Renames every asset to <code>voice/…</code>, <code>images/…</code> and so on,
+                in the scenario and everywhere that follows it. Takes stay where they are.
+                Safe to press twice.
+              </span>
               <span class="spacer"></span>
               <button id="prune" type="button" class="ghost" hidden>
                 Remove orphaned recipes
               </button>
             </div>
             <div class="sections" id="sections"></div>
+          </div>
+
+          <div class="tab-panel" id="panel-command" hidden>
+            <p class="hint">
+              Everything the show still needs, in the order it has to happen: made, chosen,
+              published. Each line is a link into the tab it belongs to, and each heading
+              does the whole group at once. When this is empty the show is ready to run.
+            </p>
+            <div class="command" id="command"></div>
           </div>
 
           <div class="tab-panel" id="panel-story" hidden>
@@ -132,8 +210,8 @@
          showDirectoryPicker() hands the page a handle and never a path, and the
          server is the half that has to open the files. -->
     <dialog id="picker-dialog" class="picker">
-      <h2>Where do your scenarios live?</h2>
-      <p class="hint">
+      <h2 id="picker-title">Where do your scenarios live?</h2>
+      <p class="hint" id="picker-hint">
         Pick the folder that <em>contains</em> your scenario folders. Anything inside it
         with a <code>scenario.yaml</code> shows up as a project.
       </p>
@@ -155,6 +233,22 @@
         <span class="spacer"></span>
         <button id="picker-cancel" type="button" class="ghost">Cancel</button>
         <button id="picker-use" type="button" class="primary">Use this folder</button>
+      </footer>
+    </dialog>
+
+    <!--
+      Looking at a take, which for a picture is the whole of auditioning it.
+      One element for the same reason there is one <audio>: six open windows of
+      the same jetty is not a comparison, it is a mess to close.
+    -->
+    <dialog id="viewer" class="viewer">
+      <img id="viewer-image" alt="" hidden />
+      <video id="viewer-video" controls hidden></video>
+      <footer class="viewer-foot">
+        <code id="viewer-name"></code>
+        <span class="spacer"></span>
+        <span class="hint" id="viewer-meta"></span>
+        <button id="viewer-close" type="button" class="ghost">Close</button>
       </footer>
     </dialog>
 

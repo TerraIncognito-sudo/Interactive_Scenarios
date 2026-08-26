@@ -1,6 +1,11 @@
 # Exercises the media fields end to end: a scene with a looping clip over a
 # poster still, and lines carrying voice-over. Holds are long enough to assert
 # against but short enough not to slow the suite.
+#
+# Its assets are filed under folders named for their media type, which is what
+# the editor's board now produces. The `quick` fixture is deliberately flat:
+# both spellings are legal and both have to keep working, because every
+# scenario written before folders existed is the flat one.
 id: media
 title: Media
 start: open
@@ -13,13 +18,14 @@ settings:
 characters:
   narrator:
     name: Narrator
+    sprite: images/narrator.png
     color: '#B0BEC5'
 
 scenes:
   harbour:
-    background: harbour.jpg
-    video: harbour.mp4
-    ambience: harbour.mp3
+    background: images/harbour.jpg
+    video: video/harbour.mp4
+    ambience: ambience/harbour.mp3
   quiet: {}
 
 nodes:
@@ -27,7 +33,7 @@ nodes:
     type: dialogue
     scene: harbour
     lines:
-      - { who: narrator, text: Spoken, hold: 0.05, voice: open-1.mp3 }
+      - { who: narrator, text: Spoken, hold: 0.05, voice: voice/open-1.mp3 }
       - { text: Silent, hold: 0.05 }
     next: after
 

@@ -178,7 +178,12 @@ export async function buildServer(config: Config) {
       return {
         scenario: room.loaded.scenario,
         assets: assetsOf(room.loaded.scenario),
-        assetBase: `/scenario-assets/${room.loaded.scenario.id}/`,
+        // Down to `assets/`, because that is where the files are and the
+        // display joins this to a name straight out of the scenario. Stopping
+        // one level short went unnoticed for as long as it did because no
+        // scenario had a single asset made yet — the first one would have been
+        // a 404 in front of a room.
+        assetBase: `/scenario-assets/${room.loaded.scenario.id}/assets/`,
       };
     },
   );

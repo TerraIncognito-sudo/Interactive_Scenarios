@@ -174,6 +174,8 @@ export type AssetSection = (typeof ASSET_SECTIONS)[number];
 export type AssetOrigin =
   | { kind: 'sprite'; character: string }
   | { kind: 'background' | 'video' | 'music' | 'ambience'; scene: string }
+  /** A node's own still or clip, overriding the scene's while it plays. */
+  | { kind: 'background' | 'video'; node: string }
   | { kind: 'voice' | 'sfx'; node: string; line: number };
 
 export type AssetReference = {
@@ -229,6 +231,19 @@ export function assetReferencesOf(scenario: Scenario): AssetReference[] {
   }
 
   for (const node of scenario.nodes) {
+    // Every node type can carry its own shot, not just dialogue: a poll frame
+    // and an ending card are pictures a storyboard draws separately.
+    if (node.background) {
+      refs.push({
+        file: node.background,
+        section: 'images',
+        origin: { kind: 'background', node: node.id },
+      });
+    }
+    if (node.video) {
+      refs.push({ file: node.video, section: 'video', origin: { kind: 'video', node: node.id } });
+    }
+
     if (node.type !== 'dialogue') continue;
     node.lines.forEach((line, index) => {
       if (line.voice) {

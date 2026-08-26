@@ -13,3 +13,23 @@ desktop.ini
 
 .vite/
 coverage/
+
+# The voice sidecar's environment normally lives outside this tree entirely
+# (see tools/voice/env.ts — the repo is in OneDrive and torch is gigabytes),
+# but ignore the default location too in case anyone runs uv by hand. uv
+# rebuilds it from uv.lock, which is committed: the lock is what pins a
+# Blackwell-capable CUDA torch.
+tools/voice/.venv/
+__pycache__/
+*.pyc
+
+# A folder in scenarios/ is what a live show is served from: the scenario and
+# the finished assets it opens, and nothing else. The editor's half of a
+# project — the recipes, the ledger, every rejected take, and the reference
+# clips a cloning model was trained on — belongs in the author's workspace,
+# which is a separate product. Deploying is copying the finished half across.
+scenarios/*/project.yaml
+scenarios/*/.ledger.json
+scenarios/*/generated/
+scenarios/*/voices/
+scenarios/*/*storyboard.md

@@ -10,17 +10,23 @@
 import { $, h } from './dom.js';
 import {
   initAssets,
+  openProject,
   refreshAssets,
+  setAnalysis,
   setProjects,
   seedFromStoryboard,
   wireVoice,
+  migrateShots,
+  wireSprites,
+  sortFolders,
   pruneOrphans,
+  refreshModels,
+  stopModels,
 } from './assets.js';
 import { initPicker, openPicker } from './picker.js';
 
 const state = {
-  folder: null,
-  /** Set when a project is open; its scenario takes over the source pane. */
+  /** The open project. Null means nothing is open and Save has no target. */
   projectName: null,
   /** What is on disk for the storyboard, so its Save button means something. */
   storySaved: '',
@@ -28,75 +34,66 @@ const state = {
   saved: '',
   analysis: null,
   choices: {},
+  projects: [],
+  /** The picker's value, kept in step with what is actually open. */
+  selected: '',
+  workspacePath: null,
 };
 
 // ---------------------------------------------------------------------------
 // Loading and saving
 // ---------------------------------------------------------------------------
 
-async function loadList() {
-  const response = await fetch('/api/scenarios');
-  const { scenarios, dir } = await response.json();
-  $('source-path').textContent = dir;
-
-  const picker = $('picker');
-  picker.replaceChildren(
-    ...scenarios.map((s) =>
-      h('option', { value: s.folder }, s.ok ? s.title : `${s.folder} (broken)`),
+/**
+ * The one control that says which project is open.
+ *
+ * Projects only. The editor cannot see the repo's `scenarios/` folder at all —
+ * that is the live server's, and an editor able to write into it will
+ * eventually do so by accident. Deploying is copying a finished folder across
+ * by hand, deliberately, when the show is ready.
+ */
+function renderPicker() {
+  $('picker').replaceChildren(
+    h(
+      'option',
+      { value: '' },
+      state.projects.length === 0 ? 'no projects in this folder' : '— nothing open —',
+    ),
+    ...state.projects.map((p) =>
+      h(
+        'option',
+        { value: p.name },
+        // A trailing dot marks a folder with a scenario but no project.yaml —
+        // one the editor can open but not yet track assets for.
+        p.ok ? `${p.title}${p.hasProjectFile ? '' : ' ·'}` : `${p.name} (broken)`,
+      ),
     ),
   );
-  return scenarios;
+  $('picker').value = state.selected ?? '';
 }
 
-async function openFolder(folder) {
-  state.folder = folder;
-  state.projectName = null;
-  const response = await fetch(`/api/scenarios/${encodeURIComponent(folder)}/source`);
-  if (!response.ok) {
-    setStatus('bad', 'could not open');
-    return;
-  }
-  const data = await response.json();
-  state.saved = data.source;
-  state.choices = {};
-  $('source').value = data.source;
-  markClean();
-  apply(data);
+/** Keeps the box showing what is actually open, however it came to be open. */
+function markSelected(value) {
+  state.selected = value;
+  $('picker').value = value;
 }
 
 async function save() {
+  // Nothing else is openable, so there is nothing else to save to. The editor
+  // has no path that writes outside the workspace.
+  if (!state.projectName) return;
+
   const source = $('source').value;
   $('save').disabled = true;
   try {
-    // A project owns its own scenario, which lives outside this repo. Saving
-    // has to follow the file the board is showing, not the folder picker.
-    if (state.projectName) {
-      const response = await fetch(
-        `/api/projects/${encodeURIComponent(state.projectName)}/scenario`,
-        {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ source }),
-        },
-      );
-      const data = await response.json();
-      if (!response.ok) {
-        setStatus('bad', data.error ?? 'save failed');
-        return;
-      }
-      state.saved = source;
-      markClean();
-      await analyze();
-      await refreshAssets();
-      return;
-    }
-
-    if (!state.folder) return;
-    const response = await fetch(`/api/scenarios/${encodeURIComponent(state.folder)}/source`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ source }),
-    });
+    const response = await fetch(
+      `/api/projects/${encodeURIComponent(state.projectName)}/scenario`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source }),
+      },
+    );
     const data = await response.json();
     if (!response.ok) {
       setStatus('bad', data.error ?? 'save failed');
@@ -104,10 +101,46 @@ async function save() {
     }
     state.saved = source;
     markClean();
-    apply(data);
+    await analyze();
+    await refreshAssets();
+
+    // Saving the story rewrites the recipes it owns. Editing one line of
+    // dialogue quietly re-records a clip, and finding that out from a status
+    // line beats finding it out from the board three days later.
+    reportReconcile(data.reconciled);
   } finally {
     $('save').disabled = false;
   }
+}
+
+/**
+ * Says out loud what saving the scenario did to the recipes.
+ *
+ * The whole reason the join exists is that this used to happen silently and
+ * wrongly: a line was edited, the row kept the old words, and the clip in the
+ * show went on reading a sentence that had been deleted. Now it is corrected —
+ * and a correction that marks clips stale without saying so is its own kind of
+ * surprise.
+ *
+ * Orphans are counted, never acted on. Removing one throws away a prompt.
+ */
+function reportReconcile(plan) {
+  if (!plan) return;
+  const added = Object.keys(plan.added ?? {}).length;
+  const orphans = plan.orphans?.length ?? 0;
+  // Counted as clips rather than fields: one line moving rewrites its text, its
+  // node and its index, and reporting that as "3 changes" reads like three
+  // problems rather than one edit.
+  const clips = new Set((plan.updates ?? []).map((update) => update.file));
+  if (clips.size === 0 && added === 0 && orphans === 0) return;
+
+  const said = [];
+  if (clips.size > 0) {
+    said.push(`${clips.size} recipe${clips.size === 1 ? '' : 's'} re-derived`);
+  }
+  if (added > 0) said.push(`${added} new asset${added === 1 ? '' : 's'} seeded`);
+  if (orphans > 0) said.push(`${orphans} now orphaned — see the command centre`);
+  setStatus(orphans > 0 ? 'warn' : 'ok', `saved · ${said.join(' · ')}`);
 }
 
 function markClean() {
@@ -159,6 +192,12 @@ function apply(result) {
     $('vars').replaceChildren();
     $('choices').replaceChildren();
     $('overview').textContent = '';
+    setAnalysis({
+      problems: [
+        { level: 'error', message: result.message ?? 'Could not read this scenario' },
+        ...(result.problems ?? []).map((message) => ({ level: 'error', message })),
+      ],
+    });
     return;
   }
 
@@ -181,6 +220,15 @@ function apply(result) {
     setStatus('ok', 'valid');
     problems.hidden = true;
   }
+
+  // Handed on rather than re-derived: the command centre counts these next to
+  // the asset work, and two validators would eventually disagree.
+  setAnalysis({
+    problems: warnings.map((w) => ({
+      level: 'warning',
+      message: `${w.nodeId ? `[${w.nodeId}] ` : ''}${w.message}`,
+    })),
+  });
 
   renderNodes(result.analysis);
   renderVars(result.analysis);
@@ -470,7 +518,20 @@ for (const tab of document.querySelectorAll('.tab')) {
 }
 
 $('source').addEventListener('input', scheduleAnalyze);
-$('picker').addEventListener('change', (event) => void openFolder(event.target.value));
+$('picker').addEventListener('change', (event) => {
+  const name = event.target.value;
+  markSelected(name);
+  if (!name) {
+    // Nothing open means nothing to save. Leaving the last project's text in
+    // the pane invites edits that Save will silently decline to write.
+    state.projectName = null;
+    state.saved = '';
+    $('source').value = '';
+    $('source-path').textContent = state.workspacePath ?? '';
+    markClean();
+  }
+  void openProject(name);
+});
 $('save').addEventListener('click', () => void save());
 $('revert').addEventListener('click', () => {
   $('source').value = state.saved;
@@ -530,6 +591,117 @@ $('wire-voice').addEventListener('click', () => {
   })();
 });
 
+$('migrate-shots').addEventListener('click', () => {
+  void (async () => {
+    const result = await migrateShots();
+    if (!result) return;
+
+    const done = [];
+    if (result.moved.length > 0) {
+      const n = result.moved.length;
+      done.push(`${n} shot${n === 1 ? '' : 's'} now paint their own picture`);
+    }
+    if (result.folded.length > 0) {
+      done.push(`folded ${result.folded.map((entry) => entry.scene).join(', ')}`);
+    }
+    const placed = result.seeded?.added?.length ?? 0;
+    if (placed > 0) done.push(`${placed} prompt${placed === 1 ? '' : 's'} placed`);
+
+    // Two things the author has to decide and no button should decide for
+    // them: a fold that was refused, and prose that has gone stale. Both are
+    // said out loud rather than buried, because neither will announce itself.
+    const attention = (result.skipped ?? []).map((entry) => `${entry.what}: ${entry.why}`);
+    if (result.stale?.length > 0) {
+      const lines = result.stale.map((entry) => entry.line);
+      attention.push(
+        `${lines.length} comment line${lines.length === 1 ? '' : 's'} still describe ` +
+          `scenes that are now gone (line ${lines.join(', ')})`,
+      );
+    }
+
+    if (done.length === 0 && attention.length === 0) {
+      return setStatus('warn', 'every shot already has its own picture');
+    }
+    setStatus(
+      attention.length > 0 ? 'warn' : 'ok',
+      [...done, ...attention].join(' · '),
+    );
+  })();
+});
+
+$('wire-sprites').addEventListener('click', () => {
+  void (async () => {
+    const result = await wireSprites();
+    if (!result) return;
+
+    const parts = [];
+    const moved = result.moved ?? [];
+    const fresh = result.wired.filter((entry) => !moved.some((move) => move.to === entry.file));
+    if (fresh.length > 0) {
+      parts.push(
+        `${fresh.length} portrait${fresh.length === 1 ? '' : 's'} declared — ` +
+          fresh.map((entry) => entry.character).join(', '),
+      );
+    }
+    // Worth its own line rather than folded into the count. A rename carries
+    // the recipe row and the takes with it, and somebody looking at the board
+    // afterwards should know why the filenames changed.
+    if (moved.length > 0) {
+      parts.push(
+        `${moved.length} re-pointed to transparent PNG — ` +
+          moved.map((move) => move.to).join(', '),
+      );
+    }
+    const placed = result.seeded?.filled?.length ?? result.seeded?.added?.length ?? 0;
+    if (placed > 0) parts.push(`${placed} sheet prompt${placed === 1 ? '' : 's'} placed`);
+    if (result.untouched.length > 0) {
+      parts.push(`${result.untouched.join(', ')} already had one`);
+    }
+    // A sheet with nobody to attach to is the author's to resolve: a label the
+    // scenario has no character for is either a typo or a part that was cut.
+    const stuck = (result.skipped ?? []).map((entry) => `${entry.sheet}: ${entry.why}`);
+
+    if (parts.length === 0 && stuck.length === 0) {
+      return setStatus('warn', 'every character the storyboard drew already has a portrait');
+    }
+    setStatus(stuck.length > 0 ? 'warn' : 'ok', [...parts, ...stuck].join(' · '));
+  })();
+});
+
+$('sort-folders').addEventListener('click', () => {
+  void (async () => {
+    const result = await sortFolders();
+    if (!result) return;
+
+    const n = result.moved.length;
+    if (n === 0) {
+      return setStatus(
+        'warn',
+        result.kept.length > 0
+          ? 'every asset is already filed by media type'
+          : 'nothing to file',
+      );
+    }
+
+    const by = {};
+    for (const move of result.moved) by[move.section] = (by[move.section] ?? 0) + 1;
+    const parts = [
+      `filed ${n} asset${n === 1 ? '' : 's'} — ` +
+        Object.entries(by)
+          .map(([section, count]) => `${count} into ${section}/`)
+          .join(', '),
+    ];
+    if (result.republished.length > 0) {
+      const m = result.republished.length;
+      parts.push(`moved ${m} published file${m === 1 ? '' : 's'} to match`);
+    }
+    // A name this could not file is a decision for the author, not something
+    // to pick a winner for quietly.
+    const stuck = (result.skipped ?? []).map((entry) => `${entry.file}: ${entry.why}`);
+    setStatus(stuck.length > 0 ? 'warn' : 'ok', [...parts, ...stuck].join(' · '));
+  })();
+});
+
 $('prune').addEventListener('click', () => {
   void (async () => {
     const result = await pruneOrphans();
@@ -559,15 +731,50 @@ $('story-sync').addEventListener('click', () => {
   })();
 });
 
+// Where model weights live on this machine. Asked once, kept in the editor's
+// own config rather than in project.yaml — a project file travels to other
+// machines, and a path to a folder of weights means nothing when it gets there.
+$('models-change').addEventListener('click', () => {
+  openPicker({
+    mode: 'models',
+    label: 'Where do model weights live?',
+    startAt: state.modelsRoot,
+    onPick: (root) => {
+      state.modelsRoot = root;
+      void refreshModels().then(() => setStatus('ok', `models: ${root}`));
+    },
+  });
+});
+
+$('models-stop').addEventListener('click', () => {
+  void (async () => {
+    await stopModels();
+    setStatus('ok', 'model unloaded — the GPU is free again');
+  })();
+});
+
 async function boot() {
   initAssets({
-    onScenario: (source, name) => {
+    onStatus: (kind, text) => setStatus(kind, text),
+    // So a section that has given its rows away can hand somebody to where
+    // they went, rather than only telling them the name of another tab.
+    onTab: (name) => showTab(name),
+    // Returns the analysis it kicks off, so an action that rewrites the
+    // scenario can wait for it before saying what it did.
+    onScenario: (source, name, path, tab = 'assets') => {
       state.projectName = name;
+      markSelected(name);
+      // The pane header names the file being edited, not a folder the editor
+      // merely knows about. There is only one file it can write.
+      $('source-path').textContent = path ?? '';
       state.saved = source;
       $('source').value = source;
       markClean();
-      void analyze();
-      showTab('assets');
+      // Where an action leaves you is where its status line is, which is the
+      // Assets tab — but *opening* a project is not an action, and the first
+      // thing anybody wants to see is the cast.
+      showTab(tab);
+      return analyze();
     },
     onStoryboard: (source, path) => {
       state.storySaved = source ?? '';
@@ -579,17 +786,28 @@ async function boot() {
     },
   });
 
-  const workspaceState = await initPicker({
-    onWorkspace: (next) => setProjects(next.projects, next.workspace),
-  });
+  const applyWorkspace = (next) => {
+    state.projects = next.projects;
+    state.workspacePath = next.workspace;
+    $('source-path').textContent = next.workspace ?? '';
+    // Whatever was open lived in the old folder.
+    state.selected = '';
+    state.projectName = null;
+    setProjects(next.projects, next.workspace);
+    renderPicker();
+  };
 
-  setProjects(workspaceState.projects, workspaceState.workspace);
+  const workspaceState = await initPicker({ onWorkspace: applyWorkspace });
+  applyWorkspace(workspaceState);
 
   // First run: no folder has ever been chosen, so there is nothing to show and
   // no way to guess. Ask before the editor looks broken.
-  if (!workspaceState.workspace) openPicker();
+  const models = await refreshModels().catch(() => null);
+  state.modelsRoot = models?.root;
 
-  await loadList();
+  if (!workspaceState.workspace) {
+    openPicker({ mode: 'workspace', label: 'Where do your scenarios live?' });
+  }
 }
 
 void boot();

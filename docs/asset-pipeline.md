@@ -5,8 +5,11 @@ in the middle, generated images / video / voice / SFX / ambience / music at the 
 drag-and-drop canvas for arranging a shot before any of its art exists.
 
 **Phase 1 is built** — the project file, the ledger, the storyboard importer and the six
-section views. Nothing generates anything yet; what exists is the status board, and it is
-useful before a single model is installed. Phases 2–5 in §13 are still design.
+section views: the status board, useful before a single model is installed.
+
+**Voice generation is built** — a cast with a reference clip each, a model per section, and
+generate / audition / publish per row. See [voice-generation.md](voice-generation.md) for
+how to set the models up. Images, video and the rest of §13 are still design.
 
 ---
 
@@ -42,15 +45,28 @@ JSON nobody reads by hand.
 ### Project layout
 
 ```
-D:\scenario-projects\arctic-sentinel\        <- anywhere; not in the repo, not in OneDrive
+D:\scenario-projects\arctic-sentinel\        <- anywhere; not in the repo
   project.yaml
+  scenario.yaml
   storyboard.md                              <- or a path to one elsewhere
   .ledger.json
-  generated\
-    images\station\ 0001-s41207.png  0002-s41208.png  0003-s60011.png
-    video\station\  0001.mp4
-    voice\tran-d5-01\ 0001.wav  0002.wav
+  voices\                                    <- reference clips, part of the show
+    narr.wav  tran.wav
+  generated\                                 <- every take ever made
+    images\station.jpg\   9f1befa9-01.png  9f1befa9-02.png
+    video\station.mp4\    ca1d3711-01.mp4
+    voice\tran-d5-01.mp3\ 4b2c8e10-01.mp3
+  assets\                                    <- what publish writes; what the show opens
+    images\station.jpg
+    video\station.mp4
+    voice\tran-d5-01.mp3
 ```
+
+Everything a project is made of is in one folder that copies as a unit — which is what makes
+deploying "move this folder" and what makes a project openable a year later. If the folder is
+inside a synced drive the editor says so in a comment at the top of `project.yaml`; where the
+takes go stays the author's call, because a project split across two drives is one nobody can
+hand to anybody else.
 
 ```yaml
 # project.yaml — the head of it
@@ -76,7 +92,7 @@ So the pipeline has two stages, and this distinction is the spine of the whole d
 ```
 generate  ->  generated\images\station\0003-s60011.png     many candidates, kept
 select    ->  ledger records station.jpg -> 0003           a pointer, reversible
-publish   ->  scenarios\arctic-sentinel\assets\station.jpg  exactly one file, canonical name
+publish   ->  assets\images\station.jpg                     exactly one file, canonical name
 ```
 
 **Publish is a copy, and it is the only thing that touches the repo.** Everything upstream is
@@ -116,6 +132,36 @@ extension:
 Deterministic, no guessing, and an asset can never land in two sections. A `.mp3` in `voice:`
 and a `.mp3` in `music:` are different work with different models, and the field already says
 which is which.
+
+---
+
+### What the storyboard defines once
+
+A storyboard states its style, its negative and its design bibles in a section of its own, and
+every shot refers to them by name:
+
+```
+STYLE. SHIP. Pre-dawn at a working naval jetty in Halifax Harbour, low tide…
+NEGATIVE.
+```
+
+That is the right way to *write* it and exactly the wrong thing to hand a generator, which reads
+`STYLE.` as a word. Import reads the definitions — any fenced block outside a shot that opens
+`NAME:` — and routes them:
+
+| In the storyboard | Lands in | Why there |
+|---|---|---|
+| `STYLE:` | `sections.images.style` | the field already means this, and is already in every recipe |
+| `NEGATIVE:` | `sections.images.negative` | same |
+| anything else | `tokens:` | a bible referred to by some shots, not all |
+
+Rows keep the prompt exactly as written. Expansion happens when the prompt is composed, so one
+edit to the ship's bible changes every hull shot — and because only the definitions a prompt
+*uses* are folded into its recipe, that edit makes exactly those shots stale and nothing else.
+
+Each row on the board carries a **what the model gets** preview with the composed positive and
+negative, and a copy button for each. Until an image generator is wired up, that copy button is
+how art gets made.
 
 ---
 
@@ -204,7 +250,7 @@ elapsed generation time. Enough to answer "what was different about the one I li
 re-roll near it rather than starting over.
 
 ```json
-{ "station.jpg": {
+{ "images/station.jpg": {
     "selected": "0003-s60011.png",
     "takes": [
       { "id": "0003-s60011.png", "seed": 60011, "steps": 28, "at": "2026-08-25T14:02:11Z", "ms": 41200 },
@@ -298,6 +344,8 @@ editor does for you from three places:
 - the **scenario tab**, editing YAML directly
 - **Declare voice clips**, which gives every spoken line a `voice:` file and the `hold:` a
   voiced line requires — a scenario with ninety lines is not one anybody types out by hand
+- **Give each shot its own picture**, which hangs a `background:` and `video:` on the node
+  that plays each storyboard shot (see below)
 - the **canvas**, by dropping a new layer box into a frame (see below)
 - a section's **add row**, which writes the field and then opens the new row
 
@@ -319,6 +367,135 @@ prose, so edits are computed from the parsed document's source offsets and appli
 Insertions only; nothing else on the page moves. A block map takes a new line, a flow map
 (`{ who: narr, text: … }`) takes a comma before its brace, and both spellings appear in real
 scenarios so both are handled rather than normalised into one.
+
+### Give each shot its own picture
+
+A storyboard has far more shots than places. `transit` is three shots of the same ocean;
+`control_cell` is seven beats in one room. A scene carries one `background:`, so historically
+only the first shot in each place had anywhere to put its still and the rest were reported as
+**unplaceable** — real work, written, with no filename to hang off.
+
+Authors worked around it the only way the schema allowed: by giving a second camera setup its
+own scene. `halifax_flank`, `control_cell_checks`. That costs more than duplication, because
+`music:` and `ambience:` hang off the scene and are re-triggered when the scene id changes — a
+"scene" that is really a second angle restarts the room's sound halfway through a beat.
+
+Now that a node can carry its own still and clip, this button does both halves at once:
+
+- every storyboarded shot that is not its scene's **establishing shot** — the first beat played
+  there, which is what the scene's still has always depicted — gets a `background:` and
+  `video:` of its own
+- a **stand-in scene**, one whose every node the storyboard places somewhere else, is folded
+  back into that place and its filenames move onto the node unchanged
+
+Then it re-seeds, so the prompts that had nowhere to go land on the names it just declared.
+Declaring the filenames and leaving the prompts unattached would be the half nobody remembers.
+
+Folding is deliberately conservative. A scene is folded only when the storyboard is unanimous
+about where its nodes belong, the destination exists, and the two agree on `music:` and
+`ambience:` — folding a scene whose sound differs would change what the audience hears, which
+is not a migration but a rewrite. What it refuses is reported with the reason.
+
+Filenames it invents follow the importer's own convention, `{scene}-{shot}.jpg`, and a node
+that already states its own media is never rewritten. It is safe on a half-migrated project,
+which is the normal case.
+
+One thing it reports rather than fixes: **comments left describing scenes that are now gone.**
+The prose in a scenario is the author's — several comments in a real one record why a beat is
+the length it is — and a machine that edits prose to keep it true will eventually edit prose
+that was already true. It names the lines and stops there.
+
+### Making art somewhere else
+
+Until a generator is wired for a section, this is the workflow, and it is a supported one rather
+than a gap: each row has **Copy folder**, you make the picture in whatever tool you like, and you
+drop the file into that folder. It appears on the board as a take marked *manual*, and selecting
+and publishing work exactly as they do for anything generated here.
+
+Every picture declares a **size**, seeded from the display's own geometry:
+
+| | |
+|---|---|
+| a scene still or clip | `1920x1080` — the stage, exactly |
+| a character portrait | `832x1216` — 460 wide on the stage with 740 above the dialogue box, at the nearest standard bucket |
+
+It is on the row, editable, and part of the recipe, so changing it makes what was generated at
+the old size stale. **And the file is measured against it.** The one failure this workflow has is
+silent: every web UI opens on a square, so a still arrives at 1024x1024, and letterboxing or a
+crop through the subject is discovered on a projector. The board reads the selected take's header
+and says so on the row and in the problem list.
+
+Stills only. A clip's dimensions live several nested atoms deep in its container, and reporting a
+correct clip as the wrong shape would send someone off to re-render something that was fine.
+
+### Give speakers a portrait
+
+The display has drawn portraits since the beginning: bottom right, over the dialogue box,
+sliding in when someone speaks — the shape every 2D RPG and visual novel has used for thirty
+years. What it never had was a picture. `sprite:` is optional on a character, no scenario ever
+declared one, and a portrait nothing declares is one nobody notices is missing.
+
+A storyboard that plans for this writes a **character sheet** per character — one neutral
+three-quarter portrait, generated first and reused as the reference for every later shot so
+faces do not drift between scenes. **Give speakers a portrait** turns those paragraphs into
+files the show will open: a `sprite:` on each character, then a re-seed so the sheet's prompt
+lands on the name it just declared.
+
+Only the characters the storyboard drew. Arctic Sentinel has six speaking parts and three
+sheets — the narrator has no face, the ship is a ship, and the Russian officer is "heard only
+over radio; never seen as a face". Giving every speaker a portrait would invent three the
+author deliberately withheld.
+
+Matching `Beaudoin` to `beau` is the one guess in it, and it is narrow: the id outright, or a
+whole word of the character's name. Two characters that both match is reported, not resolved —
+a face on the wrong person lasts the whole show.
+
+**A portrait is a transparent PNG**, because the display draws it over the scene with a shadow
+that follows its outline. Give it a JPEG and the silhouette is a rectangle: a bust card with a
+hard edge and a shadow around all four sides, sitting on a harbour at dawn. That reads as a
+deliberate frame rather than as a mistake, which is exactly why it would survive to the
+projector. So the sheet is named `.png`, one already pointed at a `.jpg` is re-pointed — the
+recipe row, the ledger entry and any published file follow the rename — and the board reports a
+selected take whose format has no alpha channel to have.
+
+The prompt says so too, without the storyboard having to. A character sheet is written as a
+*reference* image, and "neutral slate background" is right for a reference; the same file is
+also what floats over the harbour. So the composer appends the cutout instruction — subject
+fully in frame, flat even field, no cast shadow, crisp edges — and the background terms go into
+the negative. It asks for a picture that mattes cleanly rather than for transparency itself,
+because most image models cannot emit an alpha channel and asking for one produces a
+checkerboard, painted in. An author who has already asked in their own words keeps theirs, and a
+sheet prompt still naming a background gets one warning rather than a machine rewriting the
+sentence.
+
+### File assets by media type
+
+A finished show is a few hundred files. Flat, `assets/` is a folder where finding the bed for
+act two means reading ninety voice clips first, and where the only thing saying what
+`a4-flank.mp4` *is* is its extension. **File assets by media type** renames every reference to
+`<section>/<name>` — the same six sections the board already groups the work into, because the
+section an asset belongs to is a fact the scenario already carries.
+
+The folder goes into **the name `scenario.yaml` declares**, not into a layout rule the display
+works out for itself. A convention would have to live in the display, the validator and the
+editor at once; a name is one fact, stated once, and reading the scenario tells you where a
+file is. Flat names stay legal — every scenario written before this is one, and the button
+leaves alone anything the author already filed somewhere of their own choosing.
+
+Four things move together, which is the whole reason it is a button rather than a rename:
+
+- every reference in `scenario.yaml`, by source offset, so comments and folded scalars survive
+- the `assets:` keys in `project.yaml`, by key edit, so a row keeps its prompt and its comment
+- the ledger, so the take that was already chosen is still chosen
+- anything already published, moved into the folder the scenario now names
+
+Takes need no move at all: `takesDir` drops the section from a name that already carries it, so
+`generated/voice/tran-d5-01.mp3/` is where they were and where they stay. A project's whole
+history of attempts survives being filed.
+
+What it will not do is guess. A name two schema fields both claim — `bed.mp3` used as both
+`music:` and `ambience:` — is reported rather than filed, because either answer is wrong for
+one of the two uses.
 
 They are also idempotent. Pressing **Declare voice clips** twice does nothing the second time,
 and numbering continues from what the scenario already uses rather than restarting at `01` —
@@ -496,7 +673,10 @@ would thrash.
   document into a live status board, and is useful before a single model is installed.
 - **Phase 2 — images.** ComfyUI, `extra_model_paths.yaml` management, one workflow template,
   tiers 0–1, takes and select/publish. Most of the risk and most of the value.
-- **Phase 3 — voice and the `hold:` writeback.** Sidecar with Kokoro and Chatterbox, ffmpeg post.
+- **Phase 3 — voice.** *Built.* A uv-managed Python sidecar over stdio, a placeholder backend
+  and Chatterbox, a cast panel, per-row generate and publish. The `hold:` mismatch is reported
+  after each generate rather than written back: the number belongs to the scenario, and a
+  machine editing timing while an author is editing dialogue is a fight nobody wins.
 - **Phase 4 — the canvas.** Schema, checker, protocol and display changes, then the board.
 - **Phase 5 — video, then music/sfx/ambience and the loudness pass.**
 
@@ -515,20 +695,32 @@ folder*, takes accumulate under `generated/`, and `publish:` points at the proje
 `dist/assets`. Nothing points into this repo and nothing comes back to it. The repo's
 `scenarios/` folder is just one possible publish target, for the bundled demo scenarios.
 
-Projects therefore default to `~/scenario-projects`, deliberately outside the OneDrive path
-this repo sits in; the editor prints a warning if `PROJECTS_DIR` names a cloud-synced folder,
-because a takes tree is the kind of thing a sync client should never discover.
+Takes live under `generated/` **inside the project**, for the same reason: a project split
+across two drives is one nobody can hand to anybody else, and one nobody can open a year later.
+Where a workspace sits in a cloud-synced folder the editor says so in a comment at the top of
+`project.yaml` — voice takes are kilobytes, stills and video are not — but it says it rather
+than acting on it. Where the takes go is the author's call, and `generated:` accepts an
+absolute path for exactly that reason.
 
-**Open — and now urgent: a shot cannot carry its own still.** `background` and `video` hang off
-the *scene*, and a storyboard has far more shots than places. Importing Arctic Sentinel found
-29 shots across 6 scenes: 71 assets could be placed and **41 could not**, because the schema
-allows one background and one clip per scene. That is most of the visual work, and the board
-cannot show what it cannot represent.
+**Settled: a shot carries its own still.** `background:` and `video:` are optional on any
+node, overriding the scene's for as long as that node plays. A scene is a *place* — its music
+and ambience persist across every node played there — and a place gets many camera setups; a
+storyboard has far more shots than locations. Without this, a second shot in one room needed a
+second scene, which made "scene" stop meaning "place" and re-triggered the scene's audio on
+every beat.
 
-The fix is small — an optional `background:` and `video:` on the dialogue node, overriding the
-scene's — and it touches `schema.ts`, `assetReferencesOf`, `room.ts` where the scene media is
-resolved, and the display. Alternatives are worse: one scene per shot makes "scene" stop meaning
-"place" and would re-trigger music on every beat once music playback exists.
+The override belongs to the node that declared it and ends when that node does. A later node
+with no override falls back to the scene's still, which is what keeps the scene the default
+rather than merely the first shot. Inheriting it forward would make the picture depend on which
+way the audience voted.
+
+The fields are independent, so a node may take the clip and leave the still — motion over the
+scene's picture is a real thing to want. It is also how one shot's still ends up under another
+shot's clip, which only becomes visible on a projector, so the checker warns when a node
+overrides one and inherits the other.
+
+For the importer this is the whole ballgame: a node-level still maps straight to the shot that
+node came from, instead of every shot in a place competing for one scene-level slot.
 
 **Also open:**
 

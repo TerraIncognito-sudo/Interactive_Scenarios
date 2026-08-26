@@ -26,6 +26,14 @@ board. Add `--strict` for a pre-show check, where a missing file *is* an error.
 npm run build
 ```
 
+```bash
+npm run voice:check
+```
+
+Proves the voice sidecar end to end — uv, Python, the bridge, and MP3 encoding — without a
+model. Add `-- chatterbox` once one is installed. See
+[docs/voice-generation.md](docs/voice-generation.md).
+
 `npm start` runs the server, `npm run local` runs it in laptop-fallback mode, `npm run dev`
 watches, `npm run editor` starts the scenario editor on 8890. **Never leave a dev server
 running** — one was left on port 8880 once and served a stale page to the user's browser
@@ -97,11 +105,88 @@ room on the server. Anything scheduled goes through the guard.
 **Room codes exclude `O/0`, `I/1`, `S/5`, `Z`.** They are read off a projector from the back
 of a room.
 
+**A scene is a place; a node is a shot.** `music:` and `ambience:` hang off the scene and
+persist across every node played there. `background:` and `video:` may be overridden per node,
+for that node only — `sceneMediaOf` in the engine is the one resolver, used by the server
+snapshot and the display alike. An override that leaked forward would make the picture depend
+on the path the audience voted down, and one scene per shot would re-trigger the scene's audio
+on every beat.
+
 **An asset's production section comes from the schema field that referenced it**, never from
 its extension. A `.mp3` in `voice:` and a `.mp3` in `music:` are different work made by
 different models. `assetReferencesOf` is the single walk both `assetsOf` and the editor's
 board are built from — two walks would eventually disagree, and the editor's would be the one
 that disagreed silently.
+
+**Assets are filed by media type, in the name the scenario declares.** `voice/tran-d5-01.mp3`,
+not `tran-d5-01.mp3` under a rule the display works out for itself. A layout convention would
+have to live in the display, the validator and the editor at once, and the first time the three
+disagreed the audience would see it — where a name is just a name, `publish` writing to
+`assets/voice/` and the projector fetching `assets/voice/` are the same fact stated once.
+Flat names stay legal, because every scenario written before this is one. `folders.ts` is the
+migration and `filed()` in `storyboard.ts` is what makes new projects born that way; `takesDir`
+drops the section from a name that already carries it, so filing a project costs it no takes.
+
+**A part is the unit of work, and the Characters tab is where it lives.** A voice is set once,
+belongs to one person, and changing it makes every line they speak stale at once; a portrait is
+that same person's face. Those two halves are made weeks apart by different models and used to
+sit under two different sections, joined only by an id the author carried in their head — so
+`renderCast` puts them on one sheet, with a thumbnail (a face is the one thing on the board that
+cannot be checked by reading) and a sub-tab for each half. It is the **first** tab: a show is
+people, and the rest is machinery.
+
+**Portraits and stills split in presentation, never in production.** `isPortraitAsset` reads the
+scenario's own `origins`, so a portrait leaves the Images list and appears on its character's
+sheet — but its *section* stays `images`, because it is made by the same model with the same
+style, and a face that does not match the film reads as clip art the moment it slides in. Every
+row has exactly one home (`rowsFor`); listing one in two places is two views that disagree about
+what is selected the moment either is a click behind, and the section it left says where it went.
+
+**The three actor-level actions are the re-voicing job in order**: **Regenerate** (stale ones when
+there are any, all of them otherwise — the label says which), **Use newest**, **Publish**. *Use
+newest* is separate from generating on purpose — generating never steals a selection, so moving
+one is its own act with its own count. **Publish covers every clip with a selection**, not the
+ones that "look like they need it": `ready` means the selected take matches the recipe and says
+nothing about whether it was ever copied to the published name, which nothing on the board knows.
+
+**Importing sends bytes, never a path.** The browser's file dialog is the system one and hands
+the page a `File` with no path in it, so `importTake` takes a stream and the metadata rides in the
+query — raw `application/octet-stream`, because base64 in JSON inflates a hundred-megabyte clip by
+a third and buffers all of it to gain nothing. That is also the safer half: no route here opens a
+location somebody typed. It writes through a temporary file and renames, since a truncated file in
+a takes folder looks exactly like a take. The one `<input type="file">` is created once and kept
+out of the render tree — `render()` replaces the tree on every state change, and an input inside it
+is destroyed the moment the picker opens, taking its change event with it, silently.
+
+**A destructive route validates the name itself.** `deleteTake` takes a string that reaches
+`join()` on the way to an `rm`. `safeTake` rejects `.` and `..` — the dot is in the character
+class because a take has an extension, which is the same trap `safeAsset` had — and the result is
+checked for containment as well. Deleting never touches the published file: publishing is the
+deliberate act that puts a reading in front of an audience, and a delete that quietly un-shipped a
+line would not be noticed until the room went silent. Deleting the *selected* take clears the
+selection rather than moving it, because guessing a replacement ships a reading nobody chose.
+
+**A project route's action may contain a hyphen.** The router's `([a-z][a-z-]*)` was `([a-z]+)`,
+and `delete-take` 404d while looking correct at both ends — the client reported "Not found"
+against the asset rather than the URL.
+
+**The editor plays what it made — and shows it.** A board that can only describe a clip is a
+board whose selection step is guesswork, and a pipeline nobody can hear ships the first reading
+of every line. Choosing between six jetties by filename is worse than guesswork. `resolveMedia`
+in `tools/editor/projects.ts` resolves a take, a published file or a reference clip from
+structured parts and checks the result is under the project — the editor browses the whole disk
+on purpose, but that is a picker a person drives, and a URL that dereferences `../..` is a
+different thing. One `Audio` element and one `<dialog>` serve the whole board: forty of either is
+six readings of one line at once, or six windows of the same jetty to close.
+
+**What a take is auditioned *with* follows its section, never its presence.** `auditionButton`
+picks by `AUDIBLE`/`VISIBLE`; every take carried a play button for months because every take was
+a sound, and the first image on the board fed a JPEG to an `<audio>` element — whose decode error
+reads "could not play that file — is it still on disk?", sending the author to look for a file
+that is right there. Cleanup on the viewer hangs off an explicit `closeViewer`, not the `close`
+event: `showModal()`/`close()` toggle the attribute everywhere, but the event does not arrive in
+every browser, and a clip playing behind a dialog that has visibly gone is the failure that
+found it.
 
 **The editor and the player must agree on filenames.** The player opens exactly the names in
 `scenario.yaml`, so the editor may never invent one. Seeding prompts from a storyboard keys
@@ -116,12 +201,250 @@ scenario splits it into the lines the display shows, so reading the storyboard b
 one line's words in another line's clip. The storyboard contributes the *Delivery:* note and
 nothing else — matched by speaker, since one note covers every line split out of its block.
 
+**The game server never learns about Python.** The sidecar in `tools/voice/` belongs to the
+editor, which runs at a desk for weeks; the show runs from a container holding no models at
+all. Generation deps must never reach `package.json`'s runtime path or the Dockerfile — a
+projector that needed three gigabytes of CUDA wheels to read a YAML file is a projector that
+does not start.
+
+**A model process talks over a pipe, never a socket.** A pipe dies with its parent, so a
+force-quit editor cannot strand a process holding sixteen gigabytes of VRAM — the failure
+whose only apparent cure is a reboot. It also avoids a Windows firewall prompt for someone
+who wanted to hear a line read aloud.
+
+**Where models live is the machine's business, not the project's.** `project.yaml` travels
+to other machines and is opened a year later, so it names a model (`chatterbox`) while the
+editor's own config holds the path. The same reasoning as the workspace, for the same reason.
+
+**`assetBase` goes down to `assets/`.** The display joins it to a name straight out of
+`scenario.yaml`, so a base one level short makes every asset a 404. It was one level short for
+months and nothing noticed, because no scenario had a single asset made — the first would have
+been a missing picture in front of a room. A test now fetches `assetBase + file` for real, which
+is the only form of this assertion that could have caught it.
+
+**Who gets a portrait is the storyboard's decision.** `sprites.ts` declares a `sprite:` for each
+character the document drew a *character sheet* for, and only those. Arctic Sentinel has six
+speaking parts and three sheets: the narrator has no face, the ship is a ship, and the Russian
+officer is "heard only over radio; never seen as a face". Wiring every speaker would invent three
+faces the author deliberately withheld, and one of them would be a person for a warship. Matching
+a sheet labelled `Beaudoin` to `beau` is the one guess, so it is narrow — the id outright, or a
+whole word of the name — and ambiguity is refused rather than resolved.
+
+**A portrait is a cutout, so it is a transparent PNG.** The display draws it over the scene with
+a `drop-shadow`, which follows the alpha; a JPEG has no outline, only four corners, so it arrives
+as a bust card with a shadow around all four sides — a failure that reads as a deliberate frame,
+which is why it would survive to a projector. `isPortrait` in `size.ts` is the one predicate, and
+both consequences hang off it: the size (`PORTRAIT` rather than `STAGE`) and the cutout. The
+composer asks for a picture that *mattes* cleanly rather than for transparency itself, because
+most image models cannot emit alpha and asking for it produces a painted checkerboard. `portrait`
+is on the Recipe, so it is in the hash — and it comes from the scenario, which means every caller
+of `resolveRecipe` must derive it the same way (`portraitFilesOf`) or the board and the generator
+will disagree about what is finished. Re-pointing an existing `.jpg` is a rename, so
+`carryRename` takes the recipe row, the ledger entry, the takes folder and the published file
+with it; a portrait aimed at some other name is the author's and is left alone.
+
+**Every picture declares a size, and the file is measured against it.** Art is made in another
+program and dropped into the takes folder, and every web UI opens on a square — so a still
+arrives 1024x1024, lands in a 16:9 show, and is letterboxed or cropped through the subject with
+nothing anywhere saying so. `size.ts` takes its defaults from the display's own geometry (a
+1920x1080 stage; a portrait 460 wide with 740 above the dialogue box) rather than from taste, and
+writes them onto the row so the choice is in the file the author reads. It reads a real file's
+dimensions from the header only — stills, never video, because a clip's dimensions live several
+nested atoms deep and reporting a correct clip as wrong shape sends someone off to re-render
+something that was already right.
+
+**A prompt is not what the model gets.** A storyboard writes `STYLE. SHIP. Pre-dawn at a
+jetty…` and defines STYLE and SHIP once, hundreds of characters each, because the style belongs
+to the production rather than to any one shot. Handed to a model unchanged that is five dead
+characters and a picture with none of the palette. `prompt.ts` puts them back: `STYLE` and
+`NEGATIVE` resolve from the section's own `style`/`negative`, everything else from
+`project.tokens`. Expansion happens at compose time, never at import — pasting a bible into
+twenty hull shots means re-tuning it twenty times — and only the definitions a prompt *uses* go
+into its recipe, so editing one ages exactly the shots that mention it.
+
+An undefined name is reported only where the prompt is plainly invoking it: the leading run, or
+a trailing marker on its own line. Every storyboard is full of `RIB.` and `AIS.`, which are
+indistinguishable from a reference by shape, and a warning that fires on those is one people
+learn to skip.
+
+**The board shows the composed prompt.** Every complaint about the art this pipeline makes has
+started with not being able to see what the model was given. A prompt you cannot read is one you
+cannot fix.
+
+**A line with no `who:` is still somebody's to read.** Narration with no nameplate — a fiction
+notice, a title card — is cast under `NARRATION_VOICE` (`vo` in `project.ts`), an id that is
+deliberately not a character, because attributing the line to one to give it a voice would put
+that name on screen under a legal disclaimer. `wire.ts` already named those clips `vo-…`; seeding
+sets the row's `voice:` to match, `referenceTextFor` reads its lines as the ones with no `who`,
+and the cast panel labels it. Miss any of those and the fiction notice is the one silent beat in
+a finished show — which is exactly how it was found.
+
+**A character's voice is part of every line they speak.** `resolveRecipe` folds the cast's
+reference clip and direction into the recipe, so re-recording a reference marks all ninety
+of that character's clips stale. Left out, the hash would say finished about clips made from
+a voice that no longer exists.
+
+**A cloning model needs a recording that does not exist yet.** That circle is broken by
+keeping a palette model — Kokoro — beside it: it has thirty voices of its own, so it can
+read a character's lines and the result becomes the reference clip Chatterbox wanted.
+`makeReferenceClip` in `tools/editor/generate.ts` uses the character's *own* lines,
+because a reference is copied in register as much as in timbre — a voice sampled reading
+"the quick brown fox" comes back as an audiobook rather than a watch-keeper. The preset
+that made it is written beside it, so the clip can be made again.
+
+**Generating never publishes, and never steals a selection.** A take is added; the published
+file changes only when someone presses Publish. Re-rolling has to be free or nobody does it,
+and then the first acceptable reading of every line is the one that ships.
+
 **Anything the pipeline needs done to a project, the editor does.** If a scenario has to be
 hand-edited or a script run once to get an asset onto the board, the ecosystem has a hole in it
 and the two halves will drift. Declaring `voice:` on every line is `wireVoice` in
-`tools/editor/wire.ts`; removing a recipe the scenario stopped referencing is `pruneOrphans`.
-Both are buttons, both are idempotent, and both edit by source offset rather than by
+`tools/editor/wire.ts`; giving each storyboard shot its own `background:`/`video:` — and
+folding away the stand-in scenes that existed only to carry one — is `migrateShotsInto` in
+`tools/editor/shots.ts`; removing a recipe the scenario stopped referencing is `pruneOrphans`.
+All are buttons, all are idempotent, and all edit by source offset rather than by
 re-serialising, so the author's comments and hand-wrapped folded scalars survive.
+`tools/editor/yaml-edit.ts` is the one home for that technique; a second copy of it would
+eventually disagree with the first about where a key goes.
+
+**A recipe row has two owners, and the scenario takes its half back on every save.**
+Most of a row is the author's — the prompt, the negative, the size, weeks of tuning. Four
+fields are not opinions at all but copies of something the scenario already says: `text`,
+`voice`, and `source.node`/`source.line`. `text` is the one that bites. It is what a voice
+clip *says*, seeding was strictly additive, and that is correct for a prompt and silently
+wrong for this — edit a line of dialogue and the row kept the words it was seeded with, the
+recipe hash never moved, the board went on saying `ready`, and the clip in the show read a
+sentence that had been deleted. Nothing anywhere reported it; the only way to find it was to
+listen to all ninety. So `planReconcile` in `reconcile.ts` re-derives `DERIVED_PATHS` on every
+scenario write, and because `text` is in the hash, correcting one marks exactly the affected
+clips stale — the re-record list writes itself. The bar for adding a name to `DERIVED_PATHS`
+is that the scenario is *definitionally* right about it. A prompt is not on that list and must
+never be: two people can disagree about how a shot should look, and only one of them has seen
+the film.
+
+**Reconciliation adds and corrects; it never removes.** A row the scenario stopped referencing
+is reported in `plan.orphans` and left exactly where it is, because a row can hold an afternoon
+of tuning and a rename nobody meant to make is not a trade the machine gets to choose. Removal
+is `pruneOrphans`, which is a button, with the list in front of the person pressing it. The
+same walk (`seedRowsFor`) serves seeding and reconciliation, so the two can never disagree about
+which line a clip belongs to — and reconciliation does not need the storyboard, because
+everything it derives comes from the scenario alone. A project with no storyboard still stays in
+sync.
+
+**Saving the scenario is what triggers it, and so is every action that rewrites one.**
+`saveScenarioSource` returns the plan; `wireVoice`, `migrateShots` and `wireSprites` call it too.
+`wireVoice` had no follow-up at all, so declaring a `voice:` gave the line a file the player
+would open and no row anywhere saying how to make it. The client says what moved, because a save
+that quietly re-records a clip is its own kind of surprise.
+
+**The command centre is a projection of the board, never a second opinion about it.**
+`outstandingOf` reads the `Overview` the other tabs already render and touches no disk, ledger
+or scenario of its own. A second walk would eventually disagree about what is finished, and the
+disagreement would be invisible — both would look like a full list. Its one promise is that an
+empty tab means the show is ready, so anything that can leave a project unfinished has to reach
+it or the emptiness is a lie. Every asset lands in at most one of the six pipeline groups, which
+are stages rather than independent complaints: a file that was never made is not also waiting to
+be published, and counting it twice makes the total useless as a measure of what is left.
+Quality is the exception and is additive — a clip can be finished, shipped, and still the wrong
+shape.
+
+**Publishing writes down which take it shipped.** `ready` means the selected take matches the
+recipe and says nothing about whether anyone ever copied it to the name the player opens, so a
+project could be entirely green while the room heard the previous reading of every re-recorded
+line. Nothing on the board could see it, because nothing recorded it. `LedgerEntrySchema.published`
+closes that, and `republish` is only ever claimed against a recorded take — a file with no record
+of how it got there was put there by hand, and telling somebody to overwrite it would be guessing
+at work they did deliberately.
+
+**A regenerated take asks to be chosen, not generated again.** Generating never steals a
+selection, which is what keeps re-rolling free — but it left the asset reporting `stale` with
+the answer already sitting in its own takes folder, under a heading whose button made a *third*
+take of a line that already had the right one. `matchingTake` on the view is a take whose hash
+equals the current recipe and is not the one selected, and `reselect` sits ahead of `stale` in
+the command centre because the two ask for opposite things. `use-newest` picks the take that
+matches the recipe rather than the last one in the list: newest is only a guess at that, and it
+is the wrong guess the moment anything else was rolled afterwards.
+
+**The board knows where each row actually renders.** `rowsFor` gives voice clips to the
+Characters tab and portraits to a character's other sub-tab, so a link that sends somebody to
+Assets for either lands them on a tab that does not contain the row — which is worse than no
+link, because it reads as the row having been deleted. `homeOf` in the client is the one place
+that answers this, and it uses the same `asset.row.voice ?? UNCAST` fallback `byActor` groups
+by, so the sheet it opens is the sheet the row is really in.
+
+**A clip's runtime is checked against the beat it has to fit in.** Nothing on the server ever
+opens an audio file — a beat ends when `hold` says it does — so a `hold` a second short cuts
+the reading off mid-word in front of a room, and the only way to find out was to sit through
+every clip with a stopwatch. Every `hold` starts as a reading-speed estimate and a generated
+clip is routinely a second or two away from it. `duration.ts` reads the length from the header
+only, with no dependency, for the same reason `size.ts` does: the editor's job is to read a
+file the show will play, not to own a codec. A second of headroom rather than none, because
+equal is not safe — the last word needs somewhere to land. Undefined means *could not tell* and
+must never warn: sending somebody to re-cut a line that was already right is worse than not
+telling them. Two ways to get it wrong are both pinned by tests — MPEG 2 halves the Layer III
+frame, and a wav's byte rate is four bytes past its sample rate; either mistake reports every
+clip at exactly twice its length, which turns a real overrun into silence.
+
+**`republish` falls back to comparing the files.** The ledger is exact where it has a record,
+but it cannot see back past the day it started keeping one — and choosing a newer reading of an
+already-shipped line then moved it to `ready` and asked for nothing while the room went on
+hearing the old one. Where no take is recorded, a published file of a different size than the
+selected take is certainly not that take. Matching sizes are taken as the same file rather than
+hashed: two readings of one line landing on the same byte count is a coincidence, and re-reading
+ninety published files on every board build to rule it out is a cost paid every time.
+
+
+**A beat is the clip plus a gap, and the editor writes it.** Nothing on the server opens an
+audio file, so the two numbers only agree if somebody puts them in agreement — which meant
+reading a runtime off the board, doing the addition and typing it into `scenario.yaml`, eighty
+times, without transposing any of them. `retimeInto` in `timing.ts` writes `hold:` by source
+offset like every other scenario action, so a comment beside a beat stays exactly where it is;
+which of those comments the change has made *wrong* is reported by line number and never
+reworded. One decimal throughout: clip runtimes are real numbers and rounding a beat down to
+the whole second below it is how a line gets cut off by a rounding decision nobody made.
+`holdMatches` compares at that same precision, or a hold of 5.8 against a target of
+5.800000000000001 is a mismatch no edit can ever fix and the board asks for it forever.
+
+**The gap is per clip, and it is timing rather than audio.** A second is the default because
+the last word of a line needs somewhere to land, but a beat before a poll wants to breathe and
+a three-word interruption wants to land on top of what follows — so `gap` is a field on the
+asset row. It is deliberately **not** in `resolveRecipe`, and a test says so: it changes how
+long a beat lasts and nothing whatever about the audio, so folding it into the hash would mark
+ninety finished clips stale for a timing edit and make re-timing a show cost a re-record of it.
+An empty box clears the field rather than writing zero, because a gap of nothing is a real
+choice and has to stay distinguishable from never having made one.
+
+**The client sends which clips to retime, never what to.** The target is computed server-side
+from the runtime the board measured and the gap the row declares. A client that could send the
+number itself is a client that can write a beat nothing on the board agrees with — and the
+arithmetic would then exist in two places, which is one more than it can be right in.
+
+
+**Anything the audience is looking at is a beat the server clocks.** The result of a poll used
+to be a `setTimeout` inside the display and nothing else knew about it, so the server started
+the next line's `hold` the instant the poll closed — while the projector was still showing the
+bar chart. Every first line after a vote lost 2.6 seconds: truncated where its hold was longer,
+never drawn at all where it was shorter, which after retiming is most of them. It looked like a
+polling bug because rewinding and picking manually made it go away — the display had already
+revealed that poll once and skipped the animation the second time. `REVEAL_MS` is now a real
+beat with a `revealing` phase, and the display renders what it is told. A client-side animation
+that holds the screen is a second clock, and the two will disagree in front of a room.
+
+**A phase is restored, never assumed.** `pollClosed` enters the node the vote chose and then
+sits on the reveal, so the node is already correct while the bar chart is up. `restingPhase` is
+the one place that says what a node settles into afterwards — and `Room.apply` opens a poll on
+*entering the polling phase* rather than on the node id changing, because by the time the reveal
+ends the node has not changed for some time. Keyed the old way, a vote leading into a second
+poll left that poll's deadline at the zero it is stamped with on entry, and it never closed.
+What an action must *not* do is edit the author's prose. A migration that removes a scene
+leaves any comment describing it factually wrong, and the temptation is to fix the sentence —
+but a machine that rewrites prose to keep it true will eventually rewrite prose that was
+already true. `migrateShotsInto` reports the line numbers and stops.
+
+An action that rewrites `scenario.yaml` must also push the new source back into the editor
+pane and wait for the re-analysis before reporting. The pane holds its own copy: refresh it
+late and the analysis overwrites the action's status line; do not refresh it at all and the
+next Save quietly reverts everything the action just did.
 
 **The machine never rewrites `project.yaml` wholesale.** It is the author's file, full of
 hand-tuned prompts and comments recording why. Field edits go through YAML's document API
@@ -137,9 +460,16 @@ the file the first time anyone touches a text box. A test guards this.
 | `src/server/` | Fastify, rooms, WebSocket, SQLite, admin auth |
 | `src/client/` | `display/` projector, `host/` console, `player/` phone, `admin/` console |
 | `tools/editor/` | The scenario editor — a separate local process, not part of the server |
+| `tools/editor/models.ts` | Which generators exist and whether this machine has their weights |
+| `tools/editor/sidecar.ts` | Owning a generator process; stdio JSON, one request at a time |
+| `tools/voice/` | The text-to-speech sidecar. Python, uv-managed, editor-only |
 | `tools/editor/workspace.ts` | Which folder holds the projects, and the server-side folder picker |
 | `tools/editor/project.ts` | Asset projects: `project.yaml` (author-owned) + `.ledger.json` (machine-owned) |
 | `tools/editor/sections.ts` | The status board — scenario, recipes, ledger and disk reconciled |
+| `tools/editor/reconcile.ts` | What the scenario owns on a recipe row, re-derived on every save |
+| `tools/editor/outstanding.ts` | The command centre — the board projected into one list of what is left |
+| `tools/editor/duration.ts` | How long a clip runs, from its header — the other half of the `hold` check |
+| `tools/editor/timing.ts` | Clip + gap = beat, and writing it into `scenario.yaml` |
 | `src/shared/protocol.ts` | Message unions, Zod-validated in both directions |
 | `scenarios/` | Content. Adding a scenario is adding a folder — no code changes |
 
@@ -147,8 +477,12 @@ the file the first time anyone touches a text box. A test guards this.
 unreachable nodes, unknown characters and scenes, poll defaults that are not options,
 unknown `$placeholder`s. Run `npm run validate` after touching a scenario.
 
-The editor is a separate process by design — authoring happens at a desk, the game server
-runs in front of an audience, and only the editor writes to `scenarios/`. Its simulator
+The editor is a separate process by design — authoring happens at a desk over weeks, the
+game server runs in front of an audience. **The editor cannot reach `scenarios/` at all**:
+it serves no route into that folder and writes only inside the author's chosen workspace.
+Deploying is a person copying a finished project folder across when the show is ready, and
+a test asserts the capability stays absent. An editor able to write into the folder a live
+show is served from will eventually do it by accident. Its simulator
 calls the production `reduce`, so **never give it its own copy of the engine**: a
 simulation that could drift from the real thing is worse than none. `parseScenarioSource`
 in `src/scenario/load.ts` is the shared validation path — the editor and the server must

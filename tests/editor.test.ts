@@ -179,8 +179,10 @@ describe('simulating a run', () => {
 
   test('totals the runtime including poll windows', () => {
     const result = simulate(load(), { vote_a: 'reply', vote_b: 'everyone' });
-    // Two seconds of dialogue plus a 60s and a 30s voting window.
-    assert.equal(result.seconds, 92);
+    // Two seconds of dialogue, a 60s and a 30s voting window, and the 2.6s
+    // each poll spends showing its result — which the room really does sit
+    // through, so a runtime that left it out was five seconds optimistic.
+    assert.equal(result.seconds, 97);
   });
 
   test('every dialogue line is its own step, with the speaker resolved', () => {

@@ -22,29 +22,99 @@
  * anyone touched a text box.
  */
 
-import { readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
-import { parseDocument, stringify as stringifyYaml } from 'yaml';
-import { parseScenarioSource } from '../../src/scenario/load.ts';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readdir, readFile, rm, writeFile, rename, stat } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { parseDocument, Scalar, stringify as stringifyYaml } from 'yaml';
+import { ASSET_SECTIONS, parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
 import {
+  fromProject,
   loadLedger,
   loadProject,
   parseProjectSource,
   pathsOf,
   saveLedger,
+  takesDir,
   ProjectError,
   ProjectSchema,
   type Project,
   type ProjectPaths,
 } from './project.ts';
 import { buildOverview, type Overview } from './sections.ts';
-import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
+import { outstandingOf, type Outstanding } from './outstanding.ts';
+import {
+  parseStoryboard,
+  seedRowsFor,
+  type SeedResult,
+  type StoryboardShot,
+} from './storyboard.ts';
+import { migrateShotsInto, type ShotMigration } from './shots.ts';
+import { renameRows, sortIntoFolders, type FolderSort } from './folders.ts';
+import {
+  generateAsset,
+  makeReferenceClip,
+  publishAsset,
+  GenerateError,
+  type GeneratedTake,
+  type Published,
+  type ReferenceClip,
+} from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
-import { looksSynced, within, workspace } from './workspace.ts';
+import { wireSpritesInto, type SpriteWiring } from './sprites.ts';
+import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
+import { retimeInto, type Retimed } from './timing.ts';
+import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
+
+/**
+ * A value on its way into `project.yaml`, in the block style a person would
+ * have used.
+ *
+ * An image prompt is several hand-wrapped lines, and YAML's default for one is
+ * a folded scalar — which has to pad every original newline with a blank line
+ * to survive the round trip. It reads back identically and looks nothing like
+ * what was written. A literal block is what the importer already produces and
+ * what the rest of the file uses, and this is the file whose prompts the author
+ * spends weeks tuning.
+ */
+function blockValue(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.includes('\n')) return value;
+  const scalar = new Scalar(value);
+  scalar.type = Scalar.BLOCK_LITERAL;
+  return scalar;
+}
 
 /** Asset keys are filenames, never paths. */
-const SAFE_ASSET = /^[A-Za-z0-9._-]+$/;
+const ASSET_SEGMENT = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+
+/**
+ * A name a project route will act on.
+ *
+ * Segments may nest, because a scenario files its assets by media type, but
+ * every segment has to be an ordinary name — and `..` is an ordinary name as
+ * far as a character class is concerned, which is the trap. This string reaches
+ * `join()` on the way to a takes folder and a publish path, and the editor
+ * writes files without asking anyone.
+ */
+function safeAsset(name: string): boolean {
+  if (!ASSET_SEGMENT.test(name)) return false;
+  return name.split('/').every((part) => part !== '.' && part !== '..');
+}
+
+/**
+ * A take is one file inside one folder, and never a path.
+ *
+ * The dot is in the character class because a take has an extension — which
+ * means `..` matches the pattern, the same trap `safeAsset` has. It reached
+ * `join()` on the way to an `rm` before a test went looking for it. The
+ * containment check downstream caught it, but a name that is not a name should
+ * be refused by the thing whose job that is.
+ */
+function safeTake(name: string): boolean {
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return false;
+  return name !== '.' && name !== '..';
+}
 
 export type OpenProject = {
   name: string;
@@ -55,6 +125,8 @@ export type OpenProject = {
   scenarioSource: string;
   storyboardSource?: string;
   overview: Overview;
+  /** The same board, projected into one ordered list of what is left. */
+  outstanding: Outstanding;
   problems: { level: 'error' | 'warning'; message: string }[];
 };
 
@@ -112,7 +184,12 @@ async function defaultProject(name: string, dir: string): Promise<Project> {
     // project and a sync client quietly uploading a hundred gigabytes of
     // rejected art. Overridable, and written explicitly when a project file
     // is created so the choice is visible rather than magic.
-    generated: looksSynced(dir) ? join(homedir(), 'scenario-takes', name) : 'generated',
+    // Beside the scenario, on purpose. Everything a project is made of should
+    // be in one folder that copies as a unit — that is what makes deploying a
+    // show "move this folder" and what makes a project openable a year later.
+    // Takes are small for voice and large for video, so the sync warning stays
+    // a warning rather than a decision made on the author's behalf.
+    generated: 'generated',
     storyboard: await detectStoryboard(dir),
   });
 }
@@ -229,6 +306,7 @@ export async function openProject(name: string): Promise<OpenProject> {
     scenarioSource,
     storyboardSource,
     overview,
+    outstanding: outstandingOf(overview),
     problems,
   };
 }
@@ -259,7 +337,7 @@ export async function initProject(name: string): Promise<OpenProject> {
   }
 
   const project = await defaultProject(name, dir);
-  const { rows: assets } = await seedFromStoryboard(dir, project, new Set());
+  const { rows: assets, placement } = await seedFromStoryboard(dir, project, new Set());
 
   const document = {
     project: project.project,
@@ -269,19 +347,33 @@ export async function initProject(name: string): Promise<OpenProject> {
     publish: project.publish,
     generated: project.generated,
     sections: {
-      images: { backend: 'manual', style: '', negative: '' },
+      // The storyboard's own style and negative, if it stated them. A project
+      // born with `style: ""` is one where every prompt still says `STYLE.` and
+      // nothing anywhere says what STYLE is — which is a word the model reads
+      // literally and a film whose frames do not match.
+      images: {
+        backend: 'manual',
+        style: placement.style ?? '',
+        negative: placement.negative ?? '',
+      },
       video: { backend: 'manual' },
       voice: { backend: 'manual' },
       sfx: { backend: 'manual' },
       ambience: { backend: 'manual' },
       music: { backend: 'manual' },
     },
+    ...(Object.keys(placement.tokens).length > 0 ? { tokens: placement.tokens } : {}),
     assets,
   };
 
+  // Said in the file rather than acted on. Where the takes go is the author's
+  // call — a project whose parts are scattered across two drives is one nobody
+  // can hand to anybody else — but a sync client is going to upload every one
+  // of them, and that is worth knowing before there are ten thousand.
   const header = looksSynced(dir)
-    ? '# generated/ is kept outside this folder on purpose: it is inside a synced\n' +
-      '# drive, and takes accumulate to tens of gigabytes.\n'
+    ? '# This project is inside a synced drive, so everything under generated/ will\n' +
+      '# be uploaded too. Voice takes are small; stills and video are not. Point\n' +
+      '# generated: at a path outside the drive if that becomes a problem.\n'
     : '';
 
   await writeAtomic(file, header + stringifyYaml(document, { lineWidth: 0 }));
@@ -305,8 +397,9 @@ async function seedFromStoryboard(
   rows: Record<string, Record<string, unknown>>;
   fills: { file: string; path: string[]; value: unknown }[];
   unmatched: SeedResult['unmatched'];
+  placement: TokenPlacement;
 }> {
-  const nothing = { rows: {}, fills: [], unmatched: [] };
+  const nothing = { rows: {}, fills: [], unmatched: [], placement: { tokens: {} } };
   if (!project.storyboard) return nothing;
 
   const storyboard = await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined);
@@ -319,7 +412,9 @@ async function seedFromStoryboard(
   const parsed = parseScenarioSource(scenarioSource);
   if (!parsed.ok) return nothing;
 
-  const seeded = seedRowsFor(parsed.scenario, parseStoryboard(storyboard).shots);
+  const document = parseStoryboard(storyboard);
+  const seeded = seedRowsFor(parsed.scenario, document.shots, document.sheets);
+  const placement = placeTokens(document.tokens);
 
   const rows: Record<string, Record<string, unknown>> = {};
   /** Field paths to write onto rows that already exist. */
@@ -330,6 +425,7 @@ async function seedFromStoryboard(
 
     const row: Record<string, unknown> = {};
     if (asset.prompt) row.prompt = asset.prompt;
+    if (asset.size) row.size = asset.size;
     if (asset.text) row.text = asset.text;
     if (asset.voice) row.voice = asset.voice;
     // Written key by key rather than spread wholesale: an undefined field would
@@ -365,7 +461,42 @@ async function seedFromStoryboard(
     }
   }
 
-  return { rows, fills, unmatched: seeded.unmatched };
+  return { rows, fills, unmatched: seeded.unmatched, placement };
+}
+
+/**
+ * Routes the storyboard's named blocks to the fields that already mean them.
+ *
+ * `STYLE` and `NEGATIVE` are a section's `style` and `negative` — those fields
+ * exist for exactly this and are already folded into every recipe in the
+ * section, so putting the text anywhere else would be a second copy of a fact
+ * the schema already holds. Everything else is a bible a prompt refers to by
+ * name, and lives in `tokens`.
+ *
+ * Only images. The storyboard says "prepend to *every* image prompt", and a
+ * motion prompt is "slow parallax push toward the bow" — a camera instruction
+ * over a still that already carries the palette. Style on it would be four
+ * hundred characters of paint applied to a move.
+ */
+export type TokenPlacement = {
+  style?: string;
+  negative?: string;
+  tokens: Record<string, string>;
+};
+
+export function placeTokens(defined: Record<string, string>): TokenPlacement {
+  const placement: TokenPlacement = { tokens: {} };
+  for (const [name, body] of Object.entries(defined)) {
+    if (name === 'STYLE') placement.style = body;
+    else if (name === 'NEGATIVE') placement.negative = body;
+    else placement.tokens[name] = body;
+  }
+  return placement;
+}
+
+/** Absent, or present and empty. Both are holes; neither is tuning to protect. */
+function isHole(value: unknown): boolean {
+  return value === undefined || value === null || String(value).trim() === '';
 }
 
 export type StoryboardSync = {
@@ -378,6 +509,12 @@ export type StoryboardSync = {
   filled: string[];
   /** Already in the project; left exactly as they were. */
   kept: number;
+  /**
+   * Named blocks that reached the project for the first time — the style, the
+   * negative, a design bible. Reported because a board whose prompts suddenly
+   * grew four hundred characters of palette should say so out loud.
+   */
+  defined: string[];
   /**
    * Storyboard prompts with no file in the scenario to attach them to — most
    * often spoken lines that have no `voice:` in the scenario yet. Reported
@@ -407,33 +544,142 @@ export async function syncFromStoryboard(name: string): Promise<StoryboardSync> 
   const project = parseProjectSource(source);
   const existing = new Set(Object.keys(project.assets));
 
-  const { rows, fills, unmatched } = await seedFromStoryboard(dir, project, existing);
+  const { rows, fills, unmatched, placement } = await seedFromStoryboard(dir, project, existing);
   const added = Object.keys(rows).sort();
   const filled = [...new Set(fills.map((fill) => fill.file))].sort();
-  if (added.length === 0 && fills.length === 0) {
-    return { added, filled, kept: existing.size, unmatched };
+
+  // The style, the negative and the bibles. Filled only where the project has
+  // a hole: once an author has tuned a style, the document that suggested it
+  // has no business overwriting it.
+  const defining: { path: (string | number)[]; value: string; name: string }[] = [];
+  if (placement.style && isHole(project.sections.images?.style)) {
+    defining.push({ path: ['sections', 'images', 'style'], value: placement.style, name: 'STYLE' });
+  }
+  if (placement.negative && isHole(project.sections.images?.negative)) {
+    defining.push({
+      path: ['sections', 'images', 'negative'],
+      value: placement.negative,
+      name: 'NEGATIVE',
+    });
+  }
+  for (const [name, body] of Object.entries(placement.tokens)) {
+    if (isHole(project.tokens[name])) {
+      defining.push({ path: ['tokens', name], value: body, name });
+    }
+  }
+
+  if (added.length === 0 && fills.length === 0 && defining.length === 0) {
+    return { added, filled, kept: existing.size, unmatched, defined: [] };
   }
 
   const doc = parseDocument(source);
+  for (const entry of defining) doc.setIn(entry.path, blockValue(entry.value));
   for (const [assetFile, row] of Object.entries(rows)) {
     for (const [field, value] of Object.entries(row)) {
-      doc.setIn(['assets', assetFile, field], value);
+      doc.setIn(['assets', assetFile, field], blockValue(value));
     }
   }
-  for (const fill of fills) doc.setIn(['assets', fill.file, ...fill.path], fill.value);
+  for (const fill of fills) doc.setIn(['assets', fill.file, ...fill.path], blockValue(fill.value));
   await writeAtomic(file, doc.toString());
 
-  return { added, filled, kept: existing.size, unmatched };
+  return {
+    added,
+    filled,
+    kept: existing.size,
+    unmatched,
+    defined: defining.map((entry) => entry.name),
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Editing
 // ---------------------------------------------------------------------------
 
+/**
+ * Stores a path the way the rest of the project file does: relative when it is
+ * inside the project, absolute when it is not.
+ *
+ * The picker deals in absolute paths because the server has to open the file.
+ * Writing that straight into `project.yaml` would pin a character's voice to
+ * one machine's directory layout, and the folder is meant to be copyable — the
+ * reference clip is part of the show, not part of this computer.
+ */
+function portablePath(dir: string, value: string): string {
+  if (!value) return value;
+  const resolved = resolve(value);
+  if (!within(dir, resolved)) return value;
+  // Forward slashes: this file is read on machines that are not this one.
+  return relative(dir, resolved).split(sep).join('/');
+}
+
+/**
+ * Rewrites one field of one character's voice.
+ *
+ * Separate from `editAssetField` because a voice is not an asset: it produces
+ * no file of its own, and it is shared by every line the character speaks.
+ * Editing it makes all of those stale at once, which is the whole reason it
+ * lives in one place rather than on ninety rows.
+ */
+export async function editVoiceField(
+  name: string,
+  edit: { voice: string; field: 'reference' | 'preset' | 'direction' | 'notes'; value: string },
+): Promise<void> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  if (!/^[A-Za-z0-9_-]+$/.test(edit.voice)) throw new ProjectError('Bad character id');
+  if (edit.field === 'reference') edit = { ...edit, value: portablePath(dir, edit.value) };
+
+  const source = await readFile(file, 'utf8').catch(() => {
+    throw new ProjectError('Set this project up for asset work first');
+  });
+  const doc = parseDocument(source);
+
+  const path = ['voices', edit.voice, edit.field];
+  if (edit.value === '') doc.deleteIn(path);
+  else doc.setIn(path, blockValue(edit.value));
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
+}
+
+/**
+ * Points a section at a generator.
+ *
+ * The one edit that changes how everything in a section is made, so it goes
+ * through the same document API as everything else — an author's `style` and
+ * the comment explaining it survive being handed a model.
+ */
+export async function editSectionField(
+  name: string,
+  edit: { section: string; field: 'backend' | 'file' | 'style' | 'negative'; value: string },
+): Promise<void> {
+  const file = join(projectDir(name), 'project.yaml');
+  if (!/^[a-z]+$/.test(edit.section)) throw new ProjectError('Bad section');
+
+  const source = await readFile(file, 'utf8').catch(() => {
+    throw new ProjectError('Set this project up for asset work first');
+  });
+  const doc = parseDocument(source);
+
+  const path = ['sections', edit.section, edit.field];
+  if (edit.value === '') doc.deleteIn(path);
+  else doc.setIn(path, blockValue(edit.value));
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
+}
+
 export type FieldEdit = {
   file: string;
-  field: 'prompt' | 'negative' | 'text' | 'voice' | 'notes' | 'freeze';
-  value: string | boolean;
+  field: 'prompt' | 'negative' | 'size' | 'text' | 'voice' | 'notes' | 'freeze' | 'gap';
+  /**
+   * A number stays a number. `gap` is arithmetic the board does — written as
+   * a string it would load back as one and fail the schema, so the row would
+   * silently stop counting the moment anybody set it.
+   */
+  value: string | number | boolean;
 };
 
 /**
@@ -442,7 +688,7 @@ export type FieldEdit = {
  */
 export async function editAssetField(name: string, edit: FieldEdit): Promise<void> {
   const file = join(projectDir(name), 'project.yaml');
-  if (!SAFE_ASSET.test(edit.file)) throw new ProjectError('Bad asset name');
+  if (!safeAsset(edit.file)) throw new ProjectError('Bad asset name');
 
   const source = await readFile(file, 'utf8').catch(() => {
     throw new ProjectError('Set this project up for asset work first');
@@ -450,13 +696,16 @@ export async function editAssetField(name: string, edit: FieldEdit): Promise<voi
   const doc = parseDocument(source);
 
   const path = ['assets', edit.file, edit.field];
+  // An empty box means 'back to the default' rather than 'zero': a gap of 0
+  // is a real choice somebody might make, and it has to be distinguishable
+  // from never having chosen.
   if (edit.value === '' || edit.value === false) {
     doc.deleteIn(path);
   } else {
     // `setIn` creates the intermediate maps when a row does not exist yet,
     // which is what happens the first time an author writes a prompt for an
     // asset the scenario references but the project has never seen.
-    doc.setIn(path, edit.value);
+    doc.setIn(path, blockValue(edit.value));
   }
 
   const next = doc.toString();
@@ -469,7 +718,10 @@ export async function saveProjectSource(name: string, source: string): Promise<v
   await writeAtomic(join(projectDir(name), 'project.yaml'), source);
 }
 
-export async function saveScenarioSource(name: string, source: string): Promise<void> {
+export async function saveScenarioSource(
+  name: string,
+  source: string,
+): Promise<ReconcilePlan> {
   const parsed = parseScenarioSource(source);
   if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
 
@@ -477,6 +729,79 @@ export async function saveScenarioSource(name: string, source: string): Promise<
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));
   await writeAtomic(pathsOf(file, project).scenario, source);
+
+  // The whole point of the tighter join: the recipes follow the story on the
+  // same trip, so the board is never a save behind what the show says.
+  return reconcileProject(name);
+}
+
+/**
+ * Brings `project.yaml` back into agreement with the scenario.
+ *
+ * Run after every write to `scenario.yaml`, from whichever action made it —
+ * this is the join the pipeline was missing. Editing a line of dialogue used
+ * to leave the recipe holding the old words: the hash never moved, the board
+ * went on saying `ready`, and the clip in the show read a sentence that was no
+ * longer in the script. The only way to catch it was to listen to all ninety.
+ *
+ * Two of the three things it can do are safe and happen here. Derived fields
+ * are re-derived, which marks exactly the affected clips stale and turns the
+ * re-record list into something the board can show. Newly referenced assets
+ * get a row, so declaring a `voice:` or a `sprite:` puts it on the board
+ * without a second button.
+ *
+ * The third — taking a row away — is reported and never done. That stays a
+ * thing a person presses.
+ */
+export async function reconcileProject(name: string): Promise<ReconcilePlan> {
+  const nothing: ReconcilePlan = { added: {}, updates: [], orphans: [] };
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+
+  // A scenario folder with no project.yaml is not set up for asset work at
+  // all, and saving it must not be the thing that decides it should be.
+  const source = await readFile(file, 'utf8').catch(() => undefined);
+  if (source === undefined) return nothing;
+  const project = parseProjectSource(source);
+
+  const scenarioSource = await readFile(pathsOf(file, project).scenario, 'utf8').catch(
+    () => undefined,
+  );
+  if (scenarioSource === undefined) return nothing;
+  const parsed = parseScenarioSource(scenarioSource);
+  if (!parsed.ok) return nothing;
+
+  // The storyboard is optional here, unlike in seeding. Everything the
+  // scenario owns comes from the scenario; the document only ever contributed
+  // the author's half, so a project without one still stays in sync.
+  let shots: StoryboardShot[] = [];
+  let sheets: Record<string, string> = {};
+  if (project.storyboard) {
+    const document = await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined);
+    if (document !== undefined) {
+      const read = parseStoryboard(document);
+      shots = read.shots;
+      sheets = read.sheets;
+    }
+  }
+
+  const plan = planReconcile(parsed.scenario, project, shots, sheets);
+  if (Object.keys(plan.added).length === 0 && plan.updates.length === 0) return plan;
+
+  const doc = parseDocument(source);
+  for (const [assetFile, row] of Object.entries(plan.added)) {
+    for (const [field, value] of Object.entries(row)) {
+      doc.setIn(['assets', assetFile, field], blockValue(value));
+    }
+  }
+  for (const update of plan.updates) {
+    doc.setIn(['assets', update.file, ...update.path], blockValue(update.to));
+  }
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
+  return plan;
 }
 
 /**
@@ -510,7 +835,505 @@ export async function pruneOrphans(name: string): Promise<{ removed: string[] }>
   return { removed: [...overview.orphans] };
 }
 
+// ---------------------------------------------------------------------------
+// Hearing it
+// ---------------------------------------------------------------------------
+
+/**
+ * Extensions the editor will hand back, and what to call them.
+ *
+ * An allow-list rather than a lookup with a fallback. This route opens files by
+ * a name that came from a browser, and "anything else, as octet-stream" is how
+ * a folder picker becomes a way to read the author's whole disk one file at a
+ * time.
+ */
+const MEDIA_TYPES: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
+export type MediaRequest = {
+  section?: string;
+  file?: string;
+  /** A take id within the asset's takes folder. Omit for the published file. */
+  take?: string;
+  /** A character id, for their reference clip. Mutually exclusive with the above. */
+  reference?: string;
+};
+
+/**
+ * Where a file the editor is being asked to play actually lives.
+ *
+ * Everything about a scenario's assets so far has been text — a name in a
+ * manifest, a hash on a board, a status pill. None of that answers the only
+ * question that matters about a voice clip, which is what it sounds like. An
+ * author who cannot hear a take cannot choose between two of them, and a
+ * pipeline whose selection step is guesswork is a pipeline that ships the first
+ * reading of every line.
+ *
+ * Resolved from structured parts rather than from a path, and checked to be
+ * under the project after resolving. The editor already browses the whole disk
+ * on purpose, but that is a picker a person drives; this is a URL, and a URL
+ * that dereferences `../..` is a different thing entirely.
+ */
+export async function resolveMedia(
+  name: string,
+  request: MediaRequest,
+): Promise<{ path: string; type: string }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  let target: string;
+  let root: string;
+
+  if (request.reference !== undefined) {
+    if (!safeAsset(request.reference)) throw new ProjectError('Bad character id');
+    const clip = project.voices[request.reference]?.reference;
+    if (!clip) throw new ProjectError(`"${request.reference}" has no reference clip`);
+    target = fromProject(paths.dir, clip);
+    // A reference may be a recording from anywhere on the machine — that is
+    // what "use your own" means — so the project is not the boundary here.
+    root = resolve(target);
+  } else {
+    const section = request.section ?? '';
+    if (!(ASSET_SECTIONS as readonly string[]).includes(section)) {
+      throw new ProjectError('Unknown section');
+    }
+    if (!request.file || !safeAsset(request.file)) throw new ProjectError('Bad asset name');
+
+    if (request.take) {
+      if (!safeTake(request.take)) throw new ProjectError('Bad take name');
+      root = takesDir(paths, section as AssetSection, request.file);
+      target = join(root, request.take);
+    } else {
+      root = paths.publish;
+      target = join(root, request.file);
+    }
+  }
+
+  const resolved = resolve(target);
+  if (!within(resolve(root), resolved)) throw new ProjectError('Outside the project');
+
+  const type = MEDIA_TYPES[extname(resolved).toLowerCase()];
+  if (!type) throw new ProjectError('Not a media file the editor will serve');
+
+  if (!(await stat(resolved).catch(() => null))?.isFile()) {
+    throw new ProjectError('That file is not there');
+  }
+  return { path: resolved, type };
+}
+
+export type FolderWork = Omit<FolderSort, 'source'> & {
+  /** Published files that followed their name into the new folder. */
+  republished: string[];
+};
+
+/**
+ * Files every asset under a folder named for its media type.
+ *
+ * The scenario is the manifest, so the folder has to go into the name the
+ * scenario declares — anything else would be a layout convention living in the
+ * display, the validator and this editor at once, and the first time the three
+ * disagreed the show would be missing a scene.
+ *
+ * Four things move together, and that is the whole reason this is a button:
+ * the scenario's references, the recipe rows keyed to them, the ledger's
+ * history, and any file already published under the old name. Doing three of
+ * the four by hand leaves a board that says ready over art the show cannot
+ * open.
+ *
+ * Takes need no move at all. Their folder is `generated/<section>/<name>`
+ * either way — `takesDir` drops the section from a name that already carries
+ * it — so a project's entire history of attempts survives being filed.
+ */
+export async function sortAssets(name: string): Promise<FolderWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to sort');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const result = sortIntoFolders(source, parsed.scenario);
+  const { source: sorted, ...report } = result;
+  if (report.moved.length === 0) return { ...report, republished: [] };
+
+  const check = parseScenarioSource(sorted);
+  if (!check.ok) {
+    throw new ProjectError('Filing the assets would have broken the scenario', check.problems);
+  }
+
+  // The published files first. If this is going to fail — a locked file, a
+  // full disk — it should fail before the scenario has been rewritten to point
+  // at names nothing has moved to yet.
+  const republished: string[] = [];
+  for (const move of report.moved) {
+    const from = join(paths.publish, move.from);
+    if (!(await stat(from).catch(() => null))?.isFile()) continue;
+    const to = join(paths.publish, move.to);
+    await mkdir(dirname(to), { recursive: true });
+    await rename(from, to);
+    republished.push(move.to);
+  }
+
+  await writeAtomic(paths.scenario, sorted);
+
+  // The recipes, by key edit rather than by rewriting the file: a row is an
+  // afternoon of prompt tuning and a comment recording why.
+  const projectSource = await readFile(file, 'utf8').catch(() => undefined);
+  if (projectSource !== undefined) {
+    await writeAtomic(file, renameRows(projectSource, report.moved));
+  }
+
+  const { ledger } = await loadLedger(paths.ledger);
+  let touched = false;
+  for (const move of report.moved) {
+    const entry = ledger.assets[move.from];
+    if (!entry) continue;
+    ledger.assets[move.to] = entry;
+    delete ledger.assets[move.from];
+    touched = true;
+  }
+  if (touched) await saveLedger(paths.ledger, ledger);
+
+  return { ...report, republished };
+}
+
+export type ShotWork = Omit<ShotMigration, 'source'> & {
+  /** Recipes brought back into line with the scenario the migration rewrote. */
+  reconciled?: ReconcilePlan;
+  /** The seeding run that follows, which is the point of the migration. */
+  seeded?: StoryboardSync;
+};
+
+/**
+ * Gives every storyboarded shot its own still and clip.
+ *
+ * The pipeline's second step, and the one that makes the rest of the board
+ * reachable: until a node can carry its own picture, every shot after the
+ * first in a given place has a prompt with no filename to hang off, and the
+ * board reports it unplaceable. See `shots.ts` for what it will and will not
+ * fold.
+ *
+ * It re-seeds afterwards on purpose. Declaring the filenames and leaving the
+ * prompts unattached would be half the job, and the half that is left is the
+ * half nobody remembers — the author would be looking at a board that still
+ * says the work cannot be placed.
+ *
+ * The new source is validated before it is written. A migration that would not
+ * load is a bug in this editor, and the author's scenario is not where anyone
+ * should find out about it.
+ */
+export async function migrateShots(name: string): Promise<ShotWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to migrate');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const storyboard = project.storyboard
+    ? await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined)
+    : undefined;
+  if (!storyboard) {
+    throw new ProjectError('This project has no storyboard to take its shots from');
+  }
+
+  const result = migrateShotsInto(source, parsed.scenario, parseStoryboard(storyboard).shots);
+  const { source: migrated, ...report } = result;
+  if (report.moved.length === 0 && report.folded.length === 0) return report;
+
+  const check = parseScenarioSource(migrated);
+  if (!check.ok) {
+    throw new ProjectError('Migrating shots would have broken the scenario', check.problems);
+  }
+
+  await writeAtomic(paths.scenario, migrated);
+  const seeded = await syncFromStoryboard(name);
+  return { ...report, seeded, reconciled: await reconcileProject(name) };
+}
+
+export type GenerateFailure = {
+  file: string;
+  error: string;
+  /** The generator's own output, when there was any. Usually a Python traceback. */
+  detail?: string;
+};
+
+/**
+ * Generates one asset, or every asset in a section that still needs one.
+ *
+ * Sequential by design. There is one GPU, and a batch that ran them in
+ * parallel would take the same total time while making it impossible to say
+ * which line was being worked on — and the first failure would arrive with
+ * five others on top of it.
+ *
+ * A failure on one line does not stop the rest. Ninety lines will contain one
+ * with an em dash the model chokes on, and losing the other eighty-nine to it
+ * would mean starting again.
+ */
+export async function generate(
+  name: string,
+  request: { section: AssetSection; files: string[] },
+): Promise<{ made: GeneratedTake[]; failed: GenerateFailure[] }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file);
+  const paths = pathsOf(file, project);
+
+  const parsed = parseScenarioSource(await readFile(paths.scenario, 'utf8'));
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const { ledger } = await loadLedger(paths.ledger);
+  const made: GeneratedTake[] = [];
+  const failed: GenerateFailure[] = [];
+
+  for (const asset of request.files) {
+    if (!safeAsset(asset)) {
+      failed.push({ file: asset, error: 'bad asset name' });
+      continue;
+    }
+    try {
+      made.push(
+        await generateAsset({
+          scenario: parsed.scenario,
+          project,
+          paths,
+          ledger,
+          section: request.section,
+          file: asset,
+          modelsRoot: modelsRoot(),
+        }),
+      );
+    } catch (err) {
+      failed.push({
+        file: asset,
+        error: (err as Error).message,
+        ...(err instanceof GenerateError && err.detail ? { detail: err.detail } : {}),
+      });
+    }
+  }
+
+  // Saved once, after the batch. The ledger is the machine's file and a
+  // hundred rewrites of it during one run is a hundred chances to be
+  // interrupted halfway.
+  if (made.length > 0) await saveLedger(paths.ledger, ledger);
+  return { made, failed };
+}
+
+/** Copies the selected take of each asset to the name the scenario declares. */
+export async function publish(
+  name: string,
+  request: { section: AssetSection; files: string[] },
+): Promise<{ published: Published[]; failed: GenerateFailure[] }> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file);
+  const paths = pathsOf(file, project);
+  const { ledger } = await loadLedger(paths.ledger);
+
+  const published: Published[] = [];
+  const failed: GenerateFailure[] = [];
+
+  for (const asset of request.files) {
+    if (!safeAsset(asset)) {
+      failed.push({ file: asset, error: 'bad asset name' });
+      continue;
+    }
+    try {
+      published.push(await publishAsset({ paths, ledger, section: request.section, file: asset }));
+    } catch (err) {
+      failed.push({ file: asset, error: (err as Error).message });
+    }
+  }
+
+  if (published.length > 0) await saveLedger(paths.ledger, ledger);
+
+  return { published, failed };
+}
+
+/**
+ * Records a reference clip for a character, in one of a palette model's voices.
+ *
+ * The answer to a cloning model's first question, which most authors cannot
+ * answer: they have a scenario, not a sound booth. Writes the clip into the
+ * project and points the character's voice at it, both in one action — a file
+ * on disk that nothing references is not a voice, it is litter.
+ */
+export async function recordReference(
+  name: string,
+  request: { voice: string; preset: string; model?: string },
+): Promise<ReferenceClip> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file);
+  const paths = pathsOf(file, project);
+
+  const parsed = parseScenarioSource(await readFile(paths.scenario, 'utf8'));
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const clip = await makeReferenceClip({
+    scenario: parsed.scenario,
+    paths,
+    who: request.voice,
+    preset: request.preset,
+    model: request.model ?? 'kokoro',
+    modelsRoot: modelsRoot(),
+  });
+
+  await editVoiceField(name, { voice: request.voice, field: 'reference', value: clip.file });
+  // Kept beside it so the clip can be made again. A wav in a folder with no
+  // note of where it came from is a dead end the first time anyone wants to
+  // adjust it.
+  await editVoiceField(name, { voice: request.voice, field: 'preset', value: clip.preset });
+
+  return clip;
+}
+
+export type SpriteWork = Omit<SpriteWiring, 'source'> & {
+  /** Recipes brought back into line with the scenario the wiring rewrote. */
+  reconciled?: ReconcilePlan;
+  /** The seeding run that follows, which is what puts the sheet on the board. */
+  seeded?: StoryboardSync;
+};
+
+/**
+ * Gives every character the storyboard drew a sheet for a portrait to show.
+ *
+ * The display has drawn portraits from the start and no scenario has ever
+ * declared one, so the feature has been present and invisible. This is the step
+ * that connects them — and like wiring voice it writes to `scenario.yaml`,
+ * because the scenario is the manifest and a picture nothing declares is a
+ * picture nothing can track.
+ *
+ * It re-seeds afterwards for the same reason the shot migration does: declaring
+ * three filenames and leaving three written prompts unattached is half the job,
+ * and the half nobody remembers.
+ */
+export async function wireSprites(name: string): Promise<SpriteWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to wire');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const storyboard = project.storyboard
+    ? await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined)
+    : undefined;
+  if (!storyboard) {
+    throw new ProjectError('This project has no storyboard to take its character sheets from');
+  }
+
+  const sheets = parseStoryboard(storyboard).sheets;
+  if (Object.keys(sheets).length === 0) {
+    throw new ProjectError(
+      'The storyboard describes no character sheets. A sheet is a bullet like ' +
+        '**Beaudoin sheet:** followed by the prompt in backticks.',
+    );
+  }
+
+  const result = wireSpritesInto(source, parsed.scenario, sheets);
+  const { source: wired, ...report } = result;
+  if (report.wired.length === 0) return report;
+
+  const check = parseScenarioSource(wired);
+  if (!check.ok) {
+    throw new ProjectError('Declaring portraits would have broken the scenario', check.problems);
+  }
+
+  // A re-pointed portrait is a rename, and everything else in the project is
+  // keyed by the filename: the recipe row holding the prompt, the ledger entry
+  // holding the takes, the published file the show opens. Rewriting only the
+  // scenario would leave the row behind as an orphan and the prompt with it.
+  await carryRename(file, paths, report.moved);
+
+  await writeAtomic(paths.scenario, wired);
+  const seeded = await syncFromStoryboard(name);
+  return { ...report, seeded, reconciled: await reconcileProject(name) };
+}
+
+/**
+ * Follows a filename change through the rest of the project.
+ *
+ * Published file, recipe row, takes folder, ledger entry — in that order, so a
+ * failure that is going to happen happens before the scenario has been rewritten
+ * to point at a name nothing has moved to yet.
+ */
+async function carryRename(
+  projectFile: string,
+  paths: ProjectPaths,
+  moves: { from: string; to: string }[],
+): Promise<void> {
+  if (moves.length === 0) return;
+
+  for (const move of moves) {
+    const from = join(paths.publish, move.from);
+    if ((await stat(from).catch(() => null))?.isFile()) {
+      await mkdir(dirname(join(paths.publish, move.to)), { recursive: true });
+      await rename(from, join(paths.publish, move.to));
+    }
+  }
+
+  const projectSource = await readFile(projectFile, 'utf8').catch(() => undefined);
+  if (projectSource !== undefined) {
+    await writeAtomic(projectFile, renameRows(projectSource, moves));
+  }
+
+  // Unlike filing by media type, this one really does move takes: the folder is
+  // named for the file, and the file's extension is what changed. The takes
+  // inside keep their own names — a flat portrait is exactly the work this is
+  // asking to be redone, and the recipe hash already says so.
+  for (const move of moves) {
+    const fromDir = takesDir(paths, 'images', move.from);
+    const toDir = takesDir(paths, 'images', move.to);
+    if (fromDir === toDir) continue;
+    if (!(await stat(fromDir).catch(() => null))?.isDirectory()) continue;
+    if ((await stat(toDir).catch(() => null)) !== null) continue;
+    await mkdir(dirname(toDir), { recursive: true });
+    await rename(fromDir, toDir);
+  }
+
+  const { ledger } = await loadLedger(paths.ledger);
+  let touched = false;
+  for (const move of moves) {
+    const entry = ledger.assets[move.from];
+    if (!entry) continue;
+    ledger.assets[move.to] = entry;
+    delete ledger.assets[move.from];
+    touched = true;
+  }
+  if (touched) await saveLedger(paths.ledger, ledger);
+}
+
 export type VoiceWiring = {
+  /** Rows added for the clips this just declared. */
+  reconciled?: ReconcilePlan;
   wired: WiredLine[];
   untouched: number;
 };
@@ -553,7 +1376,13 @@ export async function wireVoice(name: string): Promise<VoiceWiring> {
   }
 
   await writeAtomic(paths.scenario, result.source);
-  return { wired: result.wired, untouched: result.untouched };
+  // Declaring the clip is only half of it: without this the line has a
+  // `voice:` the player will open and no row anywhere saying how to make it.
+  return {
+    wired: result.wired,
+    untouched: result.untouched,
+    reconciled: await reconcileProject(name),
+  };
 }
 
 /**
@@ -561,6 +1390,93 @@ export async function wireVoice(name: string): Promise<VoiceWiring> {
  * project starts and the place its intent is written down, so it is edited
  * here rather than in another window.
  */
+export type RetimeWork = {
+  changed: Retimed[];
+  /** Clips asked for whose line could not be found, so nothing was written. */
+  skipped: string[];
+  /** The rewritten scenario, for the editor pane to take back. */
+  source: string;
+  /**
+   * Lines whose comment now describes a beat that has changed.
+   *
+   * Reported, never rewritten. A machine that edits prose to keep it true will
+   * eventually edit prose that was already true, and a comment saying why a
+   * beat is four seconds is exactly the sentence a person should reread.
+   */
+  comments: number[];
+};
+
+/**
+ * Sets each beat to the length of the clip that plays in it.
+ *
+ * The target comes from the board rather than from the caller: the client
+ * sends which clips to retime, never what to, so the number written is the one
+ * computed from the runtime the board measured and the gap the row declares.
+ * A client that could send the number itself is a client that can write a beat
+ * nothing on the board agrees with.
+ */
+export async function retime(name: string, files?: string[]): Promise<RetimeWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const { overview } = await openProject(name);
+  const asked = files ? new Set(files) : undefined;
+
+  const wanted = new Map<string, number>();
+  for (const view of overview.sections) {
+    if (view.section !== 'voice') continue;
+    for (const asset of view.assets) {
+      if (asset.targetHold === undefined) continue;
+      if (asked && !asked.has(asset.file)) continue;
+      wanted.set(asset.file, asset.targetHold);
+    }
+  }
+
+  const source = await readFile(paths.scenario, 'utf8');
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  const result = retimeInto(source, parsed.scenario, wanted);
+  if (result.changed.length === 0) {
+    return { changed: [], skipped: result.skipped, source, comments: [] };
+  }
+
+  // Validated before it reaches the author's file, the same rule every other
+  // action that rewrites a scenario follows. A beat is a number in a schema
+  // with bounds, and one that fails them must never be written.
+  const after = parseScenarioSource(result.source);
+  if (!after.ok) throw new ProjectError(after.message, after.problems);
+
+  await writeAtomic(paths.scenario, result.source);
+
+  return {
+    changed: result.changed,
+    skipped: result.skipped,
+    source: result.source,
+    comments: commentedBeats(source, result.changed),
+  };
+}
+
+/**
+ * Line numbers where a comment sits beside a beat that just changed.
+ *
+ * Scenarios in this codebase carry sentences like "seven seconds, because the
+ * pause after it is the point". Retiming makes some of those wrong, and the
+ * honest thing is to say which ones rather than to quietly reword them.
+ */
+function commentedBeats(source: string, changed: Retimed[]): number[] {
+  if (changed.length === 0) return [];
+  const lines = source.split(/\r?\n/);
+  const found: number[] = [];
+  lines.forEach((text, index) => {
+    if (!/^\s*hold:\s*[\d.]+\s*#/.test(text)) return;
+    found.push(index + 1);
+  });
+  return found;
+}
+
 export async function saveStoryboardSource(name: string, source: string): Promise<void> {
   const dir = projectDir(name);
   const file = join(dir, 'project.yaml');
@@ -576,13 +1492,165 @@ export async function saveStoryboardSource(name: string, source: string): Promis
  * moved. Changing your mind about a take is meant to be free, which is what
  * makes keeping every attempt worth doing in the first place.
  */
+/**
+ * Copies a finished file in from anywhere on the machine, as a take.
+ *
+ * The workflow for everything the editor cannot generate: art is made in
+ * another program and has to get into a folder named after a filename, nested
+ * two deep, that the author has to find first. **Copy folder** made that one
+ * paste instead of twenty-six; this makes it a file picker.
+ *
+ * The bytes arrive over the wire rather than the path. The browser's file
+ * dialog is the system one and hands the page a `File`, never a path — which
+ * is also the safer half of the trade: nothing here opens a location the user
+ * typed, so there is no path from this route to a file they did not choose.
+ *
+ * It lands in the takes folder and nothing else changes. `scanTakes` already
+ * picks up whatever is in there, marked `manual`, so an import is exactly the
+ * drop-it-in-by-hand path with the hunting removed. The one exception is a
+ * first take for an asset with nothing selected, which is selected for the same
+ * reason generating does it: an asset with one take and no selection is a row
+ * reporting work still to do that has already been done.
+ */
+export async function importTake(
+  name: string,
+  request: { section: AssetSection; file: string; filename: string },
+  body: Readable,
+): Promise<{ take: string; bytes: number; selected: boolean }> {
+  if (!(ASSET_SECTIONS as readonly string[]).includes(request.section)) {
+    throw new ProjectError('Unknown section');
+  }
+  if (!safeAsset(request.file)) throw new ProjectError('Bad asset name');
+
+  const take = takeNameFrom(request.filename);
+  const type = MEDIA_TYPES[extname(take).toLowerCase()];
+  if (!type) {
+    throw new ProjectError(
+      `The editor does not handle "${extname(take) || 'files with no extension'}". ` +
+        `It reads ${[...new Set(Object.keys(MEDIA_TYPES))].join(', ')}.`,
+    );
+  }
+
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const folder = takesDir(paths, request.section, request.file);
+  await mkdir(folder, { recursive: true });
+
+  // Never over an existing take. A second import of `final.png` is a second
+  // attempt, and silently replacing the first would throw away the one the
+  // author may have already selected.
+  const chosen = await freeName(folder, take);
+
+  // Through a temporary file, so a copy that fails halfway — a full disk, a
+  // network drive going away mid-transfer — does not leave a truncated file in
+  // the folder looking exactly like a take.
+  const temp = join(folder, `.importing-${Date.now()}`);
+  let bytes = 0;
+  try {
+    body.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+    });
+    await pipeline(body, createWriteStream(temp));
+    await rename(temp, join(folder, chosen));
+  } catch (err) {
+    await rm(temp, { force: true });
+    throw err;
+  }
+
+  const { ledger } = await loadLedger(paths.ledger);
+  const entry = (ledger.assets[request.file] ??= { takes: [] });
+  const selected = entry.selected === undefined;
+  if (selected) {
+    entry.selected = chosen;
+    await saveLedger(paths.ledger, ledger);
+  }
+
+  return { take: chosen, bytes, selected };
+}
+
+/**
+ * A filename from a file dialog, made into a take id.
+ *
+ * The author's own name is kept — `beaudoin-v3-final.png` is what they will
+ * look for — but it has to survive `join()` and the take guard, so anything
+ * that is not a plain name becomes a dash.
+ */
+function takeNameFrom(filename: string): string {
+  const base = basename(filename.replaceAll('\\', '/')).trim();
+  const cleaned = base.replaceAll(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '');
+  if (!cleaned || !safeTake(cleaned)) throw new ProjectError('That filename cannot be used');
+  return cleaned;
+}
+
+/** `shot.png`, then `shot-2.png`, and so on. */
+async function freeName(folder: string, wanted: string): Promise<string> {
+  const extension = extname(wanted);
+  const stem = wanted.slice(0, wanted.length - extension.length);
+  let candidate = wanted;
+  for (let n = 2; await stat(join(folder, candidate)).catch(() => null); n += 1) {
+    candidate = `${stem}-${n}${extension}`;
+  }
+  return candidate;
+}
+
+/**
+ * Throws away one take.
+ *
+ * Re-rolling is free, which is the point of it — and a folder holding nine
+ * readings of one line, six of them rejected on the first listen, is a folder
+ * where finding the good one is the work. So the board can delete.
+ *
+ * The published file is never touched. Publishing is the deliberate act that
+ * puts a reading in front of an audience, and a delete that quietly un-shipped
+ * a line would be a very quiet way to lose one. If the deleted take was the
+ * selected one the selection is cleared rather than moved — picking a
+ * replacement is the author's, and guessing would ship a reading nobody chose.
+ */
+export async function deleteTake(
+  name: string,
+  section: AssetSection,
+  asset: string,
+  take: string,
+): Promise<void> {
+  if (!(ASSET_SECTIONS as readonly string[]).includes(section)) {
+    throw new ProjectError('Unknown section');
+  }
+  if (!safeAsset(asset)) throw new ProjectError('Bad asset name');
+  // The same guard the media route uses. This string reaches `join()` on the
+  // way to an `rm`, and the editor deletes without asking anyone twice.
+  if (!safeTake(take)) throw new ProjectError('Bad take name');
+
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const folder = takesDir(paths, section, asset);
+  const target = resolve(join(folder, take));
+  if (!within(resolve(folder), target)) throw new ProjectError('Outside the takes folder');
+
+  // `force` because a ledger entry for a file already gone is exactly the case
+  // an author is trying to clear, and refusing would leave it unclearable.
+  await rm(target, { force: true });
+
+  const { ledger } = await loadLedger(paths.ledger);
+  const entry = ledger.assets[asset];
+  if (!entry) return;
+  entry.takes = entry.takes.filter((recorded) => recorded.id !== take);
+  if (entry.selected === take) delete entry.selected;
+  await saveLedger(paths.ledger, ledger);
+}
+
 export async function selectTake(
   name: string,
   asset: string,
   take: string | null,
 ): Promise<void> {
   const dir = projectDir(name);
-  if (!SAFE_ASSET.test(asset)) throw new ProjectError('Bad asset name');
+  if (!safeAsset(asset)) throw new ProjectError('Bad asset name');
 
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));

@@ -71,6 +71,19 @@ function closePollWith(state: RunState, counts: Record<string, number>): RunStat
   return reduce(scenario, state, { type: 'pollClosed', result });
 }
 
+/**
+ * Closes a poll and sits through the result reveal.
+ *
+ * The reveal is a real beat with a duration — the projector shows a bar chart
+ * and the server clocks it — so getting to the next line takes one more
+ * advance than it used to. Named rather than an anonymous extra `advance`,
+ * because a bare one here reads like an off-by-one.
+ */
+function pastReveal(state: RunState, counts: Record<string, number>): RunState {
+  const closed = closePollWith(state, counts);
+  assert.equal(closed.phase, 'revealing', 'a closed poll shows its result first');
+  return reduce(scenario, closed, { type: 'advance' });
+}
 describe('engine lifecycle', () => {
   test('starts idle and does nothing until started', () => {
     const state = initialState(scenario);
@@ -126,7 +139,7 @@ describe('polls and branching', () => {
     let state = startedState();
     state = reduce(scenario, state, { type: 'advance' });
     state = reduce(scenario, state, { type: 'advance' });
-    state = closePollWith(state, { left: 5, right: 1 });
+    state = pastReveal(state, { left: 5, right: 1 });
     state = reduce(scenario, state, { type: 'advance' }); // leave went_left
 
     // "decide" is a branch; the engine must land past it, on "hold".
@@ -139,7 +152,7 @@ describe('polls and branching', () => {
     let state = startedState();
     state = reduce(scenario, state, { type: 'advance' });
     state = reduce(scenario, state, { type: 'advance' });
-    state = closePollWith(state, { left: 1, right: 5 });
+    state = pastReveal(state, { left: 1, right: 5 });
     assert.equal(state.nodeId, 'went_right');
     assert.equal(state.vars.path, 'right');
 
@@ -152,7 +165,7 @@ describe('polls and branching', () => {
     let state = startedState();
     state = reduce(scenario, state, { type: 'advance' });
     state = reduce(scenario, state, { type: 'advance' });
-    state = closePollWith(state, {});
+    state = pastReveal(state, {});
 
     assert.equal(state.nodeId, 'went_right'); // default: right
     assert.equal(state.lastPoll?.result.usedDefault, true);
@@ -274,7 +287,7 @@ describe('rendering helpers', () => {
     let state = startedState();
     state = reduce(scenario, state, { type: 'advance' });
     state = reduce(scenario, state, { type: 'advance' });
-    state = closePollWith(state, { left: 1 });
+    state = pastReveal(state, { left: 1 });
     state = reduce(scenario, state, { type: 'advance' });
 
     const beat = beatOf(scenario, state);

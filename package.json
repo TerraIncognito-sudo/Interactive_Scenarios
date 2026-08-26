@@ -17,7 +17,10 @@
     "build": "vite build",
     "test": "node --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "validate": "node src/scenario/validate.ts"
+    "validate": "node src/scenario/validate.ts",
+    "voice:check": "node tools/voice/check.ts",
+    "voice:install": "node tools/voice/install.ts",
+    "voice:fetch": "node tools/voice/fetch.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.3",

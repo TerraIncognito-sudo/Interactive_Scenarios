@@ -11,7 +11,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ScenarioSchema } from '../src/scenario/schema.ts';
 import { checkScenario } from '../src/scenario/check.ts';
-import { assetsOf } from '../src/scenario/load.ts';
+import { assetsOf, assetReferencesOf } from '../src/scenario/load.ts';
+import { initialState, reduce, sceneMediaOf } from '../src/engine/engine.ts';
 
 function build(scenes: Record<string, unknown>, lines: unknown[]) {
   return ScenarioSchema.parse({
@@ -139,5 +140,105 @@ describe('checkScenario on media', () => {
     // those would bury the one warning that matters.
     const result = checkScenario(build(stillScene, [{ text: 'Hi.' }]));
     assert.deepEqual(result.warnings, []);
+  });
+});
+
+describe('a node can carry its own shot', () => {
+  /**
+   * A scene is a place; a shot is a camera setup, and a place gets several.
+   * Before this, a second still in one room needed a second scene — which made
+   * "scene" stop meaning "place" and would re-trigger its music every beat.
+   */
+  function shots() {
+    return ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'wide',
+      scenes: { room: { background: 'room.jpg', music: 'bed.mp3', ambience: 'hum.mp3' } },
+      nodes: [
+        { id: 'wide', type: 'dialogue', scene: 'room', lines: [{ text: 'One.' }], next: 'close' },
+        {
+          id: 'close',
+          type: 'dialogue',
+          background: 'close.jpg',
+          video: 'close.mp4',
+          lines: [{ text: 'Two.' }],
+          next: 'after',
+        },
+        { id: 'after', type: 'dialogue', lines: [{ text: 'Three.' }], next: 'z' },
+        { id: 'z', type: 'end' },
+      ],
+    });
+  }
+
+  function at(scenario: ReturnType<typeof shots>, nodeId: string) {
+    // Started properly rather than hand-built: history is what carries the
+    // scene forward, and only entering a node writes to it.
+    let state = reduce(scenario, initialState(scenario), { type: 'start' });
+    while (state.nodeId !== nodeId) state = reduce(scenario, state, { type: 'advance' });
+    return sceneMediaOf(scenario, state);
+  }
+
+  test('the node overrides the scene while it plays', () => {
+    const scenario = shots();
+    assert.equal(at(scenario, 'wide')?.background, 'room.jpg');
+    assert.equal(at(scenario, 'close')?.background, 'close.jpg');
+    assert.equal(at(scenario, 'close')?.video, 'close.mp4');
+  });
+
+  test('the override does not leak into the next node', () => {
+    // An override belongs to the node that declared it. Inheriting it forward
+    // would make the picture depend on which way the audience voted.
+    assert.equal(at(shots(), 'after')?.background, 'room.jpg');
+  });
+
+  test('the place keeps its music and ambience through the override', () => {
+    const media = at(shots(), 'close');
+    assert.equal(media?.id, 'room');
+    assert.equal(media?.music, 'bed.mp3');
+    assert.equal(media?.ambience, 'hum.mp3');
+  });
+
+  test('a node still is an image and a node clip is video', () => {
+    const refs = assetReferencesOf(shots());
+    const find = (file: string) => refs.find((r) => r.file === file);
+    assert.equal(find('close.jpg')?.section, 'images');
+    assert.equal(find('close.mp4')?.section, 'video');
+    // Origin points at the node, which is what lets the storyboard attach that
+    // shot's prompt to it rather than the establishing shot's.
+    assert.deepEqual(find('close.jpg')?.origin, { kind: 'background', node: 'close' });
+    assert.ok(assetsOf(shots()).includes('close.jpg'), 'prefetched with everything else');
+  });
+
+  test('a node clip that is not a video file is an error', () => {
+    const bad = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      scenes: { room: { background: 'room.jpg' } },
+      nodes: [
+        { id: 'a', type: 'dialogue', scene: 'room', video: 'clip.png', lines: [{ text: 'Hi.' }], next: 'z' },
+        { id: 'z', type: 'end' },
+      ],
+    });
+    assert.ok(checkScenario(bad).errors.some((e) => e.nodeId === 'a' && /not a video file/.test(e.message)));
+  });
+
+  test('a still from one shot under a clip from another is worth saying out loud', () => {
+    const mixed = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      scenes: { room: { background: 'room.jpg', video: 'room.mp4' } },
+      nodes: [
+        { id: 'a', type: 'dialogue', scene: 'room', background: 'close.jpg', lines: [{ text: 'Hi.' }], next: 'z' },
+        { id: 'z', type: 'end' },
+      ],
+    });
+    const warnings = checkScenario(mixed).warnings;
+    assert.ok(
+      warnings.some((w) => w.nodeId === 'a' && /two different shots/.test(w.message)),
+      JSON.stringify(warnings),
+    );
   });
 });

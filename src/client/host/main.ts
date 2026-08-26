@@ -40,6 +40,14 @@ function describeBeat(snapshot: Snapshot): { text: string; meta: string } {
       return { text: beat.text ?? 'A held beat.', meta: beat.nodeId };
     case 'poll':
       return { text: beat.question, meta: `${beat.nodeId} · voting open` };
+    case 'result':
+      // The host sees the beat the room is looking at, so the reveal has to
+      // appear here too — otherwise the console reads as though the show has
+      // already moved on while the projector still shows the bar chart.
+      return {
+        text: `“${beat.winnerLabel}” wins.`,
+        meta: `${beat.pollId} · ${beat.total} vote${beat.total === 1 ? '' : 's'}${beat.usedDefault ? ', none cast' : ''} · showing the result`,
+      };
     case 'end':
       return { text: beat.text ?? 'The end.', meta: `${beat.nodeId} · finished` };
   }

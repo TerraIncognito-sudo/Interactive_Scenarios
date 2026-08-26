@@ -1,61 +1,71 @@
 /**
  * The scenario editor's local server.
  *
- * Deliberately not part of the game server. Authoring happens at a desk, days
- * before a show; the game server runs in front of an audience. Keeping them
- * separate means this tool can write files, reload freely and change shape
- * without any of that being reachable from the public internet.
+ * Deliberately not part of the game server, and deliberately unable to reach
+ * it. Authoring happens at a desk over weeks; the game server runs in front of
+ * an audience. This process writes only inside the author's chosen workspace —
+ * it cannot read or write `scenarios/`, and there is no route that would let
+ * it. Deploying is a person copying a finished folder across, on purpose,
+ * when they mean to.
  *
- * It binds to loopback only, and it is the one process in this project that
- * writes to `scenarios/`. Both of those are deliberate.
+ * That is a hard boundary rather than a convention: an editor that can write
+ * into the folder a live show is being served from will eventually do it by
+ * accident, and the failure lands in front of a room.
+ *
+ * It binds to loopback only. It writes files and has no authentication.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile, writeFile, rename, readdir, stat } from 'node:fs/promises';
-import { join, resolve, extname } from 'node:path';
-import { parseScenarioSource } from '../../src/scenario/load.ts';
+import { createReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
+import { join, extname } from 'node:path';
+import { parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
 import { ProjectError } from './project.ts';
+import { modelStatuses } from './models.ts';
+import { downloadModel } from './download.ts';
+import { sidecarStatuses, stopAllSidecars } from './sidecar.ts';
 import {
   editAssetField,
+  editSectionField,
+  editVoiceField,
+  generate,
+  publish,
   initProject,
   listProjects,
+  migrateShots,
+  deleteTake,
+  importTake,
+  recordReference,
+  sortAssets,
+  wireSprites,
   openProject,
+  resolveMedia,
   saveProjectSource,
   saveScenarioSource,
   saveStoryboardSource,
   selectTake,
   syncFromStoryboard,
   pruneOrphans,
+  retime,
   wireVoice,
 } from './projects.ts';
 import {
   browse,
   loadConfig,
   looksSynced,
+  modelsRoot,
   recentWorkspaces,
+  setModelsRoot,
   setWorkspace,
   workspace,
 } from './workspace.ts';
 
-const ROOT = resolve(import.meta.dirname, '..', '..');
 const PUBLIC_DIR = join(import.meta.dirname, 'public');
-const SCENARIOS_DIR = resolve(process.env.SCENARIOS_DIR ?? join(ROOT, 'scenarios'));
 
 // Rare on purpose, and not the game server's 8880 — both can run at once.
 const PORT = Number(process.env.EDITOR_PORT ?? 8890);
-
-/**
- * Folder names come from the client and are used to build a path, so they are
- * checked against a whitelist rather than sanitised. Nothing outside
- * `scenarios/<name>/scenario.yaml` is reachable.
- */
-const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
-
-function scenarioFile(folder: string): string | undefined {
-  if (!SAFE_NAME.test(folder)) return undefined;
-  return join(SCENARIOS_DIR, folder, 'scenario.yaml');
-}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -98,40 +108,48 @@ function inspect(source: string) {
   };
 }
 
-async function listScenarios() {
-  let entries: string[];
-  try {
-    entries = await readdir(SCENARIOS_DIR);
-  } catch {
-    return [];
-  }
+/**
+ * Sends a file, honouring a byte range.
+ *
+ * Range matters here even though the clips are seconds long: an `<audio>`
+ * element with a seek bar asks for one, and a browser handed 200 for a range
+ * request will play the clip but refuse to scrub it — which is exactly the
+ * control an author reaches for when they want to hear the end of a line again.
+ */
+async function sendFile(
+  request: IncomingMessage,
+  response: ServerResponse,
+  file: string,
+  type: string,
+): Promise<void> {
+  const size = (await stat(file)).size;
+  const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range ?? '');
 
-  const folders = [];
-  for (const entry of entries.sort()) {
-    if (!SAFE_NAME.test(entry)) continue;
-    const info = await stat(join(SCENARIOS_DIR, entry)).catch(() => null);
-    if (!info?.isDirectory()) continue;
-
-    let source: string;
-    try {
-      source = await readFile(join(SCENARIOS_DIR, entry, 'scenario.yaml'), 'utf8');
-    } catch {
-      continue;
+  let start = 0;
+  let end = size - 1;
+  if (range) {
+    const [, from, to] = range;
+    if (from) start = Number(from);
+    else if (to) start = Math.max(0, size - Number(to));
+    if (from && to) end = Math.min(end, Number(to));
+    if (start >= size) {
+      response.writeHead(416, { 'content-range': `bytes */${size}` });
+      return void response.end();
     }
-
-    const result = inspect(source);
-    folders.push({
-      folder: entry,
-      title: result.ok ? result.analysis.title : entry,
-      ok: result.ok,
-      // A broken scenario is listed, not hidden — being unable to open the one
-      // file you need to fix would be a poor editor.
-      message: result.ok ? undefined : result.message,
-      nodes: result.ok ? result.analysis.counts.nodes : 0,
-      polls: result.ok ? result.analysis.counts.polls : 0,
-    });
   }
-  return folders;
+
+  response.writeHead(range ? 206 : 200, {
+    'content-type': type,
+    'content-length': end - start + 1,
+    'accept-ranges': 'bytes',
+    ...(range ? { 'content-range': `bytes ${start}-${end}/${size}` } : {}),
+    // The whole point of a take is that another one is coming. A cached clip
+    // would have the author listening to the reading they just replaced.
+    'cache-control': 'no-store',
+  });
+
+  if (request.method === 'HEAD') return void response.end();
+  await pipeline(createReadStream(file, { start, end }), response);
 }
 
 async function serveStatic(pathname: string, response: ServerResponse): Promise<void> {
@@ -161,10 +179,6 @@ const server = createServer((request, response) => {
 async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? '/', `http://localhost:${PORT}`);
   const path = url.pathname;
-
-  if (path === '/api/scenarios' && request.method === 'GET') {
-    return sendJson(response, 200, { scenarios: await listScenarios(), dir: SCENARIOS_DIR });
-  }
 
   // --- projects -----------------------------------------------------------
   //
@@ -206,17 +220,83 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   // open the files, so the listing comes from here instead.
   if (path === '/api/browse' && request.method === 'GET') {
     try {
-      return sendJson(response, 200, await browse(url.searchParams.get('path') ?? undefined));
+      const files = url.searchParams.get('files');
+      return sendJson(
+        response,
+        200,
+        await browse(
+          url.searchParams.get('path') ?? undefined,
+          files ? files.split(',').filter(Boolean) : undefined,
+        ),
+      );
     } catch (err) {
       return sendJson(response, 400, { error: (err as Error).message });
     }
+  }
+
+  // Where model weights live, and which of them are actually on this disk.
+  // Machine-level rather than per-project: `project.yaml` travels between
+  // machines and a path to a folder of weights means nothing when it gets
+  // there, while the model id it names still does.
+  if (path === '/api/models' && request.method === 'GET') {
+    return sendJson(response, 200, {
+      root: modelsRoot(),
+      models: await modelStatuses(modelsRoot()),
+      sidecars: sidecarStatuses(),
+    });
+  }
+
+  if (path === '/api/models' && request.method === 'POST') {
+    const body = (await readBody(request)) as { path?: unknown };
+    if (typeof body.path !== 'string') {
+      return sendJson(response, 400, { error: 'Expected { path }' });
+    }
+    try {
+      const root = await setModelsRoot(body.path);
+      return sendJson(response, 200, { root, models: await modelStatuses(root) });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  // Fetching the files for a model whose library will not fetch its own.
+  // Slow — hundreds of megabytes — and answered when it is done rather than
+  // streamed: the editor shows one spinner, and a progress bar for a download
+  // that takes half a minute is not worth a second protocol.
+  const downloadMatch = /^\/api\/models\/([a-z0-9-]+)\/download$/.exec(path);
+  if (downloadMatch && request.method === 'POST') {
+    try {
+      const id = downloadMatch[1]!;
+      let last = 0;
+      const result = await downloadModel(id, modelsRoot(), ({ file, received, total }) => {
+        // To the editor's terminal, so a long download is visibly alive.
+        const percent = total ? Math.floor((received / total) * 100) : 0;
+        if (percent >= last + 10) {
+          last = percent;
+          console.log(`  [${id}] ${file} ${percent}%`);
+        }
+      });
+      return sendJson(response, 200, { ...result, models: await modelStatuses(modelsRoot()) });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  // Stopping is worth a button. A loaded model holds the GPU, and the only
+  // other way to get it back is to close the editor.
+  if (path === '/api/models/stop' && request.method === 'POST') {
+    stopAllSidecars();
+    return sendJson(response, 200, { sidecars: sidecarStatuses() });
   }
 
   if (path === '/api/projects' && request.method === 'GET') {
     return sendJson(response, 200, { projects: await listProjects(), dir: workspace() });
   }
 
-  const projectMatch = /^\/api\/projects\/([^/]+)(?:\/([a-z]+))?$/.exec(path);
+  // `[a-z-]` rather than `[a-z]`: a two-word action is a route that 404s while
+  // looking perfectly correct at both ends, and the client's error for it —
+  // "Not found" — points at the asset rather than at the URL.
+  const projectMatch = /^\/api\/projects\/([^/]+)(?:\/([a-z][a-z-]*))?$/.exec(path);
   if (projectMatch) {
     const name = decodeURIComponent(projectMatch[1]!);
     const action = projectMatch[2];
@@ -240,8 +320,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         if (typeof body.source !== 'string') {
           return sendJson(response, 400, { error: 'Expected { source }' });
         }
-        await saveScenarioSource(name, body.source);
-        return sendJson(response, 200, await openProject(name));
+        // Saving the story re-derives the recipes on the same trip, and the
+        // client says what moved: a line edited here silently re-records a
+        // clip, and nobody should have to find that out from the board.
+        const reconciled = await saveScenarioSource(name, body.source);
+        return sendJson(response, 200, { ...(await openProject(name)), reconciled });
       }
 
       if (action === 'asset' && request.method === 'PATCH') {
@@ -256,7 +339,10 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         await editAssetField(name, {
           file: body.file,
           field: body.field as 'prompt',
-          value: typeof body.value === 'boolean' ? body.value : String(body.value ?? ''),
+          value:
+            typeof body.value === 'boolean' || typeof body.value === 'number'
+              ? body.value
+              : String(body.value ?? ''),
         });
         return sendJson(response, 200, await openProject(name));
       }
@@ -270,6 +356,24 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         return sendJson(response, 200, await openProject(name));
       }
 
+      // Playing a take, a published file, or a character's reference clip.
+      // Everything else the board shows is text about a sound; this is the
+      // sound, and without it choosing between two takes is guesswork.
+      if (action === 'media' && (request.method === 'GET' || request.method === 'HEAD')) {
+        const media = await resolveMedia(name, {
+          section: url.searchParams.get('section') ?? undefined,
+          file: url.searchParams.get('file') ?? undefined,
+          take: url.searchParams.get('take') ?? undefined,
+          reference: url.searchParams.get('reference') ?? undefined,
+        });
+        return sendFile(request, response, media.path, media.type);
+      }
+
+      if (action === 'folders' && request.method === 'POST') {
+        const result = await sortAssets(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
       if (action === 'init' && request.method === 'POST') {
         return sendJson(response, 200, await initProject(name));
       }
@@ -279,14 +383,134 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 
+      if (action === 'shots' && request.method === 'POST') {
+        const result = await migrateShots(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'sprites' && request.method === 'POST') {
+        const result = await wireSprites(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
       if (action === 'voice' && request.method === 'POST') {
         const result = await wireVoice(name);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 
+      if (action === 'retime' && request.method === 'POST') {
+        const body = (await readBody(request)) as { files?: unknown };
+        // Omitted means every mistimed clip. The numbers are never sent —
+        // they are computed from the runtimes the board measured, so a client
+        // cannot write a beat nothing on the board agrees with.
+        const files = Array.isArray(body.files)
+          ? body.files.filter((entry): entry is string => typeof entry === 'string')
+          : undefined;
+        const result = await retime(name, files);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
       if (action === 'sync' && request.method === 'POST') {
         const result = await syncFromStoryboard(name);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'voice' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as Record<string, unknown>;
+        if (typeof body.voice !== 'string' || typeof body.field !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { voice, field, value }' });
+        }
+        await editVoiceField(name, {
+          voice: body.voice,
+          field: body.field as 'reference',
+          value: String(body.value ?? ''),
+        });
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'section' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as Record<string, unknown>;
+        if (typeof body.section !== 'string' || typeof body.field !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { section, field, value }' });
+        }
+        await editSectionField(name, {
+          section: body.section,
+          field: body.field as 'backend',
+          value: String(body.value ?? ''),
+        });
+        return sendJson(response, 200, await openProject(name));
+      }
+
+      if (action === 'reference' && request.method === 'POST') {
+        const body = (await readBody(request)) as Record<string, unknown>;
+        if (typeof body.voice !== 'string' || typeof body.preset !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { voice, preset }' });
+        }
+        const clip = await recordReference(name, {
+          voice: body.voice,
+          preset: body.preset,
+          model: typeof body.model === 'string' ? body.model : undefined,
+        });
+        return sendJson(response, 200, { ...clip, project: await openProject(name) });
+      }
+
+      if (action === 'generate' && request.method === 'POST') {
+        const body = (await readBody(request)) as { section?: unknown; files?: unknown };
+        if (typeof body.section !== 'string' || !Array.isArray(body.files)) {
+          return sendJson(response, 400, { error: 'Expected { section, files }' });
+        }
+        const result = await generate(name, {
+          section: body.section as 'voice',
+          files: body.files.map(String),
+        });
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'publish' && request.method === 'POST') {
+        const body = (await readBody(request)) as { section?: unknown; files?: unknown };
+        if (typeof body.section !== 'string' || !Array.isArray(body.files)) {
+          return sendJson(response, 400, { error: 'Expected { section, files }' });
+        }
+        const result = await publish(name, {
+          section: body.section as 'voice',
+          files: body.files.map(String),
+        });
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // The bytes, raw, rather than JSON or a multipart envelope. A still is a
+      // couple of megabytes and a clip is a hundred; base64 in a JSON body
+      // would inflate that by a third and buffer all of it in memory to gain
+      // nothing, when the metadata is three short strings that fit in a query.
+      if (action === 'import' && request.method === 'POST') {
+        const section = url.searchParams.get('section') ?? '';
+        const file = url.searchParams.get('file') ?? '';
+        const filename = url.searchParams.get('name') ?? '';
+        if (!section || !file || !filename) {
+          return sendJson(response, 400, { error: 'Expected ?section=&file=&name=' });
+        }
+        const result = await importTake(
+          name,
+          { section: section as AssetSection, file, filename },
+          request,
+        );
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'delete-take' && request.method === 'POST') {
+        const body = (await readBody(request)) as {
+          section?: unknown;
+          asset?: unknown;
+          take?: unknown;
+        };
+        if (
+          typeof body.section !== 'string' ||
+          typeof body.asset !== 'string' ||
+          typeof body.take !== 'string'
+        ) {
+          return sendJson(response, 400, { error: 'Expected { section, asset, take }' });
+        }
+        await deleteTake(name, body.section as AssetSection, body.asset, body.take);
+        return sendJson(response, 200, await openProject(name));
       }
 
       if (action === 'select' && request.method === 'POST') {
@@ -302,37 +526,6 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         return sendJson(response, 400, { error: err.message, problems: err.problems });
       }
       throw err;
-    }
-
-    return sendJson(response, 405, { error: 'Method not allowed' });
-  }
-
-  // /api/scenarios/<folder>/source
-  const sourceMatch = /^\/api\/scenarios\/([^/]+)\/source$/.exec(path);
-  if (sourceMatch) {
-    const file = scenarioFile(decodeURIComponent(sourceMatch[1]!));
-    if (!file) return sendJson(response, 400, { error: 'Bad scenario name' });
-
-    if (request.method === 'GET') {
-      try {
-        const source = await readFile(file, 'utf8');
-        return sendJson(response, 200, { source, ...inspect(source) });
-      } catch {
-        return sendJson(response, 404, { error: 'No scenario.yaml in that folder' });
-      }
-    }
-
-    if (request.method === 'PUT') {
-      const body = (await readBody(request)) as { source?: unknown };
-      if (typeof body.source !== 'string') {
-        return sendJson(response, 400, { error: 'Expected { source }' });
-      }
-      // Temp file plus rename, so a crash mid-write cannot leave a half-written
-      // scenario behind — the game server may be reading this same folder.
-      const temp = `${file}.tmp`;
-      await writeFile(temp, body.source, 'utf8');
-      await rename(temp, file);
-      return sendJson(response, 200, { saved: true, ...inspect(body.source) });
     }
 
     return sendJson(response, 405, { error: 'Method not allowed' });
@@ -371,13 +564,16 @@ await loadConfig();
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`\n  Scenario editor   http://localhost:${PORT}`);
-  console.log(`  Reading           ${SCENARIOS_DIR}`);
   console.log(`  Workspace         ${workspace() ?? '(none chosen yet — pick one in the editor)'}`);
   console.log('');
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    // Before the server, because a model process outliving the editor holds
+    // the GPU with nothing left able to reach it — and the only cure anyone
+    // finds for that is a reboot.
+    stopAllSidecars();
     server.close(() => process.exit(0));
   });
 }

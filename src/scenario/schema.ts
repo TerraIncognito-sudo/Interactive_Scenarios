@@ -16,6 +16,33 @@ export const NodeIdSchema = z
   .min(1)
   .regex(idPattern, 'ids may contain only letters, numbers, hyphens and underscores');
 
+/**
+ * A file inside the scenario's own `assets/` folder, possibly in a subfolder.
+ *
+ * Subfolders are how a finished show stays legible: ninety voice clips, thirty
+ * stills and a handful of beds in one flat directory is a folder nobody can
+ * find anything in. What is forbidden is leaving `assets/` at all — the
+ * display resolves every one of these against a URL base, so an absolute path
+ * or a `..` is either a file the audience's browser will never find or a
+ * request for something that was never meant to be served.
+ *
+ * Backslashes are rejected rather than translated. They work on the author's
+ * Windows machine and fail in the container the show runs in, which is the
+ * worst possible time to find out.
+ */
+export const AssetPathSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !value.includes('\\'), {
+    message: 'use forward slashes in asset paths — a backslash is a Windows-only path',
+  })
+  .refine((value) => !/^([A-Za-z]:|\/)/.test(value), {
+    message: 'asset paths are relative to the scenario assets/ folder',
+  })
+  .refine((value) => !value.split('/').includes('..'), {
+    message: 'asset paths may not climb out of the assets/ folder',
+  });
+
 export const CharacterSchema = z.strictObject({
   name: z.string().min(1),
   /** Used for the nameplate and dialogue accent on the display. */
@@ -24,7 +51,7 @@ export const CharacterSchema = z.strictObject({
     .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a hex value like #4FC3F7')
     .default('#E0E0E0'),
   /** Portrait image, resolved relative to the scenario's assets/ folder. */
-  sprite: z.string().min(1).optional(),
+  sprite: AssetPathSchema.optional(),
 });
 
 /**
@@ -36,15 +63,15 @@ export const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|opus|wav|flac)$/i;
 export const VIDEO_EXTENSIONS = /\.(mp4|webm|m4v|mov)$/i;
 
 export const SceneSchema = z.strictObject({
-  background: z.string().min(1).optional(),
+  background: AssetPathSchema.optional(),
   /**
    * A looping clip that plays over `background`, for scenes with subtle motion.
    * `background` stays the poster frame: the still paints immediately while the
    * clip is still decoding, so a scene change never flashes black on a projector.
    */
-  video: z.string().min(1).optional(),
-  music: z.string().min(1).optional(),
-  ambience: z.string().min(1).optional(),
+  video: AssetPathSchema.optional(),
+  music: AssetPathSchema.optional(),
+  ambience: AssetPathSchema.optional(),
 });
 
 export const LineSchema = z.strictObject({
@@ -59,14 +86,29 @@ export const LineSchema = z.strictObject({
    * line without a `hold` will be cut off or left hanging by however much the
    * estimate is wrong. The checker warns about exactly that.
    */
-  voice: z.string().min(1).optional(),
-  sfx: z.string().min(1).optional(),
+  voice: AssetPathSchema.optional(),
+  sfx: AssetPathSchema.optional(),
 });
 
 const BaseNode = {
   id: NodeIdSchema,
   /** Switching scene re-renders background and crossfades music. */
   scene: z.string().min(1).optional(),
+  /**
+   * This node's own still and clip, overriding the scene's for as long as it
+   * plays.
+   *
+   * A scene is a *place*, and a place gets several shots: a storyboard has far
+   * more camera setups than locations. Without this, a second shot in the same
+   * room needs a second scene, which makes "scene" stop meaning "place" and
+   * re-triggers the scene's music and ambience on every beat.
+   *
+   * The override lasts exactly as long as the node. A later node with no
+   * override falls back to the scene's still, which is what makes the scene
+   * the default rather than merely the first shot.
+   */
+  background: AssetPathSchema.optional(),
+  video: AssetPathSchema.optional(),
 };
 
 export const DialogueNodeSchema = z.strictObject({

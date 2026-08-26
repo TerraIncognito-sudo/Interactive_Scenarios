@@ -51,9 +51,52 @@ export type StoryboardShot = {
 
 export type StoryboardParse = {
   shots: StoryboardShot[];
+  /**
+   * Named blocks the document defines once and the shots refer to by name:
+   * `STYLE`, `NEGATIVE`, `SHIP`.
+   *
+   * A storyboard writes `STYLE. SHIP. Pre-dawn at a working naval jetty…`
+   * rather than pasting four hundred characters of palette into every shot, and
+   * it is right to — the style belongs to the production, not to the shot. But
+   * a prompt that reaches a model still saying `STYLE.` has none of it, and
+   * `STYLE` is not a word any model knows. This is where the definitions come
+   * from; `prompt.ts` is where they go back in.
+   */
+  tokens: Record<string, string>;
+  /**
+   * Character reference sheets, keyed by the label the document uses —
+   * `Beaudoin`, `Tran`. A neutral portrait per character, generated first and
+   * reused as the reference for every later shot so faces do not drift.
+   *
+   * Keyed by label rather than by character id because a storyboard writes
+   * "Beaudoin sheet" and the scenario calls her `beau`. Joining the two is a
+   * guess, so it happens once, out loud, in `sprites.ts` — and what it cannot
+   * match is reported rather than attached to the wrong face.
+   */
+  sheets: Record<string, string>;
   /** Things the parser understood but that look like mistakes. */
   warnings: string[];
 };
+
+/**
+ * A fenced block that opens `NAME: …` and sits outside any shot.
+ *
+ * Narrow deliberately. A storyboard is full of fenced blocks — YAML samples,
+ * shell commands, the beat sheet — and a rule that took all of them would fill
+ * the project file with furniture. Capitals, a colon and prose after it is what
+ * a definition looks like in this document and in every storyboard modelled on
+ * it, and anything else stays furniture.
+ */
+const TOKEN_DEFINITION = /^([A-Z][A-Z0-9_]{2,}):\s*([\s\S]*)$/;
+
+/**
+ * `- **Beaudoin sheet:** \`STYLE. Character reference sheet…\``
+ *
+ * The prompt runs past the line it starts on — these are the longest single
+ * prompts in a storyboard — so the opening backtick is all this matches and
+ * `readInlineCode` finds the close.
+ */
+const SHEET = /^[-*]\s+\*\*(.+?)\s+sheets?:\*\*\s*`/i;
 
 const SHOT_HEADING = /^###\s+Shot\s+([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:[—–-]\s*(.*))?$/;
 /**
@@ -150,6 +193,37 @@ function readDelivery(lines: string[], index: number): { text: string; next: num
   return text ? { text, next: i + 1 } : undefined;
 }
 
+/**
+ * Collects a single-backtick span that may be wrapped across lines.
+ *
+ * Hand-wrapped prose is the normal case in a document for people, and a
+ * character sheet is four lines of it. Requiring the closing backtick on the
+ * opening line drops exactly the longest and most useful prompts, silently —
+ * the import looks like it worked and three portraits never reach the board.
+ */
+function readInlineCode(lines: string[], index: number, from: number): { text: string; next: number } {
+  const first = lines[index]!.slice(from);
+  const close = first.indexOf('`');
+  if (close >= 0) return { text: first.slice(0, close).trim(), next: index + 1 };
+
+  const collected = [first.trim()];
+  let i = index + 1;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const end = line.indexOf('`');
+    if (end >= 0) {
+      collected.push(line.slice(0, end).trim());
+      return { text: dedent(collected).replaceAll(/\s*\n\s*/g, ' '), next: i + 1 };
+    }
+    // An unterminated span is a typo, not a prompt. Stopping at the first thing
+    // that is plainly something else keeps it from swallowing the document.
+    if (!line.trim() || line.trimStart().startsWith('#')) break;
+    collected.push(line.trim());
+    i += 1;
+  }
+  return { text: '', next: index + 1 };
+}
+
 /** Collects a ``` fenced block starting at the fence line. */
 function readFence(lines: string[], index: number): { text: string; next: number } {
   const collected: string[] = [];
@@ -164,6 +238,8 @@ function readFence(lines: string[], index: number): { text: string; next: number
 export function parseStoryboard(source: string): StoryboardParse {
   const lines = source.split(/\r?\n/);
   const shots: StoryboardShot[] = [];
+  const tokens: Record<string, string> = {};
+  const sheets: Record<string, string> = {};
   const warnings: string[] = [];
 
   let act: string | undefined;
@@ -203,6 +279,31 @@ export function parseStoryboard(source: string): StoryboardParse {
     }
 
     if (!shot) {
+      // Before the first shot is where a storyboard states its style, its
+      // negative and its design bibles. The parser used to skip all of it,
+      // which is how twenty-six prompts reached the board with `STYLE.` in
+      // them and nothing anywhere that said what STYLE was.
+      const sheet = SHEET.exec(line);
+      if (sheet) {
+        const opened = raw.indexOf('`', raw.indexOf('**', raw.indexOf('**') + 2));
+        const span = readInlineCode(lines, i, opened + 1);
+        if (span.text) sheets[sheet[1]!.trim()] = span.text;
+        else warnings.push(`The ${sheet[1]} sheet's prompt is never closed with a backtick`);
+        i = span.next;
+        continue;
+      }
+
+      if (line.startsWith('```')) {
+        const fence = readFence(lines, i);
+        const defined = TOKEN_DEFINITION.exec(fence.text);
+        if (defined) {
+          const [, name, body] = defined;
+          if (tokens[name!] === undefined) tokens[name!] = body!.trim();
+          else warnings.push(`${name} is defined more than once; the first one is used`);
+        }
+        i = fence.next;
+        continue;
+      }
       i += 1;
       continue;
     }
@@ -277,7 +378,7 @@ export function parseStoryboard(source: string): StoryboardParse {
     if (!entry.image) warnings.push(`Shot ${entry.id} has no **IMAGE** prompt`);
   }
 
-  return { shots, warnings };
+  return { shots, tokens, sheets, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,22 +404,43 @@ export type ProposedAsset = {
  * lifted straight from its engine-mapping section — extended to stills and
  * clips, which it names only by shot.
  *
- * Stills are named per *shot*, not per scene, because the storyboard calls for
- * twenty-four distinct images across seven places. See the note the importer
- * returns about that: today's schema hangs `background` off the scene, so most
- * of these have nowhere to attach until a shot can carry its own.
+ * Stills are named per *shot*, not per scene, because a storyboard calls for
+ * far more distinct images than it has places — and a node carries its own
+ * `background:`, so each of them has somewhere to hang. The scene keeps the
+ * establishing shot's picture; every other shot in that place brings its own.
  */
+export function shotMediaName(
+  shot: StoryboardShot,
+  section: AssetSection,
+  extension: string,
+): string {
+  const slug = shotSlug(shot.id);
+  return filed(section, `${shot.scene ? `${shot.scene}-${slug}` : slug}.${extension}`);
+}
+
+/**
+ * A name with its media type in front of it: `voice/tran-d5-01.mp3`.
+ *
+ * The folder is part of the name the scenario declares rather than a layout
+ * the display works out for itself, so that reading `scenario.yaml` tells you
+ * where a file is. See `folders.ts` — this is the same rule applied at the one
+ * point in the pipeline that is allowed to invent a filename, which is here,
+ * because what happens next is writing the scenario that references it.
+ */
+export function filed(section: AssetSection, name: string): string {
+  return `${section}/${name}`;
+}
+
 export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
   const proposed: ProposedAsset[] = [];
   const perShotVoiceCount = new Map<string, number>();
 
   for (const shot of shots) {
     const slug = shotSlug(shot.id);
-    const base = shot.scene ? `${shot.scene}-${slug}` : slug;
 
     if (shot.image) {
       proposed.push({
-        file: `${base}.jpg`,
+        file: shotMediaName(shot, 'images', 'jpg'),
         section: 'images',
         prompt: shot.image,
         source: { shot: shot.id },
@@ -328,7 +450,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.motion) {
       proposed.push({
-        file: `${base}.mp4`,
+        file: shotMediaName(shot, 'video', 'mp4'),
         section: 'video',
         prompt: shot.motion,
         source: { shot: shot.id },
@@ -338,7 +460,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
     if (shot.sfx) {
       proposed.push({
-        file: `${base}-sfx.mp3`,
+        file: filed('sfx', `${shot.scene ? `${shot.scene}-${slug}` : slug}-sfx.mp3`),
         section: 'sfx',
         prompt: shot.sfx,
         source: { shot: shot.id },
@@ -350,7 +472,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
       const n = (perShotVoiceCount.get(`${line.who}-${slug}`) ?? 0) + 1;
       perShotVoiceCount.set(`${line.who}-${slug}`, n);
       proposed.push({
-        file: `${line.who}-${slug}-${String(n).padStart(2, '0')}.mp3`,
+        file: filed('voice', `${line.who}-${slug}-${String(n).padStart(2, '0')}.mp3`),
         section: 'voice',
         text: line.text,
         voice: line.who,
@@ -371,12 +493,16 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
 import { assetReferencesOf } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
+import { defaultSizeFor, formatSize } from './size.ts';
+import { NARRATION_VOICE } from './project.ts';
 
 export type SeedRow = {
   /** A filename the scenario actually references. Never an invented one. */
   file: string;
   section: AssetSection;
   prompt?: string;
+  /** `1920x1080`, from where the scenario uses the picture. Absent for audio. */
+  size?: string;
   text?: string;
   voice?: string;
   /**
@@ -405,9 +531,18 @@ export type SeedResult = {
  * a requirement. Where neither answers, the shot goes unmatched and is
  * reported, rather than being attached to the wrong picture.
  */
-type ShotIndex = { stated: Map<string, StoryboardShot>; bySlug: Map<string, StoryboardShot> };
+export type ShotIndex = {
+  stated: Map<string, StoryboardShot>;
+  bySlug: Map<string, StoryboardShot>;
+};
 
-function shotByNode(shots: StoryboardShot[]): ShotIndex {
+/**
+ * Exported because more than one part of the editor has to answer "which shot
+ * is this node?", and two answers to that question is how a prompt ends up on
+ * a file the player never opens. The asset board, the voice wiring and the
+ * shot migration all resolve it here.
+ */
+export function shotsByNode(shots: StoryboardShot[]): ShotIndex {
   const stated = new Map<string, StoryboardShot>();
   const bySlug = new Map<string, StoryboardShot>();
   for (const shot of shots) {
@@ -417,17 +552,19 @@ function shotByNode(shots: StoryboardShot[]): ShotIndex {
   return { stated, bySlug };
 }
 
-function findShot(index: ShotIndex, nodeId: string): StoryboardShot | undefined {
+export function shotForNode(index: ShotIndex, nodeId: string): StoryboardShot | undefined {
   const stated = index.stated.get(nodeId);
   if (stated) return stated;
 
   const exact = index.bySlug.get(nodeId);
   if (exact) return exact;
 
-  for (const [slug, shot] of index.bySlug) {
+  // Longest first, so `e1a` beats `e1` for a node called `e1a_something`.
+  const slugs = [...index.bySlug.keys()].sort((a, b) => b.length - a.length);
+  for (const slug of slugs) {
     if (!nodeId.startsWith(slug)) continue;
     const next = nodeId.charAt(slug.length);
-    if (next === '' || next === '_' || next === '-') return shot;
+    if (next === '' || next === '_' || next === '-') return index.bySlug.get(slug);
   }
   return undefined;
 }
@@ -471,14 +608,32 @@ function deliveryFor(shot: StoryboardShot, who: string | undefined): string | un
  * free to invent names precisely because it writes the scenario that references
  * them. Both routes end with the two files agreeing; neither guesses.
  */
-export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedResult {
-  const byNode = shotByNode(shots);
+export function seedRowsFor(
+  scenario: Scenario,
+  shots: StoryboardShot[],
+  sheets: Record<string, string> = {},
+): SeedResult {
+  // Keyed by character rather than by the document's label, so the walk below
+  // can look one up by the id the scenario uses. The join itself belongs to
+  // `sprites.ts`, which is the file that had to make it to declare the sprite
+  // in the first place — doing it twice would be two chances to disagree.
+  const sheetFor = new Map<string, string>();
+  for (const [label, prompt] of Object.entries(sheets)) {
+    for (const [id, character] of Object.entries(scenario.characters)) {
+      const words = character.name.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+      if (id.toLowerCase() === label.toLowerCase() || words.includes(label.toLowerCase())) {
+        sheetFor.set(id, prompt);
+      }
+    }
+  }
+
+  const byNode = shotsByNode(shots);
   const rows: SeedRow[] = [];
   const used = new Set<string>();
 
   // A scene's still is its establishing shot: the first node that plays there.
-  // Later shots in the same room need their own scene to carry their own
-  // picture, which is a limit of the schema rather than a choice made here.
+  // Later shots in the same room carry their own picture on their own node, and
+  // reach this walk as a node-scoped reference rather than a scene-scoped one.
   //
   // Where the establishing node was never storyboarded, the first node in the
   // scene that *was* is used instead. That is not a guess: a scene has exactly
@@ -495,7 +650,7 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
   }
   const nodeForScene = (scene: string): string | undefined => {
     const candidates = nodesOfScene.get(scene) ?? [];
-    return candidates.find((id) => findShot(byNode, id)) ?? candidates[0];
+    return candidates.find((id) => shotForNode(byNode, id)) ?? candidates[0];
   };
 
   const nodeById = new Map(scenario.nodes.map((node) => [node.id, node]));
@@ -513,9 +668,15 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
     if ('node' in origin) nodeId = origin.node;
     else if ('scene' in origin) nodeId = nodeForScene(origin.scene);
 
-    const shot = nodeId ? findShot(byNode, nodeId) : undefined;
+    const shot = nodeId ? shotForNode(byNode, nodeId) : undefined;
     const row: SeedRow = { file: ref.file, section: ref.section, source: {} };
     if (shot) row.source.shot = shot.id;
+
+    // The display's own geometry, written into the file the author reads. Art
+    // is made in another program and dropped in here, and the one thing that
+    // program cannot know is what shape the show is.
+    const size = defaultSizeFor(ref.section, [ref.origin]);
+    if (size) row.size = formatSize(size);
 
     if (ref.section === 'voice' && 'line' in origin) {
       // The spoken text is the scenario's, never the storyboard's. A storyboard
@@ -528,12 +689,24 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
       const spoken = lineIn(nodeById, origin.node, origin.line);
       if (!spoken) continue;
       row.text = spoken.text;
-      row.voice = spoken.who;
+      // A line with no `who:` still has to be spoken. Left undefined the row
+      // reaches the generator with no voice to use and refuses — which is how
+      // a fiction notice ends up as the only silent beat in a finished show.
+      row.voice = spoken.who ?? NARRATION_VOICE;
       row.source.node = origin.node;
       row.source.line = origin.line;
       const note = shot ? deliveryFor(shot, spoken.who) : undefined;
       if (note) row.prompt = note;
+    } else if (origin.kind === 'sprite') {
+      // A portrait has no shot: it is generated before any of them, and every
+      // shot the character appears in is matched to it rather than the other
+      // way round.
+      const sheet = sheetFor.get(origin.character);
+      if (sheet) row.prompt = sheet;
     } else if (shot) {
+      // A node's own still or clip belongs to that node, not merely to the
+      // place — record it so the board can click through to the right beat.
+      if ('node' in origin) row.source.node = origin.node;
       if (ref.section === 'images' && shot.image) row.prompt = shot.image;
       else if (ref.section === 'video' && shot.motion) row.prompt = shot.motion;
       else if (ref.section === 'sfx' && shot.sfx) row.prompt = shot.sfx;
@@ -541,8 +714,9 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
 
     // Ambience and music have no per-shot prompt in a storyboard — they are
     // described once, per scene family. The row still belongs on the board;
-    // it simply starts empty.
-    if (row.prompt || row.text || ref.section === 'ambience' || ref.section === 'music') {
+    // it simply starts empty. A picture always gets a row, because even one the
+    // storyboard never described has a size somebody has to generate it at.
+    if (row.prompt || row.text || row.size || ref.section === 'ambience' || ref.section === 'music') {
       rows.push(row);
       used.add(ref.file);
     }
@@ -569,14 +743,18 @@ export function seedRowsFor(scenario: Scenario, shots: StoryboardShot[]): SeedRe
       unmatched.push({
         shot: shot.id,
         kind: 'image',
-        why: 'no scene in the scenario takes its background from this shot',
+        why:
+          'no node or scene in the scenario takes its background from this shot — ' +
+          'give the shot its own picture to place it',
       });
     }
     if (shot.motion && !claimed.has(`${shot.id}:video`)) {
       unmatched.push({
         shot: shot.id,
         kind: 'video',
-        why: 'no scene in the scenario takes its clip from this shot',
+        why:
+          'no node or scene in the scenario takes its clip from this shot — ' +
+          'give the shot its own picture to place it',
       });
     }
     if (shot.lines.length > 0 && !claimed.has(`${shot.id}:voice`)) {

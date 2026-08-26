@@ -24,7 +24,8 @@ import {
 } from '../tools/editor/project.ts';
 import { buildOverview } from '../tools/editor/sections.ts';
 import { wireVoiceInto } from '../tools/editor/wire.ts';
-import { parseStoryboard, proposeAssets } from '../tools/editor/storyboard.ts';
+import { migrateShotsInto } from '../tools/editor/shots.ts';
+import { parseStoryboard, proposeAssets, seedRowsFor } from '../tools/editor/storyboard.ts';
 import { scaffoldFromStoryboard } from '../tools/editor/scaffold.ts';
 
 function scenario(overrides: Record<string, unknown> = {}) {
@@ -420,26 +421,229 @@ STYLE. The empty control cell, screens dark.
     const { shots } = parseStoryboard(SOURCE);
     const files = proposeAssets(shots).map((a) => a.file);
     // The storyboard documents `tran-d5-01.mp3` by hand; the importer must
-    // produce exactly that, or every filename in the document is wrong.
-    assert.ok(files.includes('tran-d5-01.mp3'), files.join(', '));
-    assert.ok(files.includes('narr-a1-01.mp3'));
+    // produce exactly that, under the folder its media type is filed in.
+    assert.ok(files.includes('voice/tran-d5-01.mp3'), files.join(', '));
+    assert.ok(files.includes('voice/narr-a1-01.mp3'));
+    // The one place in the pipeline allowed to invent a filename is also the
+    // one place that writes the scenario referencing it, so the folder goes in
+    // here rather than being sorted on afterwards.
+    assert.ok(files.includes('images/halifax-a1.jpg'), files.join(', '));
   });
 
-  test('scaffolding reports the stills it cannot place instead of dropping them', () => {
+  test('scaffolding gives a second shot in one place its own picture', () => {
     const twoShotsOneScene = SOURCE.replace('`control_cell`', '`halifax`');
     const { scenarioYaml, report } = scaffoldFromStoryboard(twoShotsOneScene, {
       id: 'demo',
       title: 'Demo',
     });
 
-    // Both shots are in `halifax`, but a scene carries one background. The
-    // second shot's still has nowhere to go, and saying so is the whole point.
-    assert.equal(report.unplaceable.length > 0, true);
-    assert.match(report.unplaceable[0]!.why, /one per scene/);
-
-    // What it does emit has to be a scenario the game server would accept.
     const parsed = parseScenarioSource(scenarioYaml);
     assert.equal(parsed.ok, true, JSON.stringify(parsed));
+    if (!parsed.ok) return;
+
+    // Both shots play in `halifax`. The first is the establishing shot and its
+    // still stays on the scene; the second carries its own on its node. A
+    // second scene for the second camera setup would restart the room's
+    // ambience halfway through the act.
+    assert.equal(Object.keys(parsed.scenario.scenes).length, 1);
+    const [first, second] = parsed.scenario.nodes;
+    assert.equal(first!.background, undefined);
+    assert.equal(parsed.scenario.scenes.halifax!.background, 'images/halifax-a1.jpg');
+    assert.equal(second!.background, 'images/halifax-d5.jpg');
+
+    // And nothing the storyboard wrote is left with nowhere to go.
+    const stills = report.unplaceable.filter(
+      (entry) => entry.section === 'images' || entry.section === 'video',
+    );
+    assert.deepEqual(stills, []);
+  });
+});
+
+describe('giving every shot its own picture', () => {
+  // Three beats, two of them in one room. `halifax_flank` is the shape an
+  // author reaches for when only a scene can hold a background: a second
+  // camera setup wearing a scene's clothes.
+  const STORYBOARD = [
+    '## ACT A',
+    '',
+    '### Shot A.1 — The jetty',
+    '**Hold:** 8 s · **Scene:** \`halifax\`',
+    '',
+    '**IMAGE**',
+    '\`\`\`',
+    'STYLE. The jetty before dawn.',
+    '\`\`\`',
+    '**MOTION** Slow push toward the bow.',
+    '',
+    '### Shot A.2 — The absence',
+    '**Hold:** 7 s · **Scene:** \`halifax\`',
+    '',
+    '**IMAGE**',
+    '\`\`\`',
+    'STYLE. No gangway, no brow, nothing to walk up.',
+    '\`\`\`',
+    '',
+    '### Shot A.3 — Departure',
+    '**Hold:** 6 s · **Scene:** \`halifax\`',
+    '',
+    '**IMAGE**',
+    '\`\`\`',
+    'STYLE. The hull pulling away into open water.',
+    '\`\`\`',
+    '**MOTION** The wake widens.',
+    '',
+  ].join('\n');
+
+  function source(flankAmbience = 'harbour.mp3'): string {
+    return [
+      'id: demo',
+      'title: Demo',
+      'start: a1_jetty',
+      'characters:',
+      '  narr: { name: Narr }',
+      'scenes:',
+      '  # The sibling below exists purely to carry a second camera setup.',
+      '  halifax: { background: a1.jpg, video: a1.mp4, ambience: harbour.mp3 }',
+      `  halifax_flank: { background: a2-flank.jpg, ambience: ${flankAmbience} }`,
+      'nodes:',
+      '  - id: a1_jetty',
+      '    type: dialogue',
+      '    scene: halifax',
+      '    lines:',
+      '      - who: narr',
+      '        text: >-',
+      '          A hand-wrapped folded scalar',
+      '          that must survive untouched.',
+      '        hold: 8',
+      '    next: a2_absence',
+      '',
+      '  # Why this beat is seven seconds and not five.',
+      '  - id: a2_absence',
+      '    type: dialogue',
+      '    scene: halifax_flank',
+      '    lines:',
+      '      - { who: narr, text: There is no brow., hold: 7 }',
+      '    next: a3_departure',
+      '',
+      '  - id: a3_departure',
+      '    type: dialogue',
+      '    scene: halifax',
+      '    lines:',
+      '      - who: narr',
+      '        text: No one waves it off.',
+      '        hold: 6',
+      '    next: fin',
+      '',
+      '  - id: fin',
+      '    type: end',
+      '    text: Done',
+      '',
+    ].join('\n');
+  }
+
+  function migrate(text: string) {
+    const parsed = parseScenarioSource(text);
+    assert.equal(parsed.ok, true, JSON.stringify(parsed));
+    if (!parsed.ok) throw new Error('unreachable');
+    return migrateShotsInto(text, parsed.scenario, parseStoryboard(STORYBOARD).shots);
+  }
+
+  test('the establishing shot keeps the scene, later shots get their own', () => {
+    const result = migrate(source());
+    const parsed = parseScenarioSource(result.source);
+    assert.equal(parsed.ok, true, JSON.stringify(parsed));
+    if (!parsed.ok) return;
+
+    const byId = new Map(parsed.scenario.nodes.map((node) => [node.id, node]));
+
+    // A.1 is what `halifax`'s background has always depicted, so it stays put.
+    assert.equal(byId.get('a1_jetty')!.background, undefined);
+    assert.equal(parsed.scenario.scenes.halifax!.background, 'a1.jpg');
+
+    // A.3 has nowhere to hang until now. Named the way the pipeline names
+    // anything it invents: under the folder its media type is filed in.
+    assert.equal(byId.get('a3_departure')!.background, 'images/halifax-a3.jpg');
+    assert.equal(byId.get('a3_departure')!.video, 'video/halifax-a3.mp4');
+  });
+
+  test('a stand-in scene folds back into the place the storyboard names', () => {
+    const result = migrate(source());
+    assert.deepEqual(
+      result.folded.map((entry) => [entry.scene, entry.into, entry.nodes]),
+      [['halifax_flank', 'halifax', ['a2_absence']]],
+    );
+
+    const parsed = parseScenarioSource(result.source);
+    if (!parsed.ok) return assert.fail(JSON.stringify(parsed));
+    const node = parsed.scenario.nodes.find((candidate) => candidate.id === 'a2_absence')!;
+    assert.equal(node.scene, 'halifax');
+    // The filename it already declared, unchanged. Renaming it would orphan
+    // every prompt the author has written against it.
+    assert.equal(node.background, 'a2-flank.jpg');
+    // A.2 describes no motion, so nothing invents a clip for it.
+    assert.equal(node.video, undefined);
+    assert.equal('halifax_flank' in parsed.scenario.scenes, false);
+  });
+
+  test('folding is refused when it would change what the audience hears', () => {
+    const result = migrate(source('engine-room.mp3'));
+    assert.deepEqual(result.folded, []);
+    assert.equal(result.skipped.length, 1);
+    assert.match(result.skipped[0]!.why, /different music or ambience/);
+
+    // And the scene it would not fold is still there, still referenced.
+    const parsed = parseScenarioSource(result.source);
+    if (!parsed.ok) return assert.fail(JSON.stringify(parsed));
+    assert.equal('halifax_flank' in parsed.scenario.scenes, true);
+  });
+
+  test('running it a second time changes nothing', () => {
+    const once = migrate(source());
+    const twice = migrate(once.source);
+    assert.equal(twice.source, once.source);
+    assert.deepEqual(twice.moved, []);
+    assert.deepEqual(twice.folded, []);
+  });
+
+  test('comments and hand-wrapped scalars survive the edit', () => {
+    const result = migrate(source());
+    assert.match(result.source, /# Why this beat is seven seconds and not five\./);
+    assert.match(result.source, /text: >-\n          A hand-wrapped folded scalar\n/);
+    // The flow-mapped line stays a flow map rather than being reserialised.
+    assert.match(result.source, /- \{ who: narr, text: There is no brow\., hold: 7 \}/);
+  });
+
+  test('a comment describing the scenes it removed is reported, not rewritten', () => {
+    const result = migrate(source());
+    assert.equal(result.stale.length, 1);
+    assert.match(result.stale[0]!.text, /second camera setup/);
+    // Reported and left alone: the prose in a scenario belongs to its author.
+    assert.match(result.source, /purely to carry a second camera setup/);
+  });
+
+  test('every storyboard prompt has somewhere to go afterwards', () => {
+    const shots = parseStoryboard(STORYBOARD).shots;
+    const before = parseScenarioSource(source());
+    if (!before.ok) return assert.fail(JSON.stringify(before));
+
+    const stillsWithNoHome = (scenario: typeof before.scenario) =>
+      seedRowsFor(scenario, shots).unmatched.filter(
+        (entry) => entry.kind === 'image' || entry.kind === 'video',
+      );
+
+    // A.3's still and clip have nowhere to hang — `halifax` already carries
+    // A.1's picture — which is the whole reason this migration exists.
+    assert.deepEqual(
+      stillsWithNoHome(before.scenario).map((entry) => [entry.shot, entry.kind]),
+      [
+        ['A.3', 'image'],
+        ['A.3', 'video'],
+      ],
+    );
+
+    const after = parseScenarioSource(migrate(source()).source);
+    if (!after.ok) return assert.fail(JSON.stringify(after));
+    assert.deepEqual(stillsWithNoHome(after.scenario), []);
   });
 });
 
@@ -1082,7 +1286,7 @@ describe('wiring voice onto a scenario', () => {
     const result = wire(SOURCE);
     assert.deepEqual(
       result.wired.map((w) => w.file),
-      ['narr-a1-01.mp3', 'narr-a1-02.mp3', 'tran-a1-01.mp3'],
+      ['voice/narr-a1-01.mp3', 'voice/narr-a1-02.mp3', 'voice/tran-a1-01.mp3'],
     );
 
     // Nothing on the server opens the audio file, so a voiced line without a
@@ -1126,7 +1330,10 @@ describe('wiring voice onto a scenario', () => {
   test('a line written inline stays inline', () => {
     // `{ who: tran, text: … }` is how a short line is often written, and a
     // newline inserted into a flow map is not YAML at all.
-    assert.match(wire(SOURCE).source, /\{ who: tran, text: Link is good\., hold: \d+, voice: tran-a1-01\.mp3 \}/);
+    assert.match(
+      wire(SOURCE).source,
+      /\{ who: tran, text: Link is good\., hold: \d+, voice: voice\/tran-a1-01\.mp3 \}/,
+    );
   });
 
   test('pressing it twice changes nothing the second time', () => {
@@ -1146,14 +1353,259 @@ describe('wiring voice onto a scenario', () => {
       '      - who: narr\n        text: Fuel lines. Weather brief.\n        hold: 5\n        voice: narr-a1-07.mp3',
     );
     const result = wire(partial);
+    // The existing clip is flat and the new ones are filed, which is the state
+    // any scenario written before folders existed is in. Numbering is read by
+    // basename so the two spellings still count as the same run of takes —
+    // restarting at 01 would name a file that is already on disk.
     assert.deepEqual(
       result.wired.map((w) => w.file),
-      ['narr-a1-08.mp3', 'tran-a1-01.mp3'],
+      ['voice/narr-a1-08.mp3', 'voice/tran-a1-01.mp3'],
     );
   });
 
   test('a node the storyboard never numbered falls back to its own id', () => {
     const orphaned = SOURCE.replace(/a1_jetty/g, 'p1_defend');
-    assert.equal(wire(orphaned).wired[0]!.file, 'narr-p1-defend-01.mp3');
+    assert.equal(wire(orphaned).wired[0]!.file, 'voice/narr-p1-defend-01.mp3');
+  });
+});
+
+/**
+ * A line nobody is credited with still has to be spoken.
+ *
+ * The fiction notice that opens a show, a title card, a line the display shows
+ * without a nameplate: real work, and the only beat in a finished show that
+ * would come out silent, because nothing upstream had a voice to give it.
+ */
+describe('the voice of a line with no nameplate', () => {
+  const uncredited = ScenarioSchema.parse({
+    id: 'x',
+    title: 'X',
+    start: 'a',
+    characters: { narr: { name: 'Narrator' } },
+    scenes: {},
+    nodes: [
+      {
+        id: 'a',
+        type: 'dialogue',
+        lines: [
+          { text: 'Every ship, unit, person and system in what follows is invented.', hold: 6 },
+          {
+            text: 'Nothing here depicts real capability, doctrine, or rules of engagement.',
+            hold: 7,
+          },
+          { who: 'narr', text: 'Zero four hundred, Halifax.', hold: 3 },
+        ],
+        next: 'z',
+      },
+      { id: 'z', type: 'end', text: 'Done' },
+    ],
+  });
+
+  test('wiring names its clips for the narration voice, not for a character', () => {
+    const result = wireVoiceInto(
+      [
+        'id: x',
+        'title: X',
+        'start: a',
+        'characters: { narr: { name: Narrator } }',
+        'scenes: {}',
+        'nodes:',
+        '  - id: a',
+        '    type: dialogue',
+        '    lines:',
+        '      - { text: Every ship in what follows is invented. }',
+        '      - { who: narr, text: Zero four hundred. }',
+        '    next: z',
+        '  - { id: z, type: end }',
+        '',
+      ].join('\n'),
+      ScenarioSchema.parse({
+        id: 'x',
+        title: 'X',
+        start: 'a',
+        characters: { narr: { name: 'Narrator' } },
+        scenes: {},
+        nodes: [
+          {
+            id: 'a',
+            type: 'dialogue',
+            lines: [
+              { text: 'Every ship in what follows is invented.' },
+              { who: 'narr', text: 'Zero four hundred.' },
+            ],
+            next: 'z',
+          },
+          { id: 'z', type: 'end', text: 'Done' },
+        ],
+      }),
+      [],
+    );
+    // `vo`, not `narr`: attributing it to the narrator to get a voice would put
+    // that character's name on screen under a legal disclaimer.
+    assert.deepEqual(
+      result.wired.map((w) => w.file),
+      ['voice/vo-a-01.mp3', 'voice/narr-a-01.mp3'],
+    );
+  });
+
+  test('seeding gives the row a voice, so it can actually be generated', () => {
+    const withClips = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      characters: { narr: { name: 'Narrator' } },
+      scenes: {},
+      nodes: [
+        {
+          id: 'a',
+          type: 'dialogue',
+          lines: [
+            { text: 'Invented.', hold: 6, voice: 'voice/vo-a-01.mp3' },
+            { who: 'narr', text: 'Zero four hundred.', hold: 3, voice: 'voice/narr-a-01.mp3' },
+          ],
+          next: 'z',
+        },
+        { id: 'z', type: 'end', text: 'Done' },
+      ],
+    });
+
+    const rows = seedRowsFor(withClips, []).rows;
+    const uncreditedRow = rows.find((row) => row.file === 'voice/vo-a-01.mp3');
+    assert.equal(uncreditedRow?.voice, 'vo', 'a row with no voice refuses to generate');
+    assert.equal(rows.find((row) => row.file === 'voice/narr-a-01.mp3')?.voice, 'narr');
+  });
+
+  test('a reference clip for it is read from the lines nobody is credited with', async () => {
+    const { referenceTextFor } = await import('../tools/editor/generate.ts');
+    const text = referenceTextFor(uncredited, 'vo')!;
+    assert.match(text, /^Every ship, unit, person/);
+    // Matching by name would find nothing at all, and refuse to record a clip
+    // for a voice that plainly has work to do.
+    assert.ok(!text.includes('Zero four hundred'), 'took a credited line');
+    assert.match(referenceTextFor(uncredited, 'narr')!, /Zero four hundred/);
+  });
+
+  test('it appears in the cast under a name that says what it is', async () => {
+    const { buildOverview } = await import('../tools/editor/sections.ts');
+    const { ProjectSchema, pathsOf, EMPTY_LEDGER } = await import('../tools/editor/project.ts');
+    const withClips = ScenarioSchema.parse({
+      id: 'x',
+      title: 'X',
+      start: 'a',
+      characters: { narr: { name: 'Narrator' } },
+      scenes: {},
+      nodes: [
+        {
+          id: 'a',
+          type: 'dialogue',
+          lines: [{ text: 'Invented.', hold: 6, voice: 'voice/vo-a-01.mp3' }],
+          next: 'z',
+        },
+        { id: 'z', type: 'end', text: 'Done' },
+      ],
+    });
+    const proj = ProjectSchema.parse({
+      project: 'x',
+      scenario: 'scenario.yaml',
+      publish: 'assets',
+      assets: { 'voice/vo-a-01.mp3': { text: 'Invented.', voice: 'vo' } },
+    });
+
+    const overview = await buildOverview(
+      withClips,
+      proj,
+      structuredClone(EMPTY_LEDGER),
+      pathsOf(join(tmpdir(), 'nowhere', 'project.yaml'), proj),
+    );
+    const member = overview.cast.find((entry) => entry.id === 'vo');
+    assert.equal(member?.name, 'Narration — no nameplate');
+    assert.equal(member?.lines, 1);
+    // Uncast, which is the state the panel exists to make impossible to miss.
+    assert.equal(member?.reference, undefined);
+  });
+});
+
+describe('the editor cannot reach the live server', () => {
+  /**
+   * The editor used to serve `/api/scenarios`, including a PUT that wrote
+   * straight into the repo's `scenarios/` folder — the one the game server
+   * reads, possibly mid-show. Authoring and running are weeks apart and must
+   * not share a filesystem path.
+   *
+   * Read as a file rather than started as a server, because the point is that
+   * the capability is absent from the source, not merely unreachable today.
+   */
+  const source = readFileSync(join(import.meta.dirname, '..', 'tools', 'editor', 'server.ts'), 'utf8');
+
+  test('serves no route into the scenarios folder', () => {
+    assert.doesNotMatch(source, /['"`]\/api\/scenarios/);
+    assert.doesNotMatch(source, /SCENARIOS_DIR/);
+  });
+
+  test('never writes a file outside the workspace', () => {
+    // Every write the editor performs goes through projects.ts, which resolves
+    // paths under the chosen workspace and refuses anything outside it.
+    assert.doesNotMatch(source, /\bwriteFile\b/);
+    assert.doesNotMatch(source, /\brename\b/);
+  });
+});
+
+describe('a shot that carries its own still', () => {
+  test('takes its prompt from its own shot, not the establishing one', () => {
+    // The case the schema change exists for: two shots in one place. Before a
+    // node could carry its own still, the second shot had nowhere to attach and
+    // was reported unmatched — most of a storyboard's visual work.
+    const board = [
+      '### Shot A.1 — The jetty',
+      '**Hold:** 8 s · **Scene:** `halifax`',
+      '',
+      '**IMAGE**',
+      '```',
+      'wide establishing shot of the pier',
+      '```',
+      '',
+      '### Shot A.2 — The absence',
+      '**Hold:** 7 s · **Scene:** `halifax`',
+      '',
+      '**IMAGE**',
+      '```',
+      'tight along the hull, no gangway',
+      '```',
+      '**MOTION** the amber light pulses once per 2 s',
+      '',
+    ].join('\n');
+
+    const scenario = parseScenarioSource(
+      [
+        'id: x',
+        'title: X',
+        'start: a1_jetty',
+        'scenes: { halifax: { background: a1-jetty.jpg } }',
+        'nodes:',
+        '  - id: a1_jetty',
+        '    type: dialogue',
+        '    scene: halifax',
+        '    lines: [{ text: One., hold: 3 }]',
+        '    next: a2_absence',
+        '  - id: a2_absence',
+        '    type: dialogue',
+        '    background: a2-flank.jpg',
+        '    video: a2-flank.mp4',
+        '    lines: [{ text: Two., hold: 3 }]',
+        '    next: z',
+        '  - { id: z, type: end }',
+        '',
+      ].join('\n'),
+    );
+    assert.ok(scenario.ok, scenario.ok ? '' : scenario.message);
+
+    const { rows, unmatched } = seedRowsFor(scenario.scenario, parseStoryboard(board).shots);
+    const row = (file: string) => rows.find((r) => r.file === file);
+
+    assert.equal(row('a1-jetty.jpg')?.prompt, 'wide establishing shot of the pier');
+    assert.equal(row('a2-flank.jpg')?.prompt, 'tight along the hull, no gangway');
+    assert.equal(row('a2-flank.mp4')?.prompt, 'the amber light pulses once per 2 s');
+    assert.equal(row('a2-flank.jpg')?.source.node, 'a2_absence');
+    assert.deepEqual(unmatched, []);
   });
 });

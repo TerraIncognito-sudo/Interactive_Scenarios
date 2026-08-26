@@ -21,9 +21,11 @@
  * clip and a hold are wired together, never separately.
  */
 
-import { parseDocument, isMap, isSeq, type YAMLMap } from 'yaml';
+import { parseDocument, isMap, isSeq } from 'yaml';
 import { lineDuration, type Scenario } from '../../src/scenario/schema.ts';
-import { shotSlug, type StoryboardShot } from './storyboard.ts';
+import { filed, shotForNode, shotSlug, shotsByNode, type StoryboardShot } from './storyboard.ts';
+import { NARRATION_VOICE } from './project.ts';
+import { applyEdits, indentOf, insertionFor, type Edit } from './yaml-edit.ts';
 
 export type WiredLine = {
   node: string;
@@ -52,17 +54,8 @@ export type WireResult = {
  * declare whatever name comes out of here.
  */
 function slugFor(nodeId: string, shots: StoryboardShot[]): string {
-  const stated = shots.find((shot) => shot.node === nodeId);
-  if (stated) return shotSlug(stated.id);
-
-  // Longest first, so a hypothetical `e1a` beats `e1`.
-  const slugs = shots.map((shot) => shotSlug(shot.id)).sort((a, b) => b.length - a.length);
-  for (const slug of slugs) {
-    if (!nodeId.startsWith(slug)) continue;
-    const next = nodeId.charAt(slug.length);
-    if (next === '' || next === '_' || next === '-') return slug;
-  }
-  return nodeId.replaceAll('_', '-');
+  const shot = shotForNode(shotsByNode(shots), nodeId);
+  return shot ? shotSlug(shot.id) : nodeId.replaceAll('_', '-');
 }
 
 /**
@@ -78,7 +71,9 @@ function usedNumbers(scenario: Scenario): Map<string, number> {
     if (node.type !== 'dialogue') continue;
     for (const line of node.lines) {
       if (!line.voice) continue;
-      const match = /^(.*)-(\d+)\.[a-z0-9]+$/i.exec(line.voice);
+      // By basename, so a half-wired scenario continues its numbering whether
+      // its clips are filed under `voice/` or sitting flat beside the scenario.
+      const match = /^(.*)-(\d+)\.[a-z0-9]+$/i.exec(line.voice.split('/').pop()!);
       if (!match) continue;
       const key = match[1]!;
       const n = Number(match[2]);
@@ -86,38 +81,6 @@ function usedNumbers(scenario: Scenario): Map<string, number> {
     }
   }
   return used;
-}
-
-/** The column the map's keys start at, so an inserted key lines up with them. */
-function indentOf(source: string, offset: number): string {
-  const lineStart = source.lastIndexOf('\n', offset - 1) + 1;
-  return source.slice(lineStart, offset).replace(/\S/g, ' ');
-}
-
-/**
- * Where a new key goes in an existing map.
- *
- * Block maps take a fresh line after the last value; flow maps — `{ who: narr,
- * text: … }`, which is how a short line is often written — take a comma before
- * the brace. Both spellings are valid YAML and both appear in real scenarios,
- * so both have to be handled rather than normalised into one.
- */
-function insertionFor(source: string, map: YAMLMap): { at: number; flow: boolean } {
-  const end = map.range?.[2] ?? map.range?.[1] ?? 0;
-  if (map.flow) {
-    const brace = source.lastIndexOf('}', end);
-    // Back up over the whitespace inside the brace so `, voice: x }` reads the
-    // way a person would have typed it.
-    let at = brace;
-    while (at > 0 && /\s/.test(source[at - 1]!)) at -= 1;
-    return { at, flow: true };
-  }
-
-  // Trailing newlines belong to whatever comes next — a comment, a blank line
-  // separating nodes — so the insert goes after the last real character.
-  let at = end;
-  while (at > 0 && /\s/.test(source[at - 1]!)) at -= 1;
-  return { at, flow: false };
 }
 
 /**
@@ -138,7 +101,7 @@ export function wireVoiceInto(
 
   const used = usedNumbers(scenario);
   const wired: WiredLine[] = [];
-  const edits: { at: number; text: string }[] = [];
+  const edits: Edit[] = [];
   let untouched = 0;
 
   for (const node of scenario.nodes) {
@@ -172,10 +135,10 @@ export function wireVoiceInto(
       if (!file) {
         // An unattributed line is narration with no nameplate, and `vo` says
         // that rather than pretending it belongs to the narrator character.
-        const key = `${line.who ?? 'vo'}-${slug}`;
+        const key = `${line.who ?? NARRATION_VOICE}-${slug}`;
         const n = (used.get(key) ?? 0) + 1;
         used.set(key, n);
-        file = `${key}-${String(n).padStart(2, '0')}.mp3`;
+        file = filed('voice', `${key}-${String(n).padStart(2, '0')}.mp3`);
         parts.push(`voice: ${file}`);
       }
 
@@ -195,11 +158,5 @@ export function wireVoiceInto(
     });
   }
 
-  // Applied back to front so an earlier insert cannot move a later offset.
-  let out = source;
-  for (const edit of [...edits].sort((a, b) => b.at - a.at)) {
-    out = out.slice(0, edit.at) + edit.text + out.slice(edit.at);
-  }
-
-  return { source: out, wired, untouched };
+  return { source: applyEdits(source, edits), wired, untouched };
 }

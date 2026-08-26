@@ -24,6 +24,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { ASSET_SECTIONS, type AssetSection } from '../../src/scenario/load.ts';
+import { tokensIn } from './prompt.ts';
 
 /**
  * Generation parameters vary by model — steps and cfg for a sampler, seconds
@@ -65,6 +66,55 @@ const sectionShape = Object.fromEntries(
 
 export const SectionsSchema = z.strictObject(sectionShape);
 
+/**
+ * A character's voice: how every line they speak is produced.
+ *
+ * Kept here rather than on each line because a cast member is one voice across
+ * ninety lines. It is the same argument as a section's `style` — one edit has
+ * to change all of them, and all of them have to go stale when it does.
+ *
+ * The character ids are the scenario's own. Nothing here invents a cast: a
+ * voice with no matching character is reported, because it is either a typo or
+ * a leftover from a line that was cut.
+ */
+export const VoiceSchema = z.strictObject({
+  /**
+   * A few seconds of clean speech for a model that clones. Relative to the
+   * project, so the recording travels with the show that uses it.
+   */
+  reference: z.string().min(1).optional(),
+  /**
+   * One of the model's own voices, for a model that has a palette instead.
+   *
+   * Both fields can be set at once, and that is useful rather than confusing:
+   * the preset is what made the reference clip, so it records where a cloned
+   * voice came from and lets it be made again.
+   */
+  preset: z.string().min(1).optional(),
+  /** Direction, for a model that takes it. "Tired, precise, never raises her voice." */
+  direction: z.string().optional(),
+  /** Per-voice generation settings, layered over the section's defaults. */
+  params: ParamsSchema.prefault({}),
+  notes: z.string().optional(),
+});
+
+export type Voice = z.infer<typeof VoiceSchema>;
+
+/**
+ * The voice of a line with no `who:`.
+ *
+ * Some lines are narration with no nameplate — a fiction notice, a title card,
+ * a line the display shows without attributing to anyone. They still have to be
+ * spoken, and they still need a voice, but attributing them to a character to
+ * get one would put that character's name on screen under a legal disclaimer.
+ *
+ * So they are cast like anybody else, under an id that is deliberately not a
+ * character. It appears in the cast panel with however many lines it has, and
+ * it can be a different voice from the narrator or the same one — that is the
+ * author's call, and having somewhere to make it is the point.
+ */
+export const NARRATION_VOICE = 'vo';
+
 export const ReferenceImageSchema = z.strictObject({
   file: z.string().min(1),
   /** How hard to hold the reference. The storyboard's character sheets use 0.35. */
@@ -80,6 +130,19 @@ export const SourceRefSchema = z.strictObject({
 
 export const AssetRowSchema = z.strictObject({
   prompt: z.string().optional(),
+  /**
+   * `1920x1080`. What this picture is supposed to be, for a still or a clip.
+   *
+   * Written on the row rather than defaulted invisibly, because art is made in
+   * another program and dropped in here — and a still generated at whatever
+   * that program opened on lands in a 16:9 show either letterboxed or cropped
+   * through the subject, with nothing anywhere saying so. Declared, it is
+   * checked against the file.
+   */
+  size: z
+    .string()
+    .regex(/^\d{2,5}[x×]\d{2,5}$/, 'a size looks like 1920x1080')
+    .optional(),
   /** Overrides the section's negative rather than adding to it. */
   negative: z.string().optional(),
   refs: z.array(ReferenceImageSchema).prefault([]),
@@ -87,6 +150,20 @@ export const AssetRowSchema = z.strictObject({
   /** Voice only: the spoken text, and which configured voice says it. */
   text: z.string().optional(),
   voice: z.string().min(1).optional(),
+  /**
+   * Voice only: seconds of room after this clip before the beat ends.
+   *
+   * The beat written into `scenario.yaml` is the clip plus this. A second is
+   * the default and is right for most lines; where it is not, it is wrong per
+   * line rather than per show — a beat before a poll wants to breathe, and a
+   * three-word interruption wants to land on top of what follows.
+   *
+   * Deliberately absent from `resolveRecipe`, and a test says so. It changes
+   * how long a beat lasts and nothing whatever about the audio, so folding it
+   * into the hash would mark ninety finished clips stale for a timing edit and
+   * make re-timing a show cost a re-record of it.
+   */
+  gap: z.number().min(0).max(60).optional(),
   notes: z.string().optional(),
   /**
    * Character sheets and ship plates. Everything downstream was matched to
@@ -105,6 +182,20 @@ export type AssetRow = z.infer<typeof AssetRowSchema>;
  */
 export const ProjectSchema = z.strictObject({
   project: z.string().min(1),
+  /**
+   * Named blocks a prompt can refer to instead of repeating: `SHIP`, a design
+   * bible pasted into every hull shot so the ship stays the same ship.
+   *
+   * The same argument as a section's `style`, one level down. Twenty shots that
+   * each carry their own copy of the bible are twenty places to re-tune it, and
+   * nineteen of them will be missed. Referring to it by name means one edit
+   * changes all of them — and because the resolved text is folded into the
+   * recipe, one edit also makes all of them visibly stale.
+   *
+   * `STYLE` and `NEGATIVE` are not here: they are the section's own `style` and
+   * `negative`, which existed first and mean exactly this.
+   */
+  tokens: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{2,}$/), z.string()).prefault({}),
   title: z.string().min(1).optional(),
   /** All paths resolve relative to the project file, and may be absolute. */
   storyboard: z.string().min(1).optional(),
@@ -112,6 +203,8 @@ export const ProjectSchema = z.strictObject({
   publish: z.string().min(1),
   generated: z.string().min(1).default('generated'),
   sections: SectionsSchema.prefault({}),
+  /** Keyed by character id, as `scenario.yaml` spells it. */
+  voices: z.record(z.string().min(1), VoiceSchema).prefault({}),
   assets: z.record(z.string().min(1), AssetRowSchema).prefault({}),
 });
 
@@ -136,6 +229,15 @@ export type Take = z.infer<typeof TakeSchema>;
 
 export const LedgerEntrySchema = z.strictObject({
   selected: z.string().min(1).optional(),
+  /**
+   * The take that was last copied to the published name.
+   *
+   * Without it nothing can tell a shipped line from a line that was merely
+   * chosen: `ready` says the selected take matches the recipe and says nothing
+   * about whether anyone ever published it. That gap is why the board could
+   * read finished while the show still played the previous reading.
+   */
+  published: z.string().min(1).optional(),
   takes: z.array(TakeSchema).prefault([]),
 });
 
@@ -188,9 +290,16 @@ export function pathsOf(projectFile: string, project: Project): ProjectPaths {
  * becomes `generated/images/station.jpg/`. Dots are legal in directory names,
  * and stripping the extension would collide `hero.png` with `hero.jpg`, which
  * are two different assets a scenario is perfectly entitled to reference.
+ *
+ * A scenario that files its assets in per-section folders — `voice/tran-d5-01.mp3`
+ * — has already said "voice" once, and repeating it as `voice/voice_tran-d5-01.mp3`
+ * is noise in the one folder an author opens by hand to hear what was made. The
+ * section directory stays regardless of naming, because it is what keeps `a.mp3`
+ * in `voice:` from sharing a folder with `a.mp3` in `music:`.
  */
 export function takesDir(paths: ProjectPaths, section: AssetSection, file: string): string {
-  return join(paths.generated, section, file.replaceAll(/[\\/]/g, '_'));
+  const inside = file.startsWith(`${section}/`) ? file.slice(section.length + 1) : file;
+  return join(paths.generated, section, inside.replaceAll(/[\\/]/g, '_'));
 }
 
 // ---------------------------------------------------------------------------
@@ -211,29 +320,85 @@ export type Recipe = {
   style: string;
   refs: { file: string; strength: number }[];
   params: Params;
+  /** In the recipe, so re-sizing a shot marks what was made at the old size stale. */
+  size?: string;
+  /**
+   * Whether this picture is somebody's face, from the scenario rather than the
+   * row — a portrait is composed as a cutout, and that changes what is made.
+   */
+  portrait?: boolean;
   text?: string;
   voice?: string;
+  /**
+   * The character's voice, folded in rather than referred to.
+   *
+   * A recipe has to contain everything that decides what comes out, or the
+   * hash cannot do its job. Naming the voice and leaving its settings outside
+   * would mean re-recording a character's reference clip left every line they
+   * speak looking finished.
+   */
+  reference?: string;
+  preset?: string;
+  direction?: string;
+  /**
+   * The named blocks this prompt refers to, resolved.
+   *
+   * Only the ones it uses. A recipe has to contain everything that decides what
+   * comes out, so the ship's bible belongs in a hull shot's hash — but folding
+   * in every token the project defines would age forty images because somebody
+   * corrected a typo in a bible none of them mention.
+   */
+  tokens: Record<string, string>;
   model: { backend: string; file?: string };
 };
+
+/**
+ * `portrait` comes from the scenario, not from `project.yaml`, so it has to be
+ * handed in. Every caller has to pass the same answer or the hash means nothing
+ * — the board would call a picture finished that the generator would make
+ * differently — so there is one derivation of it, `portraitFilesOf`.
+ */
+export type RecipeContext = { portrait?: boolean };
 
 export function resolveRecipe(
   project: Project,
   section: AssetSection,
   file: string,
+  context: RecipeContext = {},
 ): Recipe {
   const row = project.assets[file] ?? AssetRowSchema.parse({});
   const model = project.sections[section];
+  const voice = row.voice ? project.voices[row.voice] : undefined;
   return {
     section,
+    ...(context.portrait ? { portrait: true } : {}),
     prompt: row.prompt ?? '',
     negative: row.negative ?? model?.negative ?? '',
     style: model?.style ?? '',
     refs: row.refs,
-    params: { ...(model?.defaults ?? {}), ...row.params },
+    size: row.size,
+    // Widest first: the section is how this kind of asset is made, the voice is
+    // how this character sounds, the row is this one clip. Each may correct the
+    // one above it.
+    params: { ...(model?.defaults ?? {}), ...(voice?.params ?? {}), ...row.params },
     text: row.text,
     voice: row.voice,
+    reference: voice?.reference,
+    preset: voice?.preset,
+    direction: voice?.direction,
+    tokens: usedTokens(project, row.prompt ?? ''),
     model: { backend: model?.backend ?? 'manual', file: model?.file },
   };
+}
+
+/** The definitions a prompt actually refers to, resolved. Unknown names are left out. */
+function usedTokens(project: Project, prompt: string): Record<string, string> {
+  const used: Record<string, string> = {};
+  for (const name of tokensIn(prompt)) {
+    const defined = project.tokens[name];
+    if (defined !== undefined) used[name] = defined;
+  }
+  return used;
 }
 
 /** Key-order-independent JSON, so a reordered YAML map is not a new recipe. */

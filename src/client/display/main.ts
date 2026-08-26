@@ -69,10 +69,12 @@ let lastRenderedBeat = -1;
  * several beats past it during the dropout.
  */
 let renderedLocally = false;
-let currentSceneId: string | undefined;
+/** The scene last painted, so a beat that names none keeps the current place. */
+let lastSceneId: string | undefined;
+/** What is on the projector right now, as a media key rather than a scene id. */
+let paintedKey: string | undefined;
 let typeTimer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
-let resultTimer: ReturnType<typeof setTimeout> | undefined;
 
 function show(which: keyof typeof views): void {
   for (const [name, node] of Object.entries(views)) {
@@ -190,15 +192,27 @@ function announceReady(): void {
 // Rendering
 // ---------------------------------------------------------------------------
 
-function applyScene(sceneId: string | undefined): void {
-  if (sceneId === currentSceneId) return;
-  currentSceneId = sceneId;
-
+/**
+ * Paints the shot: the scene's still and clip, or the node's own where it
+ * declares them.
+ *
+ * Keyed on the resolved media rather than the scene id, because two nodes in
+ * one place are now two different pictures — comparing scene ids alone would
+ * paint the first shot and then never repaint.
+ */
+function applyScene(sceneId: string | undefined, nodeId?: string): void {
   const definition = sceneId ? scenario?.scenes[sceneId] : undefined;
-  scene.style.backgroundImage = definition?.background
-    ? `url("${assetBase}${definition.background}")`
-    : '';
-  applySceneVideo(definition?.video);
+  const node = nodeId ? scenario?.nodes.find((n) => n.id === nodeId) : undefined;
+  const background = node?.background ?? definition?.background;
+  const video = node?.video ?? definition?.video;
+
+  lastSceneId = sceneId;
+  const key = `${sceneId ?? ''}|${background ?? ''}|${video ?? ''}`;
+  if (key === paintedKey) return;
+  paintedKey = key;
+
+  scene.style.backgroundImage = background ? `url("${assetBase}${background}")` : '';
+  applySceneVideo(video);
 }
 
 /**
@@ -397,7 +411,23 @@ function startCountdown(endsAt: number): void {
   countdownTimer = setInterval(tick, 250);
 }
 
-function renderResult(result: NonNullable<Snapshot['lastResult']>, then: () => void): void {
+/**
+ * Shows a closed poll's result.
+ *
+ * No timer of its own any more. This used to hold the screen for 2600ms with a
+ * `setTimeout` that nothing else knew about — so the server started the next
+ * line's `hold` the moment the poll closed, and the first line after every
+ * vote was truncated by that much, or skipped outright where its hold was
+ * shorter. The reveal is a beat now, and the server clocks it like any other.
+ */
+function renderResult(result: {
+  winnerLabel: string;
+  winner: string;
+  counts: Record<string, number>;
+  total: number;
+  usedDefault: boolean;
+  usedTiebreak: boolean;
+}): void {
   show('result');
   el('result-label').textContent = result.winnerLabel;
 
@@ -408,8 +438,6 @@ function renderResult(result: NonNullable<Snapshot['lastResult']>, then: () => v
       : `${result.counts[result.winner] ?? 0} of ${result.total} vote${result.total === 1 ? '' : 's'}.`;
   el('result-detail').textContent = detail;
 
-  clearTimeout(resultTimer);
-  resultTimer = setTimeout(then, 2600);
 }
 
 function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
@@ -422,20 +450,25 @@ function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
       show('lobby');
       return;
     case 'dialogue':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       renderDialogue(beat);
       return;
     case 'pause':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       show('pause');
       el('pause-text').textContent = beat.text ?? '';
       return;
     case 'poll':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       renderPoll(beat, snapshot?.tally);
       return;
+    case 'result':
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
+      show('result');
+      renderResult(beat);
+      return;
     case 'end':
-      applyScene(beat.scene ?? currentSceneId);
+      applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       show('end');
       el('end-text').textContent = beat.text ?? 'The end.';
       return;
@@ -453,10 +486,13 @@ function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
  */
 function scheduleLocal(): void {
   clearTimeout(localTimer);
-  if (!scenario || !local || local.phase !== 'playing') return;
+  if (!scenario || !local) return;
+  if (local.phase !== 'playing' && local.phase !== 'revealing') return;
 
   const beat = beatOf(scenario, local);
-  if (beat.kind !== 'dialogue' && beat.kind !== 'pause') return;
+  // The reveal is timed here too: a socket that drops while the bar chart is
+  // up would otherwise leave the projector on it for the rest of the show.
+  if (beat.kind !== 'dialogue' && beat.kind !== 'pause' && beat.kind !== 'result') return;
 
   localTimer = setTimeout(() => {
     if (connection.isOpen) return; // the server is driving; do nothing
@@ -487,6 +523,17 @@ function renderLocal(): void {
       voice: beat.line.voice,
       sfx: beat.line.sfx,
     });
+  } else if (beat.kind === 'result') {
+    // The engine nests the result where the protocol flattens it, so the cast
+    // the other kinds take would hand the renderer a beat with no winner on it.
+    renderBeat({
+      kind: 'result',
+      nodeId: beat.nodeId,
+      pollId: beat.pollId,
+      scene: activeScene(scenario, local),
+      durationMs: beat.durationMs,
+      ...beat.result,
+    });
   } else {
     renderBeat(beat as SnapshotBeat);
   }
@@ -497,7 +544,6 @@ function renderLocal(): void {
 // Server messages
 // ---------------------------------------------------------------------------
 
-let pendingResultNode: string | undefined;
 
 function onSnapshot(snapshot: Snapshot): void {
   el('lobby-title').textContent = snapshot.scenario.title;
@@ -536,17 +582,6 @@ function onSnapshot(snapshot: Snapshot): void {
   }
   renderedLocally = false;
 
-  // A poll that just closed gets its reveal before the story continues.
-  const result = snapshot.lastResult;
-  if (result && result.nodeId !== pendingResultNode && snapshot.beatInfo.kind !== 'poll') {
-    pendingResultNode = result.nodeId;
-    lastRenderedBeat = snapshot.beat;
-    renderResult(result, () => {
-      renderBeat(snapshot.beatInfo, snapshot);
-      scheduleLocal();
-    });
-    return;
-  }
 
   lastRenderedBeat = snapshot.beat;
   renderBeat(snapshot.beatInfo, snapshot);

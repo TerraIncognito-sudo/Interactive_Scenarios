@@ -94,6 +94,40 @@ export function checkScenario(scenario: Scenario): CheckResult {
       errors.push({ nodeId: node.id, message: `references unknown scene "${node.scene}"` });
     }
 
+    if (node.video !== undefined && !VIDEO_EXTENSIONS.test(node.video)) {
+      errors.push({
+        nodeId: node.id,
+        message: `has video "${node.video}", which is not a video file the display can play`,
+      });
+    }
+
+    // A node's override is per-field, so it is possible to take the clip from
+    // the node and the still from the scene. Sometimes that is exactly right —
+    // motion added over the scene's picture — and sometimes it pairs one shot's
+    // still with another shot's clip, which only shows up on a projector.
+    const sceneOf = node.scene ? scenario.scenes[node.scene] : undefined;
+    const still = node.background ?? sceneOf?.background;
+    if ((node.background !== undefined || node.video !== undefined) && still === undefined) {
+      warnings.push({
+        nodeId: node.id,
+        message: 'overrides the scene media but nothing supplies a background to paint under it',
+      });
+    } else if (node.video !== undefined && node.background === undefined && sceneOf?.background) {
+      warnings.push({
+        nodeId: node.id,
+        message:
+          `has its own video but takes its poster frame from scene "${node.scene}" — ` +
+          `intended if the clip is motion over that still, wrong if it is a different shot`,
+      });
+    } else if (node.background !== undefined && node.video === undefined && sceneOf?.video) {
+      warnings.push({
+        nodeId: node.id,
+        message:
+          `has its own background but plays scene "${node.scene}"'s clip over it — ` +
+          `those are two different shots unless the clip is place-wide motion`,
+      });
+    }
+
     if (node.type === 'dialogue') {
       node.lines.forEach((line, i) => {
         if (line.who !== undefined && !(line.who in scenario.characters)) {

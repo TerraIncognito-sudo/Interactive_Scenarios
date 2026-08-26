@@ -308,6 +308,18 @@ export function simulate(scenario: Scenario, choices: Record<string, string> = {
         continue;
       }
 
+      if (beat.kind === 'result') {
+        // The reveal after a vote. Not a step of its own — the poll step
+        // already says which option won — but the room really does spend this
+        // time looking at it, so it belongs in the runtime. Added to the poll
+        // that produced it so the per-step seconds still sum to the total.
+        const reveal = beat.durationMs / 1000;
+        seconds += reveal;
+        const last = steps[steps.length - 1];
+        if (last?.kind === 'poll') last.seconds += reveal;
+        state = reduce(scenario, state, { type: 'advance' });
+        continue;
+      }
       // A poll. Resolve it through the real vote logic rather than picking the
       // option directly, so the default and the `set:` block behave exactly as
       // they will on the night.

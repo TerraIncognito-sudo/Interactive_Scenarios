@@ -92,6 +92,24 @@ nodes:
 Both are prefetched before the display reports ready, so nothing streams in live
 in front of the room.
 
+A **scene is a place**, and a place gets several shots. Any node may carry its own
+`background:` and `video:`, overriding the scene's for as long as it plays:
+
+```yaml
+nodes:
+  - id: a2_absence
+    type: dialogue
+    background: a2-flank.jpg   # this shot only
+    video: a2-flank.mp4
+    lines:
+      - text: Except there is no brow. No gangway.
+        hold: 5
+```
+
+The scene's `music:` and `ambience:` keep playing throughout — they belong to the
+place, not the shot — and the next node without an override falls back to the
+scene's still.
+
 **Give every voiced line a `hold`.** Nothing on the server opens the audio file, so
 the beat still ends when `hold` — or failing that, the reading-speed estimate — says
 it does. Get it wrong and the narrator is cut off, or the room watches a still frame
@@ -125,8 +143,11 @@ The simulator runs the **real engine**, not a model of it — the same `reduce` 
 uses on the night. Validation happens as you type, and it is the same check the server
 applies at load time, so the editor cannot bless a scenario the server would reject.
 
-It binds to loopback only. It is the one process here that writes to `scenarios/`, and it
-writes atomically.
+It binds to loopback only, and it **works only on projects in a workspace folder you
+choose** — never on `scenarios/`. A project is any folder with a `scenario.yaml`; the
+editor reads and writes nothing outside the workspace, so building a scenario cannot
+disturb a server that may be mid-show. When a scenario is ready, copy its folder into
+`scenarios/` yourself.
 
 ```yaml
 - id: vote_approach

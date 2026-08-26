@@ -380,11 +380,89 @@ describe('media reaches the projector', () => {
     // The display blocks on this list before reporting ready, so anything
     // missing from it is an asset that streams in live in front of the room.
     assert.deepEqual(body.assets.sort(), [
-      'harbour.jpg',
-      'harbour.mp3',
-      'harbour.mp4',
-      'open-1.mp3',
+      'ambience/harbour.mp3',
+      'images/harbour.jpg',
+      'images/narrator.png',
+      'video/harbour.mp4',
+      'voice/open-1.mp3',
     ]);
+  });
+
+  test('a speaker carries their portrait into the snapshot', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+
+    const first = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 0,
+    );
+    // The display draws it bottom-right over the dialogue box while the line
+    // plays, which is the shape every 2D RPG has used for thirty years. It has
+    // been able to do that from the beginning; what no scenario ever did was
+    // declare a picture for it to draw.
+    assert.equal(first.beatInfo.kind === 'dialogue' && first.beatInfo.speaker?.sprite,
+      'images/narrator.png');
+
+    // And it is in the prefetch list, so the portrait is decoded before the
+    // show starts rather than popping in a beat late.
+    const response = await fetch(
+      `${baseUrl}/scenario-assets/media/assets/images/narrator.png`,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+
+    host.close();
+  });
+
+  test('a line with no speaker carries no portrait', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+
+    // Narration is a voice without a face. A portrait that stayed on screen
+    // through it would attribute the line to whoever spoke last.
+    const second = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 1,
+    );
+    assert.equal(second.beatInfo.kind === 'dialogue' && second.beatInfo.speaker, undefined);
+
+    host.close();
+  });
+
+  test('the base and the manifest join into a URL that actually serves', async () => {
+    // The bug this exists for: `assetBase` stopped one level above `assets/`,
+    // so every name in the manifest resolved to a 404. It went unnoticed for
+    // months because no scenario had a single asset made yet — the first one
+    // would have been a missing picture in front of a room.
+    //
+    // So the assertion is the join itself, done exactly as the display does it,
+    // for every asset the scenario declares.
+    const room = await createRoom('media');
+    const response = await fetch(
+      `${baseUrl}/api/rooms/${room.code}/scenario?token=${room.displayToken}`,
+    );
+    const body = (await response.json()) as { assets: string[]; assetBase: string };
+
+    const made = ['images/narrator.png', 'voice/open-1.mp3'];
+    for (const file of body.assets.filter((name) => made.includes(name))) {
+      const asset = await fetch(`${baseUrl}${body.assetBase}${file}`);
+      assert.equal(asset.status, 200, `${body.assetBase}${file} did not serve`);
+    }
+  });
+
+  test('an asset filed in a folder is served from one', async () => {
+    // The last link in the chain. The editor files a name, the publisher writes
+    // to it and the validator checks it — and none of that is worth anything if
+    // the route the projector actually fetches from refuses a path with a
+    // slash in it.
+    const response = await fetch(`${baseUrl}/scenario-assets/media/assets/voice/open-1.mp3`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.text()).trim(), 'not really an mp3');
+
+    // And the boundary still holds: the route serves a scenario's assets
+    // folder and nothing above it.
+    const escaped = await fetch(`${baseUrl}/scenario-assets/media/scenario.yaml`);
+    assert.notEqual(escaped.status, 200);
   });
 
   test('a snapshot carries the line voice and the scene video', async () => {
@@ -396,12 +474,18 @@ describe('media reaches the projector', () => {
       (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue' && m.beatInfo.lineIndex === 0,
     );
 
-    assert.equal(first.beatInfo.kind === 'dialogue' && first.beatInfo.voice, 'open-1.mp3');
+    // Exactly the name the scenario declares, folder and all. The display
+    // joins this to the asset base and opens it — nothing along the way is
+    // allowed to work out a folder for itself.
+    assert.equal(
+      first.beatInfo.kind === 'dialogue' && first.beatInfo.voice,
+      'voice/open-1.mp3',
+    );
     assert.equal(first.scene?.id, 'harbour');
-    assert.equal(first.scene?.video, 'harbour.mp4');
+    assert.equal(first.scene?.video, 'video/harbour.mp4');
     assert.equal(
       first.scene?.background,
-      'harbour.jpg',
+      'images/harbour.jpg',
       'the still has to travel with the clip — it is the poster frame',
     );
 
@@ -806,5 +890,89 @@ describe('admin session control', () => {
       headers: { 'x-admin-password': TEST_PASSWORD },
     });
     assert.equal(response.status, 404);
+  });
+});
+describe('the result of a poll is a beat, not an animation', () => {
+  test('closing a poll shows the result before the next line', async () => {
+    // The bug this exists for. The reveal was a `setTimeout` inside the display
+    // and nothing else knew about it, so the server started the next line's
+    // `hold` the instant the poll closed — while the projector was still
+    // showing the bar chart. The first line after every vote lost that time:
+    // truncated where its hold was longer, never drawn at all where it was
+    // shorter, which is most of them.
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    const reveal = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'result',
+    );
+
+    assert.equal(reveal.beatInfo.kind, 'result');
+    if (reveal.beatInfo.kind === 'result') {
+      assert.equal(reveal.beatInfo.pollId, 'vote', 'names the poll, not the node it moved to');
+      assert.ok(reveal.beatInfo.durationMs > 0, 'and it lasts a measurable length of time');
+      assert.equal(typeof reveal.beatInfo.winnerLabel, 'string');
+    }
+
+    host.close();
+  });
+
+  test('the line after a vote gets its whole hold, measured from the reveal ending', async () => {
+    // The assertion that would have caught it. The dialogue beat must not
+    // arrive until the reveal is over — if it arrives with the reveal, its hold
+    // is already running behind a screen the audience cannot read it through.
+    const room = await createRoom();
+    const host = await runToPoll(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    const reveal = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'result',
+    );
+    const revealAt = Date.now();
+    const revealMs = reveal.beatInfo.kind === 'result' ? reveal.beatInfo.durationMs : 0;
+
+    // Keyed on the beat number, not merely the kind: the host has been
+    // connected since the lobby and its buffer already holds the dialogue
+    // beats from before the vote, which `next` would match at once.
+    const line = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'dialogue' && m.beat > reveal.beat,
+      revealMs + 4000,
+    );
+    const waited = Date.now() - revealAt;
+
+    assert.ok(
+      waited >= revealMs - 150,
+      `the line waited ${waited}ms for a ${revealMs}ms reveal — it used to arrive at once`,
+    );
+    assert.equal(line.beatInfo.kind, 'dialogue');
+    assert.ok(line.beat > reveal.beat, 'and it is a beat of its own, so the display redraws');
+
+    host.close();
+  });
+
+  test('a vote leading into another poll opens that poll only once the reveal is done', async () => {
+    // The reveal happens on the node the vote chose, so a second poll's clock
+    // must not start while the first poll's result is still up. Opening was
+    // keyed on the node changing, which by then had already happened.
+    const room = await createRoom('twopolls');
+    const host = await runToPoll(room.code, room.hostToken);
+
+    host.send({ type: 'command', command: { name: 'closePoll' } });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'result');
+
+    const second = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'poll',
+      6000,
+    );
+    assert.equal(second.beatInfo.kind, 'poll');
+    if (second.beatInfo.kind === 'poll') {
+      assert.ok(
+        second.beatInfo.endsAt > second.serverNow,
+        'the second poll must have a live deadline, not the zero it is stamped with on entry',
+      );
+    }
+
+    host.close();
   });
 });
