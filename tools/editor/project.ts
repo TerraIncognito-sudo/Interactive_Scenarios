@@ -130,6 +130,19 @@ export const SourceRefSchema = z.strictObject({
 
 export const AssetRowSchema = z.strictObject({
   prompt: z.string().optional(),
+  /**
+   * `1920x1080`. What this picture is supposed to be, for a still or a clip.
+   *
+   * Written on the row rather than defaulted invisibly, because art is made in
+   * another program and dropped in here — and a still generated at whatever
+   * that program opened on lands in a 16:9 show either letterboxed or cropped
+   * through the subject, with nothing anywhere saying so. Declared, it is
+   * checked against the file.
+   */
+  size: z
+    .string()
+    .regex(/^\d{2,5}[x×]\d{2,5}$/, 'a size looks like 1920x1080')
+    .optional(),
   /** Overrides the section's negative rather than adding to it. */
   negative: z.string().optional(),
   refs: z.array(ReferenceImageSchema).prefault([]),
@@ -284,6 +297,8 @@ export type Recipe = {
   style: string;
   refs: { file: string; strength: number }[];
   params: Params;
+  /** In the recipe, so re-sizing a shot marks what was made at the old size stale. */
+  size?: string;
   text?: string;
   voice?: string;
   /**
@@ -323,6 +338,7 @@ export function resolveRecipe(
     negative: row.negative ?? model?.negative ?? '',
     style: model?.style ?? '',
     refs: row.refs,
+    size: row.size,
     // Widest first: the section is how this kind of asset is made, the voice is
     // how this character sounds, the row is this one clip. Each may correct the
     // one above it.

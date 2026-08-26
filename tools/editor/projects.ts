@@ -400,6 +400,7 @@ async function seedFromStoryboard(
 
     const row: Record<string, unknown> = {};
     if (asset.prompt) row.prompt = asset.prompt;
+    if (asset.size) row.size = asset.size;
     if (asset.text) row.text = asset.text;
     if (asset.voice) row.voice = asset.voice;
     // Written key by key rather than spread wholesale: an undefined field would
@@ -647,7 +648,7 @@ export async function editSectionField(
 
 export type FieldEdit = {
   file: string;
-  field: 'prompt' | 'negative' | 'text' | 'voice' | 'notes' | 'freeze';
+  field: 'prompt' | 'negative' | 'size' | 'text' | 'voice' | 'notes' | 'freeze';
   value: string | boolean;
 };
 

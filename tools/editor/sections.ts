@@ -25,6 +25,7 @@ import {
 } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
 import { composePrompt } from './prompt.ts';
+import { defaultSizeFor, formatSize, parseSize, readImageSize } from './size.ts';
 import {
   fromProject,
   NARRATION_VOICE,
@@ -73,6 +74,23 @@ export type AssetView = {
    * what any model would receive.
    */
   composed?: { positive: string; negative: string; unresolved: string[] };
+  /**
+   * What this picture is supposed to be, what it suggests if nothing says, and
+   * what the selected take on disk actually is.
+   *
+   * The third one is the point. Art is made in another program and dropped into
+   * the takes folder, and that program opens on 1024×1024 because every web UI
+   * does. Dropped into a 16:9 show it is letterboxed or cropped through the
+   * subject, and nothing else on this board would ever mention it.
+   */
+  size?: {
+    declared?: string;
+    suggested?: string;
+    /** Read from the selected take's header. Absent for video and for audio. */
+    actual?: string;
+    /** True when the file on disk is not the size the row asked for. */
+    mismatched?: boolean;
+  };
   takes: TakeView[];
   selected?: string;
   /** The file exists at its canonical name in the publish folder. */
@@ -223,6 +241,45 @@ function notesFor(
 }
 
 /**
+ * What the row asks for, against what is on the disk.
+ *
+ * Measured from the *selected* take rather than the published file: selecting
+ * is the moment somebody decides a picture is the one, and being told then that
+ * it is the wrong shape is worth far more than being told after it ships.
+ */
+async function sizeReport(
+  paths: ProjectPaths,
+  section: AssetSection,
+  file: string,
+  row: AssetRow | undefined,
+  origins: AssetOrigin[],
+  selected: string | undefined,
+): Promise<AssetView['size']> {
+  const suggested = defaultSizeFor(section, origins);
+  if (!suggested && !row?.size) return undefined;
+
+  const declared = parseSize(row?.size);
+  const report: NonNullable<AssetView['size']> = {
+    ...(row?.size ? { declared: row.size } : {}),
+    ...(suggested ? { suggested: formatSize(suggested) } : {}),
+  };
+
+  // Only stills. A clip's dimensions live several nested atoms deep in its
+  // container, and reporting a correct one as the wrong shape would send an
+  // author off to re-render something that was already right.
+  if (section !== 'images' || !selected) return report;
+
+  const actual = await readImageSize(join(takesDir(paths, section, file), selected));
+  if (!actual) return report;
+
+  report.actual = formatSize(actual);
+  if (declared && (declared.width !== actual.width || declared.height !== actual.height)) {
+    report.mismatched = true;
+  }
+  return report;
+}
+
+/**
  * The speaking cast, joined to its voice settings.
  *
  * Built from the voice rows rather than from `scenario.characters`, because a
@@ -336,6 +393,7 @@ export async function buildOverview(
       const selectedTake = takes.find((take) => take.id === selected);
 
       const notes = notesFor(scenario, section, info.origins);
+      const size = await sizeReport(paths, section, file, row, info.origins, entry?.selected);
       // Voice has no prompt in this sense — its text is the line — and running
       // a composer over it would offer to expand words in the dialogue.
       const composed = section === 'voice' ? undefined : composePrompt(recipe);
@@ -349,6 +407,7 @@ export async function buildOverview(
         row: row ?? ({ refs: [], params: {}, freeze: false } as AssetRow),
         origins: info.origins,
         ...(composed ? { composed } : {}),
+        ...(size ? { size } : {}),
         takes,
         selected,
         published: await fileExists(join(paths.publish, file)),
@@ -398,6 +457,18 @@ export async function buildOverview(
         `nothing defines — the model will read it as a word. Add it under \`tokens:\`, or ` +
         `re-seed from the storyboard if it states one.`,
     });
+  }
+
+  for (const view of sections) {
+    for (const asset of view.assets) {
+      if (!asset.size?.mismatched) continue;
+      problems.push({
+        level: 'warning',
+        message:
+          `"${asset.file}" is ${asset.size.actual} but the row asks for ${asset.size.declared}. ` +
+          `On a 1920×1080 stage that is letterboxed or cropped through the subject.`,
+      });
+    }
   }
 
   const orphans = Object.keys(project.assets)

@@ -177,6 +177,16 @@ faces the author deliberately withheld, and one of them would be a person for a 
 a sheet labelled `Beaudoin` to `beau` is the one guess, so it is narrow — the id outright, or a
 whole word of the name — and ambiguity is refused rather than resolved.
 
+**Every picture declares a size, and the file is measured against it.** Art is made in another
+program and dropped into the takes folder, and every web UI opens on a square — so a still
+arrives 1024x1024, lands in a 16:9 show, and is letterboxed or cropped through the subject with
+nothing anywhere saying so. `size.ts` takes its defaults from the display's own geometry (a
+1920x1080 stage; a portrait 460 wide with 740 above the dialogue box) rather than from taste, and
+writes them onto the row so the choice is in the file the author reads. It reads a real file's
+dimensions from the header only — stills, never video, because a clip's dimensions live several
+nested atoms deep and reporting a correct clip as wrong shape sends someone off to re-render
+something that was already right.
+
 **A prompt is not what the model gets.** A storyboard writes `STYLE. SHIP. Pre-dawn at a
 jetty…` and defines STYLE and SHIP once, hundreds of characters each, because the style belongs
 to the production rather than to any one shot. Handed to a model unchanged that is five dead

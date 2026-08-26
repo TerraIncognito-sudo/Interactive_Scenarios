@@ -293,6 +293,12 @@ function sepOf(path) {
   return path.includes('\\') ? '\\' : '/';
 }
 
+/** The folder this asset's takes live in, spelled the way the server spells it. */
+function takesFolder(asset) {
+  const root = state.data?.paths?.generated ?? '';
+  return [root, asset.section, leafOf(asset)].join(sepOf(root));
+}
+
 function leafOf(asset) {
   const prefix = `${asset.section}/`;
   const inside = asset.file.startsWith(prefix) ? asset.file.slice(prefix.length) : asset.file;
@@ -703,9 +709,7 @@ function takesStrip(asset) {
       // The real path, not "the generated folder". Where the takes went is the
       // question every author asks first, and it is one the project file can
       // already answer.
-      folder
-        ? h('code', {}, [folder, asset.section, leafOf(asset)].join(sepOf(folder)))
-        : 'the project’s generated folder',
+      folder ? h('code', {}, takesFolder(asset)) : 'the project’s generated folder',
       ' shows up here.',
     );
   }
@@ -868,6 +872,25 @@ function assetActions(asset, generable) {
     );
   }
 
+  // Where to put a picture made somewhere else. Only for a section with no
+  // generator wired up, because that is the section where this is the workflow
+  // rather than a fallback — and hunting for a nested path under a folder named
+  // for a filename is not something to do twenty-six times by hand.
+  if (!generable) {
+    actions.push(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost small',
+          title: 'Copy the folder to drop a finished file into',
+          onclick: () => void copyText(takesFolder(asset), 'takes folder'),
+        },
+        'Copy folder',
+      ),
+    );
+  }
+
   if (asset.selected) {
     actions.push(
       h(
@@ -896,6 +919,54 @@ function assetActions(asset, generable) {
  * nine hundred characters of palette that would bury the twenty-six rows around
  * it.
  */
+/**
+ * The size this picture is supposed to be, and what is actually on disk.
+ *
+ * A text box rather than a dropdown of presets. Every model has its own set of
+ * shapes it is happiest at, and a list that did not contain the one somebody
+ * needed would send them to hand-edit `project.yaml` — which is the hole this
+ * whole editor exists to close.
+ */
+function sizeField(asset) {
+  const size = asset.size;
+  if (!size) return null;
+
+  const box = h('input', {
+    type: 'text',
+    class: `size-box${size.mismatched ? ' bad' : ''}`,
+    size: 11,
+    spellcheck: 'false',
+    placeholder: size.suggested ?? '1920x1080',
+    title: 'What to generate this at, e.g. 1920x1080',
+    onblur: (event) => {
+      const next = event.target.value.trim();
+      if (next === (size.declared ?? '')) return;
+      void editField(asset.file, 'size', next);
+    },
+  });
+  box.value = size.declared ?? '';
+
+  return h(
+    'div',
+    { class: 'size-row' },
+    h('span', { class: 'size-label' }, 'size'),
+    box,
+    // What is really there, when it can be read. This is the whole reason the
+    // field exists: art made in another program arrives at whatever shape that
+    // program opened on, and nothing else here would ever say so.
+    size.actual
+      ? h(
+          'span',
+          { class: `size-actual${size.mismatched ? ' bad' : ''}` },
+          size.mismatched ? `on disk: ${size.actual} — wrong shape` : `on disk: ${size.actual}`,
+        )
+      : null,
+    !size.declared && size.suggested
+      ? h('span', { class: 'size-hint' }, `${size.suggested} suits the stage`)
+      : null,
+  );
+}
+
 function promptPreview(asset) {
   const composed = asset.composed;
   if (!composed) return null;
@@ -935,6 +1006,14 @@ function promptPreview(asset) {
       ? h(
           'div',
           { class: 'preview-body' },
+          asset.size?.declared
+            ? h(
+                'p',
+                { class: 'preview-text preview-meta' },
+                h('span', { class: 'preview-label' }, 'size '),
+                asset.size.declared,
+              )
+            : null,
           h('p', { class: 'preview-text' }, composed.positive),
           composed.negative
             ? h(
@@ -1044,6 +1123,7 @@ function assetRow(asset, generable = false) {
         )
       : null,
     box,
+    sizeField(asset),
     promptPreview(asset),
     takesStrip(asset),
     assetActions(asset, generable),

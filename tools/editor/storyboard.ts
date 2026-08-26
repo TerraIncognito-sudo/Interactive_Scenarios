@@ -493,6 +493,7 @@ export function proposeAssets(shots: StoryboardShot[]): ProposedAsset[] {
 
 import { assetReferencesOf } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
+import { defaultSizeFor, formatSize } from './size.ts';
 import { NARRATION_VOICE } from './project.ts';
 
 export type SeedRow = {
@@ -500,6 +501,8 @@ export type SeedRow = {
   file: string;
   section: AssetSection;
   prompt?: string;
+  /** `1920x1080`, from where the scenario uses the picture. Absent for audio. */
+  size?: string;
   text?: string;
   voice?: string;
   /**
@@ -669,6 +672,12 @@ export function seedRowsFor(
     const row: SeedRow = { file: ref.file, section: ref.section, source: {} };
     if (shot) row.source.shot = shot.id;
 
+    // The display's own geometry, written into the file the author reads. Art
+    // is made in another program and dropped in here, and the one thing that
+    // program cannot know is what shape the show is.
+    const size = defaultSizeFor(ref.section, [ref.origin]);
+    if (size) row.size = formatSize(size);
+
     if (ref.section === 'voice' && 'line' in origin) {
       // The spoken text is the scenario's, never the storyboard's. A storyboard
       // quotes a whole delivery in one blockquote where the scenario splits it
@@ -705,8 +714,9 @@ export function seedRowsFor(
 
     // Ambience and music have no per-shot prompt in a storyboard — they are
     // described once, per scene family. The row still belongs on the board;
-    // it simply starts empty.
-    if (row.prompt || row.text || ref.section === 'ambience' || ref.section === 'music') {
+    // it simply starts empty. A picture always gets a row, because even one the
+    // storyboard never described has a size somebody has to generate it at.
+    if (row.prompt || row.text || row.size || ref.section === 'ambience' || ref.section === 'music') {
       rows.push(row);
       used.add(ref.file);
     }

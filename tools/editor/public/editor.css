@@ -734,6 +734,38 @@ textarea.prompt:focus {
   margin-top: 0.45rem;
 }
 
+/* What a picture is supposed to be, beside what is actually on disk. */
+.size-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+}
+
+.size-label,
+.size-hint,
+.size-actual {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.size-box {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 5px;
+}
+
+.size-box.bad,
+.size-actual.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.preview-meta {
+  font-family: var(--mono);
+}
+
 /*
  * The composed prompt: what a generator would actually be handed, under the box
  * where the author edits the version the storyboard wrote.

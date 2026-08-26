@@ -405,6 +405,29 @@ The prose in a scenario is the author's — several comments in a real one recor
 the length it is — and a machine that edits prose to keep it true will eventually edit prose
 that was already true. It names the lines and stops there.
 
+### Making art somewhere else
+
+Until a generator is wired for a section, this is the workflow, and it is a supported one rather
+than a gap: each row has **Copy folder**, you make the picture in whatever tool you like, and you
+drop the file into that folder. It appears on the board as a take marked *manual*, and selecting
+and publishing work exactly as they do for anything generated here.
+
+Every picture declares a **size**, seeded from the display's own geometry:
+
+| | |
+|---|---|
+| a scene still or clip | `1920x1080` — the stage, exactly |
+| a character portrait | `832x1216` — 460 wide on the stage with 740 above the dialogue box, at the nearest standard bucket |
+
+It is on the row, editable, and part of the recipe, so changing it makes what was generated at
+the old size stale. **And the file is measured against it.** The one failure this workflow has is
+silent: every web UI opens on a square, so a still arrives at 1024x1024, and letterboxing or a
+crop through the subject is discovered on a projector. The board reads the selected take's header
+and says so on the row and in the problem list.
+
+Stills only. A clip's dimensions live several nested atoms deep in its container, and reporting a
+correct clip as the wrong shape would send someone off to re-render something that was fine.
+
 ### Give speakers a portrait
 
 The display has drawn portraits since the beginning: bottom right, over the dialogue box,
