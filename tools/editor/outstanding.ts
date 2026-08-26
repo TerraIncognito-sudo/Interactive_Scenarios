@@ -26,6 +26,7 @@ import type { AssetView, Overview } from './sections.ts';
 export const OUTSTANDING_GROUPS = [
   'missing',
   'unselected',
+  'reselect',
   'stale',
   'republish',
   'publish',
@@ -86,6 +87,14 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
   unselected: {
     label: 'Waiting on a choice',
     hint: 'Takes exist and none is picked. Nothing publishes until one is.',
+    level: 'error',
+    action: 'use-newest',
+  },
+  reselect: {
+    label: 'Regenerated, waiting to be chosen',
+    hint:
+      'A take matching the current recipe is already in the takes folder — generating never ' +
+      'steals a selection, so it is sitting there unchosen. Choosing it is all that is left.',
     level: 'error',
     action: 'use-newest',
   },
@@ -169,6 +178,7 @@ export function outstandingOf(overview: Overview): Outstanding {
   const items: Record<OutstandingGroup, OutstandingItem[]> = {
     missing: [],
     unselected: [],
+    reselect: [],
     stale: [],
     republish: [],
     publish: [],
@@ -190,6 +200,15 @@ export function outstandingOf(overview: Overview): Outstanding {
           group: 'unselected',
           ...where,
           detail: `${asset.takes.length} take${asset.takes.length === 1 ? '' : 's'} to choose from`,
+        });
+      } else if (asset.status === 'stale' && asset.matchingTake) {
+        // Ahead of `stale`, because the two ask for opposite things: this one
+        // needs a click, and telling somebody to regenerate it makes a third
+        // take of a line that already has the right one.
+        items.reselect.push({
+          group: 'reselect',
+          ...where,
+          detail: `${asset.matchingTake} matches the recipe`,
         });
       } else if (asset.status === 'stale') {
         items.stale.push({ group: 'stale', ...where });

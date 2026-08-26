@@ -356,6 +356,43 @@ closes that, and `republish` is only ever claimed against a recorded take — a 
 of how it got there was put there by hand, and telling somebody to overwrite it would be guessing
 at work they did deliberately.
 
+**A regenerated take asks to be chosen, not generated again.** Generating never steals a
+selection, which is what keeps re-rolling free — but it left the asset reporting `stale` with
+the answer already sitting in its own takes folder, under a heading whose button made a *third*
+take of a line that already had the right one. `matchingTake` on the view is a take whose hash
+equals the current recipe and is not the one selected, and `reselect` sits ahead of `stale` in
+the command centre because the two ask for opposite things. `use-newest` picks the take that
+matches the recipe rather than the last one in the list: newest is only a guess at that, and it
+is the wrong guess the moment anything else was rolled afterwards.
+
+**The board knows where each row actually renders.** `rowsFor` gives voice clips to the
+Characters tab and portraits to a character's other sub-tab, so a link that sends somebody to
+Assets for either lands them on a tab that does not contain the row — which is worse than no
+link, because it reads as the row having been deleted. `homeOf` in the client is the one place
+that answers this, and it uses the same `asset.row.voice ?? UNCAST` fallback `byActor` groups
+by, so the sheet it opens is the sheet the row is really in.
+
+**A clip's runtime is checked against the beat it has to fit in.** Nothing on the server ever
+opens an audio file — a beat ends when `hold` says it does — so a `hold` a second short cuts
+the reading off mid-word in front of a room, and the only way to find out was to sit through
+every clip with a stopwatch. Every `hold` starts as a reading-speed estimate and a generated
+clip is routinely a second or two away from it. `duration.ts` reads the length from the header
+only, with no dependency, for the same reason `size.ts` does: the editor's job is to read a
+file the show will play, not to own a codec. A second of headroom rather than none, because
+equal is not safe — the last word needs somewhere to land. Undefined means *could not tell* and
+must never warn: sending somebody to re-cut a line that was already right is worse than not
+telling them. Two ways to get it wrong are both pinned by tests — MPEG 2 halves the Layer III
+frame, and a wav's byte rate is four bytes past its sample rate; either mistake reports every
+clip at exactly twice its length, which turns a real overrun into silence.
+
+**`republish` falls back to comparing the files.** The ledger is exact where it has a record,
+but it cannot see back past the day it started keeping one — and choosing a newer reading of an
+already-shipped line then moved it to `ready` and asked for nothing while the room went on
+hearing the old one. Where no take is recorded, a published file of a different size than the
+selected take is certainly not that take. Matching sizes are taken as the same file rather than
+hashed: two readings of one line landing on the same byte count is a coincidence, and re-reading
+ninety published files on every board build to rule it out is a cost paid every time.
+
 What an action must *not* do is edit the author's prose. A migration that removes a scene
 leaves any comment describing it factually wrong, and the temptation is to fix the sentence —
 but a machine that rewrites prose to keep it true will eventually rewrite prose that was
@@ -388,6 +425,7 @@ the file the first time anyone touches a text box. A test guards this.
 | `tools/editor/sections.ts` | The status board — scenario, recipes, ledger and disk reconciled |
 | `tools/editor/reconcile.ts` | What the scenario owns on a recipe row, re-derived on every save |
 | `tools/editor/outstanding.ts` | The command centre — the board projected into one list of what is left |
+| `tools/editor/duration.ts` | How long a clip runs, from its header — the other half of the `hold` check |
 | `src/shared/protocol.ts` | Message unions, Zod-validated in both directions |
 | `scenarios/` | Content. Adding a scenario is adding a folder — no code changes |
 

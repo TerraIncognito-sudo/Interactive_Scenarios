@@ -131,6 +131,112 @@ describe('every unfinished asset appears exactly once', () => {
   });
 });
 
+describe('a clip that was regenerated but never chosen', () => {
+  test('asks to be selected, not generated again', async () => {
+    // The failure this exists for. Generating never steals a selection, which
+    // is what keeps re-rolling free — but it left the asset reporting `stale`
+    // with the answer already sitting in its own takes folder, under a heading
+    // whose button made a third take of a line that already had the right one.
+    const result = outstandingOf(
+      overview([
+        asset({
+          file: 'voice/narr-a2-02.mp3',
+          status: 'stale',
+          hash: 'ee5ba907870c86dc',
+          selected: '01ba494b923beda5-01.mp3',
+          matchingTake: 'ee5ba907870c86dc-01.mp3',
+        }),
+      ]),
+    );
+
+    assert.deepEqual(groupsOf(result), { reselect: 1 }, 'not stale');
+    const group = result.groups[0]!;
+    assert.equal(group.action, 'use-newest');
+    assert.match(group.items[0]!.detail!, /ee5ba907870c86dc-01\.mp3 matches the recipe/);
+  });
+
+  test('one with no matching take is still simply stale', async () => {
+    const result = outstandingOf(
+      overview([asset({ file: 'voice/old.mp3', status: 'stale' })]),
+    );
+    assert.deepEqual(groupsOf(result), { stale: 1 });
+    assert.equal(result.groups[0]!.action, 'generate');
+  });
+
+  test('choosing it moves it to the publish bin, which is the next thing to do', async () => {
+    // What the author should see after pressing the button: the work moves one
+    // stage down the list rather than disappearing.
+    const chosen = outstandingOf(
+      overview([
+        asset({
+          file: 'voice/narr-a2-02.mp3',
+          status: 'ready',
+          selected: 'ee5ba907870c86dc-01.mp3',
+          publishedTake: '01ba494b923beda5-01.mp3',
+          republish: true,
+        }),
+      ]),
+    );
+    assert.deepEqual(groupsOf(chosen), { republish: 1 });
+  });
+});
+
+describe('a beat that is too short for its line', () => {
+  test('is flagged when the clip overruns the hold outright', async () => {
+    const result = outstandingOf(
+      overview([
+        asset({
+          file: 'voice/tran-c4-01.mp3',
+          status: 'ready',
+          selected: 't1',
+          publishedTake: 't1',
+          seconds: 7.4,
+          hold: 6,
+          notes: [
+            'c4_alert line 1 holds 6s for a 7.4s clip — the beat ends 1.4s before the line ' +
+              'does, and the reading is cut off mid-word',
+          ],
+        }),
+      ]),
+    );
+    assert.deepEqual(groupsOf(result), { quality: 1 });
+    assert.match(result.groups[0]!.items[0]!.detail!, /cut off mid-word/);
+  });
+
+  test('and when it merely leaves under a second of headroom', async () => {
+    const result = outstandingOf(
+      overview([
+        asset({
+          file: 'voice/narr-a1-02.mp3',
+          status: 'ready',
+          selected: 't1',
+          publishedTake: 't1',
+          seconds: 4.8,
+          hold: 5,
+          notes: ['a1_jetty line 2 holds 5s for a 4.8s clip, leaving 0.2s'],
+        }),
+      ]),
+    );
+    assert.equal(result.total, 1);
+  });
+
+  test('a comfortable one says nothing at all', async () => {
+    const result = outstandingOf(
+      overview([
+        asset({
+          file: 'voice/fine.mp3',
+          status: 'ready',
+          selected: 't1',
+          publishedTake: 't1',
+          seconds: 3.2,
+          hold: 6,
+        }),
+      ]),
+    );
+    assert.equal(result.total, 0);
+  });
+});
+
 describe('a take chosen after the last publish', () => {
   test('is called out, because the room would still hear the old one', async () => {
     const result = outstandingOf(
@@ -238,6 +344,7 @@ describe('the contract', () => {
           asset({ file: 'voice/missing.mp3', status: 'missing', published: false }),
           asset({ file: 'voice/pick.mp3', status: 'unselected', published: false }),
           asset({ file: 'voice/stale.mp3', status: 'stale' }),
+          asset({ file: 'voice/rerolled.mp3', status: 'stale', matchingTake: 'aaaa-02.mp3' }),
           asset({ file: 'voice/hand.mp3', status: 'unmanaged' }),
           asset({ file: 'voice/unshipped.mp3', status: 'ready', selected: 't1', published: false }),
           asset({

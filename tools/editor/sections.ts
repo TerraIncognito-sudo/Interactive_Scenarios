@@ -26,6 +26,7 @@ import {
 import type { Scenario } from '../../src/scenario/schema.ts';
 import { asksForBackground, composePrompt } from './prompt.ts';
 import { defaultSizeFor, formatSize, isPortrait, parseSize, readImageInfo } from './size.ts';
+import { readDuration } from './duration.ts';
 import {
   fromProject,
   NARRATION_VOICE,
@@ -107,6 +108,33 @@ export type AssetView = {
    * claimed when there is a recorded take to disagree with.
    */
   publishedTake?: string;
+  /**
+   * How long the selected take runs, in seconds.
+   *
+   * The show never opens an audio file — a beat ends when `hold` says it does
+   * — so this is the only place the two facts are ever in the same room.
+   * Absent when the format could not be read, which must never produce a
+   * warning: sending somebody to re-cut a line that was already right is
+   * worse than not telling them.
+   */
+  seconds?: number;
+  /**
+   * The `hold` the scenario declares for the line this clip reads.
+   *
+   * Alongside `seconds` rather than instead of it: either number on its own is
+   * trivia, and the pair is the only check there is that a reading fits the
+   * beat it was written for.
+   */
+  hold?: number;
+  /**
+   * A take that already matches the current recipe but is not the one chosen.
+   *
+   * Generating deliberately never steals a selection, so a regenerated clip
+   * leaves the asset reporting `stale` with the answer already sitting in its
+   * own takes folder. Without this the board says re-generate, which makes
+   * another one.
+   */
+  matchingTake?: string;
   /**
    * The audience would hear the selected take if this shipped, and does not.
    *
@@ -231,6 +259,22 @@ function statusOf(
   return selectedTake.hash === view.hash ? 'ready' : 'stale';
 }
 
+/** The beat length the scenario declares for a voice clip's line. */
+function holdOf(
+  scenario: Scenario,
+  section: AssetSection,
+  origins: AssetOrigin[],
+): number | undefined {
+  if (section !== 'voice') return undefined;
+  for (const origin of origins) {
+    if (origin.kind !== 'voice') continue;
+    const node = scenario.nodes.find((n) => n.id === origin.node);
+    if (node?.type !== 'dialogue') continue;
+    const hold = node.lines[origin.line]?.hold;
+    if (hold !== undefined) return hold;
+  }
+  return undefined;
+}
 /**
  * Per-row warnings derived from the scenario itself.
  *
@@ -241,6 +285,7 @@ function notesFor(
   scenario: Scenario,
   section: AssetSection,
   origins: AssetOrigin[],
+  seconds: number | undefined,
 ): string[] {
   if (section !== 'voice') return [];
   const notes: string[] = [];
@@ -249,10 +294,38 @@ function notesFor(
     if (origin.kind !== 'voice') continue;
     const node = scenario.nodes.find((n) => n.id === origin.node);
     if (node?.type !== 'dialogue') continue;
-    if (node.lines[origin.line]?.hold === undefined) {
+    const hold = node.lines[origin.line]?.hold;
+
+    if (hold === undefined) {
       notes.push(
         `${origin.node} line ${origin.line + 1} has no hold — the beat will end on a ` +
           `reading-speed estimate, not on this clip's real length`,
+      );
+      continue;
+    }
+
+    // Nothing on the server opens the clip: the beat ends when `hold` says it
+    // does. Every `hold` in a scenario starts as a reading-speed guess, and a
+    // generated clip is routinely a second or two away from the guess — so
+    // this is the one check that compares the two, and it can only be made
+    // once the audio exists.
+    //
+    // A second of headroom rather than none, because equal is not safe: the
+    // last word needs somewhere to land, and a clip that ends exactly on its
+    // beat is one that sounds clipped even when it technically is not.
+    if (seconds === undefined) continue;
+    const spare = hold - seconds;
+    if (spare < 0) {
+      notes.push(
+        `${origin.node} line ${origin.line + 1} holds ${hold}s for a ${seconds.toFixed(1)}s ` +
+          `clip — the beat ends ${Math.abs(spare).toFixed(1)}s before the line does, and the ` +
+          `reading is cut off mid-word`,
+      );
+    } else if (spare < 1) {
+      notes.push(
+        `${origin.node} line ${origin.line + 1} holds ${hold}s for a ${seconds.toFixed(1)}s ` +
+          `clip, leaving ${spare.toFixed(1)}s — a beat wants at least a second after the ` +
+          `words stop`,
       );
     }
   }
@@ -420,19 +493,62 @@ export async function buildOverview(
       const selected = entry?.selected;
       const selectedTake = takes.find((take) => take.id === selected);
 
-      const notes = notesFor(scenario, section, info.origins);
+      // Measured from the selected take, like the size is: selecting is the
+      // moment somebody decides a reading is the one, and being told then that
+      // it overruns its beat is worth far more than being told after it ships.
+      // Falls back to the published file for an asset that has no take, which
+      // is the only thing a hand-dropped clip could be measured from.
+      const audible = section === 'voice' || section === 'sfx' || section === 'ambience' || section === 'music';
+      const measurable = audible
+        ? selected
+          ? join(takesDir(paths, section, file), selected)
+          : join(paths.publish, file)
+        : undefined;
+      const seconds = measurable ? await readDuration(measurable) : undefined;
+
+      const hold = holdOf(scenario, section, info.origins);
+      const notes = notesFor(scenario, section, info.origins, seconds);
       const size = await sizeReport(paths, section, file, row, info.origins, entry?.selected);
       // Voice has no prompt in this sense — its text is the line — and running
       // a composer over it would offer to expand words in the dialogue.
       const composed = section === 'voice' ? undefined : composePrompt(recipe);
 
-      const onDisk = await fileExists(join(paths.publish, file));
-      // Only claimed against a recorded take. A file with no record of how it
-      // got there was put there by hand, and telling someone to republish over
-      // it would be guessing at work they did deliberately.
-      const republish = Boolean(
-        onDisk && entry?.published && selected && entry.published !== selected,
+      // Generating never steals a selection, which is what keeps re-rolling
+      // free — but it means a freshly regenerated clip sits there matching the
+      // recipe perfectly while the board still reports the old one as stale.
+      // Nothing said a newer reading was waiting, so the fix looked like
+      // generating it again.
+      const fresh = takes.find(
+        (take) => !take.orphaned && take.hash === hash && take.id !== selected,
       );
+
+      // Two ways of knowing the shipped file is not the chosen take, and the
+      // second one exists because the first cannot see far enough back.
+      //
+      // The ledger is exact when it has a record. Where it does not — every
+      // file published before it started keeping one — the files themselves
+      // still disagree: a published clip of a different size than the selected
+      // take is certainly not that take. Without this, choosing a newer reading
+      // of an already-shipped line moved it to `ready` and asked for nothing,
+      // while the room went on hearing the old one.
+      //
+      // Matching sizes are taken as the same file rather than hashed. Two
+      // different readings of one line landing on the same byte count is a
+      // coincidence; re-reading ninety published files on every board build to
+      // rule it out is a cost paid every time.
+      const publishedPath = join(paths.publish, file);
+      const shipped = await stat(publishedPath).catch(() => null);
+      const onDisk = shipped !== null;
+
+      let republish = false;
+      if (onDisk && selected) {
+        if (entry?.published) {
+          republish = entry.published !== selected;
+        } else {
+          const take = await stat(join(takesDir(paths, section, file), selected)).catch(() => null);
+          republish = take !== null && take.size !== shipped.size;
+        }
+      }
 
       const base: Omit<AssetView, 'status'> = {
         file,
@@ -449,6 +565,9 @@ export async function buildOverview(
         published: onDisk,
         ...(entry?.published ? { publishedTake: entry.published } : {}),
         ...(republish ? { republish: true } : {}),
+        ...(seconds !== undefined ? { seconds } : {}),
+        ...(hold !== undefined ? { hold } : {}),
+        ...(fresh ? { matchingTake: fresh.id } : {}),
         notes,
       };
 

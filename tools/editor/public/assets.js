@@ -1288,6 +1288,34 @@ async function copyText(text, what) {
   }
 }
 
+/**
+ * How long the clip runs, against the beat it has to fit in.
+ *
+ * Shown together or not at all: either number alone is trivia, and the pair is
+ * the check. Silent when the runtime could not be read, because being sent to
+ * re-cut a line that was already right is worse than not being told.
+ */
+function timingPill(asset) {
+  if (asset.seconds === undefined) return null;
+  const runs = `${asset.seconds.toFixed(1)}s`;
+  const hold = asset.hold;
+  if (hold === undefined) {
+    return h('span', { class: 'pill pill-timing', title: 'Clip runtime' }, runs);
+  }
+  const spare = hold - asset.seconds;
+  const tone = spare < 0 ? ' bad' : spare < 1 ? ' tight' : '';
+  return h(
+    'span',
+    {
+      class: `pill pill-timing${tone}`,
+      title:
+        spare < 0
+          ? `The beat ends ${Math.abs(spare).toFixed(1)}s before the line does`
+          : `${spare.toFixed(1)}s of headroom after the words stop`,
+    },
+    `${runs} / hold ${hold}s`,
+  );
+}
 function assetRow(asset, generable = false) {
   const isVoice = asset.section === 'voice';
   const promptField = isVoice ? 'text' : 'prompt';
@@ -1330,6 +1358,11 @@ function assetRow(asset, generable = false) {
             asset.file,
           )
         : null,
+      // The two numbers that decide whether a line survives to the projector.
+      // The show never opens the clip: the beat ends when `hold` says it does,
+      // so a hold under the runtime cuts the reading off mid-word and nothing
+      // else on the board would ever mention it.
+      timingPill(asset),
       h('span', { class: 'spacer' }),
       h('span', { class: 'asset-hash', title: 'Recipe hash' }, asset.hash),
     ),
@@ -2131,35 +2164,84 @@ function assetsByFile() {
 }
 
 /**
+ * Where a row actually lives on the board.
+ *
+ * Not every asset is on the Assets tab, and the two that are not are the two
+ * this list talks about most. A voice clip belongs to the part that speaks it
+ * and renders inside that character's sheet; a portrait is the same character's
+ * face on the other sub-tab. `rowsFor` gives them away, so sending somebody to
+ * Assets for either lands them on a tab that does not contain the row — which
+ * is worse than not linking at all, because it looks like the row is gone.
+ */
+function homeOf(asset) {
+  if (!asset) return { tab: 'assets' };
+  if (isPortraitAsset(asset)) {
+    const origin = (asset.origins ?? []).find((entry) => entry.kind === 'sprite');
+    return { tab: 'cast', character: origin?.character, sub: 'portrait' };
+  }
+  if (asset.section === 'voice') {
+    // The same fallback `byActor` uses, so the sheet this opens is the sheet
+    // the row is really in — including the unwired ones.
+    return { tab: 'cast', character: asset.row?.voice ?? UNCAST, sub: 'voice' };
+  }
+  return { tab: 'assets' };
+}
+
+/**
  * Hands somebody to the thing itself.
  *
  * The digest deliberately says very little about each item — the row already
  * says all of it, and repeating half of it here is two places to keep true. So
- * the item is a link, and it opens the tab the row lives on, unfolds the
- * section if it was collapsed, and scrolls it into the middle of the view.
+ * the item is a link, and it opens the tab the row lives on, unfolds whatever
+ * is hiding it, and scrolls it into the middle of the view.
  */
 function jumpTo(item) {
-  if (item.character) {
+  if (item.character && !item.file) {
     state.onTab('cast');
     render();
-    requestAnimationFrame(() => {
-      const el = document.getElementById(sheetId(item.character));
-      el?.scrollIntoView({ block: 'center' });
-    });
+    scrollToId(sheetId(item.character));
     return;
   }
   if (!item.file) return;
+
+  const asset = assetsByFile().get(item.file);
+  const home = homeOf(asset);
+
+  if (home.tab === 'cast') {
+    state.onTab('cast');
+    // A sheet shows one half at a time, and the row is on the other one often
+    // enough that not switching is the same bug in a smaller place.
+    if (home.character) state.sub.set(home.character, home.sub);
+    render();
+    scrollToId(rowId(item.file), home.character ? sheetId(home.character) : undefined);
+    return;
+  }
+
   state.onTab('assets');
   // A collapsed section would scroll to a row that is not rendered.
   if (item.section) state.collapsed.delete(item.section);
   render();
+  scrollToId(rowId(item.file));
+}
+
+/**
+ * Scrolls to a row once the render that creates it has landed.
+ *
+ * `render()` replaces the tree, so the element does not exist until the frame
+ * after. The fallback matters for a portrait whose row is real but whose sheet
+ * is the thing worth looking at.
+ */
+function scrollToId(id, fallback) {
   requestAnimationFrame(() => {
-    const el = document.getElementById(rowId(item.file));
+    const el = document.getElementById(id) ?? (fallback ? document.getElementById(fallback) : null);
     el?.scrollIntoView({ block: 'center' });
+    if (!el) return;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
   });
 }
 
-/** The items of a group, grouped again by section — one batch per generator. */
 function bySection(items) {
   const found = new Map();
   for (const item of items) {
@@ -2198,10 +2280,18 @@ async function onCommandUseNewest(items) {
   let moved = 0;
   for (const item of items) {
     const asset = byFile.get(item.file);
-    const last = asset?.takes?.[asset.takes.length - 1];
-    if (!last) continue;
+    if (!asset) continue;
+    // The one that matches the recipe, when there is one. Newest is only a
+    // guess at that, and after a regenerate it is the wrong guess as soon as
+    // anything else was rolled afterwards.
+    const usable = (asset.takes ?? []).filter((take) => !take.orphaned);
+    const wanted =
+      usable.find((take) => take.id === asset.matchingTake) ??
+      usable.find((take) => take.hash === asset.hash) ??
+      usable[usable.length - 1];
+    if (!wanted) continue;
     try {
-      await selectTake(asset.file, last.id);
+      await selectTake(asset.file, wanted.id);
       moved += 1;
     } catch (err) {
       state.onStatus('bad', said(item.file, err.message));

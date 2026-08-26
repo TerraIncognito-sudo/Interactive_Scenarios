@@ -396,6 +396,34 @@ describe('deleting a take', () => {
     }
   });
 
+  test('a differently-sized published file is caught even with no ledger record', async () => {
+    // The case the ledger cannot see: everything published before it started
+    // keeping a record. Choosing a newer reading of an already-shipped line
+    // used to move it to `ready` and ask for nothing at all, while the room
+    // went on hearing the old one.
+    const shop = await workshop();
+    try {
+      // The fixture's two takes are the same handful of bytes, which no two
+      // real readings of a line ever are. Give one a length of its own.
+      writeFileSync(
+        join(shop.takes, 'abc123-01.mp3'),
+        'a noticeably longer reading of the same line',
+      );
+
+      const { selectTake } = await import('../tools/editor/projects.ts');
+      await selectTake('demo', 'voice/tran-a-01.mp3', 'abc123-01.mp3');
+
+      const open = await shop.openProject('demo');
+      const view = open.overview.sections
+        .find((entry) => entry.section === 'voice')!
+        .assets.find((entry) => entry.file === 'voice/tran-a-01.mp3')!;
+      assert.equal(view.publishedTake, undefined, 'nothing recorded, as before');
+      assert.equal(view.republish, true, 'but the files plainly disagree');
+    } finally {
+      shop.done();
+    }
+  });
+
   test('publishing a whole part is a list, and one bad name does not stop it', async () => {
     // What the per-actor Publish button sends: every clip of theirs that has a
     // selection, in one call. A part is ninety lines and the ninetieth failing

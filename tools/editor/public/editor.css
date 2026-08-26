@@ -1695,3 +1695,39 @@ button.small {
   line-height: 1.5;
   max-width: 46ch;
 }
+
+/* The runtime against the beat. Neutral until the two disagree, because a
+   number that is always coloured is a number nobody reads. */
+.pill-timing {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.pill-timing.tight {
+  border-color: #7a4a1e;
+  background: rgba(255, 138, 101, 0.14);
+  color: var(--accent-warm);
+}
+
+.pill-timing.bad {
+  border-color: #6b2d2d;
+  background: rgba(239, 90, 90, 0.16);
+  color: var(--bad);
+}
+
+/* Jumping from the command centre to a row that was already on screen has to
+   be visible, or the click reads as having done nothing. */
+.asset.flash,
+.sheet.flash {
+  animation: row-flash 1.1s ease-out;
+}
+
+@keyframes row-flash {
+  from {
+    background-color: rgba(79, 195, 247, 0.16);
+  }
+  to {
+    background-color: transparent;
+  }
+}
