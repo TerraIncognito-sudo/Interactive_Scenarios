@@ -22,3 +22,14 @@ coverage/
 tools/voice/.venv/
 __pycache__/
 *.pyc
+
+# A folder in scenarios/ is what a live show is served from: the scenario and
+# the finished assets it opens, and nothing else. The editor's half of a
+# project — the recipes, the ledger, every rejected take, and the reference
+# clips a cloning model was trained on — belongs in the author's workspace,
+# which is a separate product. Deploying is copying the finished half across.
+scenarios/*/project.yaml
+scenarios/*/.ledger.json
+scenarios/*/generated/
+scenarios/*/voices/
+scenarios/*/*storyboard.md
