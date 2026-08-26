@@ -100,6 +100,22 @@ export type AssetView = {
   /** The file exists at its canonical name in the publish folder. */
   published: boolean;
   /**
+   * The take that file was copied from, as recorded when it was published.
+   *
+   * Absent for a file published before the ledger tracked it, or dropped into
+   * the publish folder by hand — which is why `republish` below is only ever
+   * claimed when there is a recorded take to disagree with.
+   */
+  publishedTake?: string;
+  /**
+   * The audience would hear the selected take if this shipped, and does not.
+   *
+   * The gap `ready` never covered: a take can match its recipe perfectly and
+   * still have been chosen after the last publish, leaving the show playing
+   * the previous reading with nothing on the board saying so.
+   */
+  republish?: boolean;
+  /**
    * Warnings about this specific asset, phrased for the row it sits on.
    * A voiced line with no `hold` is the one that matters: nothing on the
    * server opens the clip, so the beat ends when the estimate says it does.
@@ -410,6 +426,14 @@ export async function buildOverview(
       // a composer over it would offer to expand words in the dialogue.
       const composed = section === 'voice' ? undefined : composePrompt(recipe);
 
+      const onDisk = await fileExists(join(paths.publish, file));
+      // Only claimed against a recorded take. A file with no record of how it
+      // got there was put there by hand, and telling someone to republish over
+      // it would be guessing at work they did deliberately.
+      const republish = Boolean(
+        onDisk && entry?.published && selected && entry.published !== selected,
+      );
+
       const base: Omit<AssetView, 'status'> = {
         file,
         section,
@@ -422,7 +446,9 @@ export async function buildOverview(
         ...(size ? { size } : {}),
         takes,
         selected,
-        published: await fileExists(join(paths.publish, file)),
+        published: onDisk,
+        ...(entry?.published ? { publishedTake: entry.published } : {}),
+        ...(republish ? { republish: true } : {}),
         notes,
       };
 

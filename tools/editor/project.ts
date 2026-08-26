@@ -215,6 +215,15 @@ export type Take = z.infer<typeof TakeSchema>;
 
 export const LedgerEntrySchema = z.strictObject({
   selected: z.string().min(1).optional(),
+  /**
+   * The take that was last copied to the published name.
+   *
+   * Without it nothing can tell a shipped line from a line that was merely
+   * chosen: `ready` says the selected take matches the recipe and says nothing
+   * about whether anyone ever published it. That gap is why the board could
+   * read finished while the show still played the previous reading.
+   */
+  published: z.string().min(1).optional(),
   takes: z.array(TakeSchema).prefault([]),
 });
 

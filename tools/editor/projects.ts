@@ -43,7 +43,13 @@ import {
   type ProjectPaths,
 } from './project.ts';
 import { buildOverview, type Overview } from './sections.ts';
-import { parseStoryboard, seedRowsFor, type SeedResult } from './storyboard.ts';
+import { outstandingOf, type Outstanding } from './outstanding.ts';
+import {
+  parseStoryboard,
+  seedRowsFor,
+  type SeedResult,
+  type StoryboardShot,
+} from './storyboard.ts';
 import { migrateShotsInto, type ShotMigration } from './shots.ts';
 import { renameRows, sortIntoFolders, type FolderSort } from './folders.ts';
 import {
@@ -57,6 +63,7 @@ import {
 } from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
 import { wireSpritesInto, type SpriteWiring } from './sprites.ts';
+import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
 
 /**
@@ -117,6 +124,8 @@ export type OpenProject = {
   scenarioSource: string;
   storyboardSource?: string;
   overview: Overview;
+  /** The same board, projected into one ordered list of what is left. */
+  outstanding: Outstanding;
   problems: { level: 'error' | 'warning'; message: string }[];
 };
 
@@ -296,6 +305,7 @@ export async function openProject(name: string): Promise<OpenProject> {
     scenarioSource,
     storyboardSource,
     overview,
+    outstanding: outstandingOf(overview),
     problems,
   };
 }
@@ -699,7 +709,10 @@ export async function saveProjectSource(name: string, source: string): Promise<v
   await writeAtomic(join(projectDir(name), 'project.yaml'), source);
 }
 
-export async function saveScenarioSource(name: string, source: string): Promise<void> {
+export async function saveScenarioSource(
+  name: string,
+  source: string,
+): Promise<ReconcilePlan> {
   const parsed = parseScenarioSource(source);
   if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
 
@@ -707,6 +720,79 @@ export async function saveScenarioSource(name: string, source: string): Promise<
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));
   await writeAtomic(pathsOf(file, project).scenario, source);
+
+  // The whole point of the tighter join: the recipes follow the story on the
+  // same trip, so the board is never a save behind what the show says.
+  return reconcileProject(name);
+}
+
+/**
+ * Brings `project.yaml` back into agreement with the scenario.
+ *
+ * Run after every write to `scenario.yaml`, from whichever action made it —
+ * this is the join the pipeline was missing. Editing a line of dialogue used
+ * to leave the recipe holding the old words: the hash never moved, the board
+ * went on saying `ready`, and the clip in the show read a sentence that was no
+ * longer in the script. The only way to catch it was to listen to all ninety.
+ *
+ * Two of the three things it can do are safe and happen here. Derived fields
+ * are re-derived, which marks exactly the affected clips stale and turns the
+ * re-record list into something the board can show. Newly referenced assets
+ * get a row, so declaring a `voice:` or a `sprite:` puts it on the board
+ * without a second button.
+ *
+ * The third — taking a row away — is reported and never done. That stays a
+ * thing a person presses.
+ */
+export async function reconcileProject(name: string): Promise<ReconcilePlan> {
+  const nothing: ReconcilePlan = { added: {}, updates: [], orphans: [] };
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+
+  // A scenario folder with no project.yaml is not set up for asset work at
+  // all, and saving it must not be the thing that decides it should be.
+  const source = await readFile(file, 'utf8').catch(() => undefined);
+  if (source === undefined) return nothing;
+  const project = parseProjectSource(source);
+
+  const scenarioSource = await readFile(pathsOf(file, project).scenario, 'utf8').catch(
+    () => undefined,
+  );
+  if (scenarioSource === undefined) return nothing;
+  const parsed = parseScenarioSource(scenarioSource);
+  if (!parsed.ok) return nothing;
+
+  // The storyboard is optional here, unlike in seeding. Everything the
+  // scenario owns comes from the scenario; the document only ever contributed
+  // the author's half, so a project without one still stays in sync.
+  let shots: StoryboardShot[] = [];
+  let sheets: Record<string, string> = {};
+  if (project.storyboard) {
+    const document = await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined);
+    if (document !== undefined) {
+      const read = parseStoryboard(document);
+      shots = read.shots;
+      sheets = read.sheets;
+    }
+  }
+
+  const plan = planReconcile(parsed.scenario, project, shots, sheets);
+  if (Object.keys(plan.added).length === 0 && plan.updates.length === 0) return plan;
+
+  const doc = parseDocument(source);
+  for (const [assetFile, row] of Object.entries(plan.added)) {
+    for (const [field, value] of Object.entries(row)) {
+      doc.setIn(['assets', assetFile, field], blockValue(value));
+    }
+  }
+  for (const update of plan.updates) {
+    doc.setIn(['assets', update.file, ...update.path], blockValue(update.to));
+  }
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
+  return plan;
 }
 
 /**
@@ -922,6 +1008,8 @@ export async function sortAssets(name: string): Promise<FolderWork> {
 }
 
 export type ShotWork = Omit<ShotMigration, 'source'> & {
+  /** Recipes brought back into line with the scenario the migration rewrote. */
+  reconciled?: ReconcilePlan;
   /** The seeding run that follows, which is the point of the migration. */
   seeded?: StoryboardSync;
 };
@@ -973,7 +1061,8 @@ export async function migrateShots(name: string): Promise<ShotWork> {
   }
 
   await writeAtomic(paths.scenario, migrated);
-  return { ...report, seeded: await syncFromStoryboard(name) };
+  const seeded = await syncFromStoryboard(name);
+  return { ...report, seeded, reconciled: await reconcileProject(name) };
 }
 
 export type GenerateFailure = {
@@ -1070,6 +1159,8 @@ export async function publish(
     }
   }
 
+  if (published.length > 0) await saveLedger(paths.ledger, ledger);
+
   return { published, failed };
 }
 
@@ -1112,6 +1203,8 @@ export async function recordReference(
 }
 
 export type SpriteWork = Omit<SpriteWiring, 'source'> & {
+  /** Recipes brought back into line with the scenario the wiring rewrote. */
+  reconciled?: ReconcilePlan;
   /** The seeding run that follows, which is what puts the sheet on the board. */
   seeded?: StoryboardSync;
 };
@@ -1172,7 +1265,8 @@ export async function wireSprites(name: string): Promise<SpriteWork> {
   await carryRename(file, paths, report.moved);
 
   await writeAtomic(paths.scenario, wired);
-  return { ...report, seeded: await syncFromStoryboard(name) };
+  const seeded = await syncFromStoryboard(name);
+  return { ...report, seeded, reconciled: await reconcileProject(name) };
 }
 
 /**
@@ -1229,6 +1323,8 @@ async function carryRename(
 }
 
 export type VoiceWiring = {
+  /** Rows added for the clips this just declared. */
+  reconciled?: ReconcilePlan;
   wired: WiredLine[];
   untouched: number;
 };
@@ -1271,7 +1367,13 @@ export async function wireVoice(name: string): Promise<VoiceWiring> {
   }
 
   await writeAtomic(paths.scenario, result.source);
-  return { wired: result.wired, untouched: result.untouched };
+  // Declaring the clip is only half of it: without this the line has a
+  // `voice:` the player will open and no row anywhere saying how to make it.
+  return {
+    wired: result.wired,
+    untouched: result.untouched,
+    reconciled: await reconcileProject(name),
+  };
 }
 
 /**

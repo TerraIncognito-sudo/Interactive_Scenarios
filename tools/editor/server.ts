@@ -319,8 +319,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         if (typeof body.source !== 'string') {
           return sendJson(response, 400, { error: 'Expected { source }' });
         }
-        await saveScenarioSource(name, body.source);
-        return sendJson(response, 200, await openProject(name));
+        // Saving the story re-derives the recipes on the same trip, and the
+        // client says what moved: a line edited here silently re-records a
+        // clip, and nobody should have to find that out from the board.
+        const reconciled = await saveScenarioSource(name, body.source);
+        return sendJson(response, 200, { ...(await openProject(name)), reconciled });
       }
 
       if (action === 'asset' && request.method === 'PATCH') {

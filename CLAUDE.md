@@ -307,6 +307,55 @@ re-serialising, so the author's comments and hand-wrapped folded scalars survive
 `tools/editor/yaml-edit.ts` is the one home for that technique; a second copy of it would
 eventually disagree with the first about where a key goes.
 
+**A recipe row has two owners, and the scenario takes its half back on every save.**
+Most of a row is the author's — the prompt, the negative, the size, weeks of tuning. Four
+fields are not opinions at all but copies of something the scenario already says: `text`,
+`voice`, and `source.node`/`source.line`. `text` is the one that bites. It is what a voice
+clip *says*, seeding was strictly additive, and that is correct for a prompt and silently
+wrong for this — edit a line of dialogue and the row kept the words it was seeded with, the
+recipe hash never moved, the board went on saying `ready`, and the clip in the show read a
+sentence that had been deleted. Nothing anywhere reported it; the only way to find it was to
+listen to all ninety. So `planReconcile` in `reconcile.ts` re-derives `DERIVED_PATHS` on every
+scenario write, and because `text` is in the hash, correcting one marks exactly the affected
+clips stale — the re-record list writes itself. The bar for adding a name to `DERIVED_PATHS`
+is that the scenario is *definitionally* right about it. A prompt is not on that list and must
+never be: two people can disagree about how a shot should look, and only one of them has seen
+the film.
+
+**Reconciliation adds and corrects; it never removes.** A row the scenario stopped referencing
+is reported in `plan.orphans` and left exactly where it is, because a row can hold an afternoon
+of tuning and a rename nobody meant to make is not a trade the machine gets to choose. Removal
+is `pruneOrphans`, which is a button, with the list in front of the person pressing it. The
+same walk (`seedRowsFor`) serves seeding and reconciliation, so the two can never disagree about
+which line a clip belongs to — and reconciliation does not need the storyboard, because
+everything it derives comes from the scenario alone. A project with no storyboard still stays in
+sync.
+
+**Saving the scenario is what triggers it, and so is every action that rewrites one.**
+`saveScenarioSource` returns the plan; `wireVoice`, `migrateShots` and `wireSprites` call it too.
+`wireVoice` had no follow-up at all, so declaring a `voice:` gave the line a file the player
+would open and no row anywhere saying how to make it. The client says what moved, because a save
+that quietly re-records a clip is its own kind of surprise.
+
+**The command centre is a projection of the board, never a second opinion about it.**
+`outstandingOf` reads the `Overview` the other tabs already render and touches no disk, ledger
+or scenario of its own. A second walk would eventually disagree about what is finished, and the
+disagreement would be invisible — both would look like a full list. Its one promise is that an
+empty tab means the show is ready, so anything that can leave a project unfinished has to reach
+it or the emptiness is a lie. Every asset lands in at most one of the six pipeline groups, which
+are stages rather than independent complaints: a file that was never made is not also waiting to
+be published, and counting it twice makes the total useless as a measure of what is left.
+Quality is the exception and is additive — a clip can be finished, shipped, and still the wrong
+shape.
+
+**Publishing writes down which take it shipped.** `ready` means the selected take matches the
+recipe and says nothing about whether anyone ever copied it to the name the player opens, so a
+project could be entirely green while the room heard the previous reading of every re-recorded
+line. Nothing on the board could see it, because nothing recorded it. `LedgerEntrySchema.published`
+closes that, and `republish` is only ever claimed against a recorded take — a file with no record
+of how it got there was put there by hand, and telling somebody to overwrite it would be guessing
+at work they did deliberately.
+
 What an action must *not* do is edit the author's prose. A migration that removes a scene
 leaves any comment describing it factually wrong, and the temptation is to fix the sentence —
 but a machine that rewrites prose to keep it true will eventually rewrite prose that was
@@ -337,6 +386,8 @@ the file the first time anyone touches a text box. A test guards this.
 | `tools/editor/workspace.ts` | Which folder holds the projects, and the server-side folder picker |
 | `tools/editor/project.ts` | Asset projects: `project.yaml` (author-owned) + `.ledger.json` (machine-owned) |
 | `tools/editor/sections.ts` | The status board — scenario, recipes, ledger and disk reconciled |
+| `tools/editor/reconcile.ts` | What the scenario owns on a recipe row, re-derived on every save |
+| `tools/editor/outstanding.ts` | The command centre — the board projected into one list of what is left |
 | `src/shared/protocol.ts` | Message unions, Zod-validated in both directions |
 | `scenarios/` | Content. Adding a scenario is adding a folder — no code changes |
 

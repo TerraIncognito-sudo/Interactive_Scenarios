@@ -12,6 +12,7 @@ import {
   initAssets,
   openProject,
   refreshAssets,
+  setAnalysis,
   setProjects,
   seedFromStoryboard,
   wireVoice,
@@ -102,9 +103,44 @@ async function save() {
     markClean();
     await analyze();
     await refreshAssets();
+
+    // Saving the story rewrites the recipes it owns. Editing one line of
+    // dialogue quietly re-records a clip, and finding that out from a status
+    // line beats finding it out from the board three days later.
+    reportReconcile(data.reconciled);
   } finally {
     $('save').disabled = false;
   }
+}
+
+/**
+ * Says out loud what saving the scenario did to the recipes.
+ *
+ * The whole reason the join exists is that this used to happen silently and
+ * wrongly: a line was edited, the row kept the old words, and the clip in the
+ * show went on reading a sentence that had been deleted. Now it is corrected —
+ * and a correction that marks clips stale without saying so is its own kind of
+ * surprise.
+ *
+ * Orphans are counted, never acted on. Removing one throws away a prompt.
+ */
+function reportReconcile(plan) {
+  if (!plan) return;
+  const added = Object.keys(plan.added ?? {}).length;
+  const orphans = plan.orphans?.length ?? 0;
+  // Counted as clips rather than fields: one line moving rewrites its text, its
+  // node and its index, and reporting that as "3 changes" reads like three
+  // problems rather than one edit.
+  const clips = new Set((plan.updates ?? []).map((update) => update.file));
+  if (clips.size === 0 && added === 0 && orphans === 0) return;
+
+  const said = [];
+  if (clips.size > 0) {
+    said.push(`${clips.size} recipe${clips.size === 1 ? '' : 's'} re-derived`);
+  }
+  if (added > 0) said.push(`${added} new asset${added === 1 ? '' : 's'} seeded`);
+  if (orphans > 0) said.push(`${orphans} now orphaned — see the command centre`);
+  setStatus(orphans > 0 ? 'warn' : 'ok', `saved · ${said.join(' · ')}`);
 }
 
 function markClean() {
@@ -156,6 +192,12 @@ function apply(result) {
     $('vars').replaceChildren();
     $('choices').replaceChildren();
     $('overview').textContent = '';
+    setAnalysis({
+      problems: [
+        { level: 'error', message: result.message ?? 'Could not read this scenario' },
+        ...(result.problems ?? []).map((message) => ({ level: 'error', message })),
+      ],
+    });
     return;
   }
 
@@ -178,6 +220,15 @@ function apply(result) {
     setStatus('ok', 'valid');
     problems.hidden = true;
   }
+
+  // Handed on rather than re-derived: the command centre counts these next to
+  // the asset work, and two validators would eventually disagree.
+  setAnalysis({
+    problems: warnings.map((w) => ({
+      level: 'warning',
+      message: `${w.nodeId ? `[${w.nodeId}] ` : ''}${w.message}`,
+    })),
+  });
 
   renderNodes(result.analysis);
   renderVars(result.analysis);

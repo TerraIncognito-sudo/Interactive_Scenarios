@@ -61,6 +61,16 @@
           <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
           <button class="tab" data-tab="assets" role="tab" aria-selected="false">Assets</button>
           <button class="tab" data-tab="story" role="tab" aria-selected="false">Storyboard</button>
+          <!--
+            Last, and pushed to the far edge, because it is not a stage of the
+            work — it is the answer to "am I done", which is a question you ask
+            from wherever you happen to be. The badge is the whole point: it is
+            readable without opening the tab, and it reads zero exactly when
+            the show is ready to run.
+          -->
+          <button class="tab tab-end" data-tab="command" role="tab" aria-selected="false">
+            Command centre <span class="tab-badge" id="command-badge" hidden></span>
+          </button>
         </div>
 
         <div class="tab-body">
@@ -160,6 +170,15 @@
               </button>
             </div>
             <div class="sections" id="sections"></div>
+          </div>
+
+          <div class="tab-panel" id="panel-command" hidden>
+            <p class="hint">
+              Everything the show still needs, in the order it has to happen: made, chosen,
+              published. Each line is a link into the tab it belongs to, and each heading
+              does the whole group at once. When this is empty the show is ready to run.
+            </p>
+            <div class="command" id="command"></div>
           </div>
 
           <div class="tab-panel" id="panel-story" hidden>

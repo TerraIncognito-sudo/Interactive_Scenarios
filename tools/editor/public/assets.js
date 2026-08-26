@@ -51,6 +51,16 @@ const state = {
   expanded: new Set(),
   /** Which half of a character's sheet is showing: their voice or their face. */
   sub: new Map(),
+  /** Command-centre groups the author has unfolded past the first few. */
+  commandOpen: new Set(),
+  /**
+   * The scenario validator's own result, pushed in from app.js.
+   *
+   * The source pane owns validation and the board owns assets; the command
+   * centre is the one place that has to show both, so it is handed the half it
+   * does not own rather than running the validator a second time.
+   */
+  analysis: null,
   /**
    * A section-wide generate in flight: which section, how far, and whether the
    * author has asked it to stop. One at a time — there is one GPU, and two runs
@@ -1301,7 +1311,7 @@ function assetRow(asset, generable = false) {
 
   return h(
     'article',
-    { class: `asset asset-${asset.status}` },
+    { class: `asset asset-${asset.status}`, id: rowId(asset.file) },
     h(
       'header',
       { class: 'asset-head' },
@@ -1770,7 +1780,7 @@ function characterSheet(group, context) {
 
   return h(
     'section',
-    { class: 'sheet' },
+    { class: 'sheet', id: sheetId(group.id) },
     h(
       'header',
       { class: 'sheet-head' },
@@ -2083,10 +2093,355 @@ async function onPublishActor(section, group, assets) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Command centre
+// ---------------------------------------------------------------------------
+
+/**
+ * The one question the board could not answer: am I done?
+ *
+ * Everything here is a projection of `state.data.outstanding`, which the server
+ * builds from the same `Overview` the other tabs render. Nothing is recomputed
+ * client-side — a second opinion about what is finished would be a second
+ * opinion nobody could see, since both would look like a full list.
+ *
+ * Every line is a link to the row it describes and every heading acts on the
+ * whole group, because a list of forty things to fix that cannot fix any of
+ * them is a list you read once.
+ */
+
+/** How many of a group to show before it folds. Enough to see the shape of it. */
+const COMMAND_PEEK = 6;
+
+function rowId(file) {
+  return `row-${String(file).replace(/[^A-Za-z0-9]+/g, '-')}`;
+}
+
+function sheetId(character) {
+  return `sheet-${String(character).replace(/[^A-Za-z0-9]+/g, '-')}`;
+}
+
+/** Every asset view on the board, by filename. */
+function assetsByFile() {
+  const found = new Map();
+  for (const section of state.data?.overview?.sections ?? []) {
+    for (const asset of section.assets) found.set(asset.file, asset);
+  }
+  return found;
+}
+
+/**
+ * Hands somebody to the thing itself.
+ *
+ * The digest deliberately says very little about each item — the row already
+ * says all of it, and repeating half of it here is two places to keep true. So
+ * the item is a link, and it opens the tab the row lives on, unfolds the
+ * section if it was collapsed, and scrolls it into the middle of the view.
+ */
+function jumpTo(item) {
+  if (item.character) {
+    state.onTab('cast');
+    render();
+    requestAnimationFrame(() => {
+      const el = document.getElementById(sheetId(item.character));
+      el?.scrollIntoView({ block: 'center' });
+    });
+    return;
+  }
+  if (!item.file) return;
+  state.onTab('assets');
+  // A collapsed section would scroll to a row that is not rendered.
+  if (item.section) state.collapsed.delete(item.section);
+  render();
+  requestAnimationFrame(() => {
+    const el = document.getElementById(rowId(item.file));
+    el?.scrollIntoView({ block: 'center' });
+  });
+}
+
+/** The items of a group, grouped again by section — one batch per generator. */
+function bySection(items) {
+  const found = new Map();
+  for (const item of items) {
+    if (!item.section || !item.file) continue;
+    const list = found.get(item.section);
+    if (list) list.push(item.file);
+    else found.set(item.section, [item.file]);
+  }
+  return found;
+}
+
+async function onCommandGenerate(items) {
+  const groups = [...bySection(items)];
+  const total = items.length;
+  if (
+    total > 1 &&
+    !confirm(
+      `Generate ${total} asset${total === 1 ? '' : 's'}?\n\nThis runs one at a time and can ` +
+        `take a while. You can stop it partway; anything already made is kept.`,
+    )
+  ) {
+    return;
+  }
+  // Sequential across sections as well as within one: there is one GPU, and
+  // two runs would take the same total time while making it impossible to say
+  // which line the count on screen is describing.
+  for (const [section, files] of groups) {
+    if (state.run?.stop) break;
+    await runBatch(section, files, `${SECTION_LABELS[section].toLowerCase()} from the command centre`);
+  }
+  await refreshAssets();
+}
+
+async function onCommandUseNewest(items) {
+  const byFile = assetsByFile();
+  let moved = 0;
+  for (const item of items) {
+    const asset = byFile.get(item.file);
+    const last = asset?.takes?.[asset.takes.length - 1];
+    if (!last) continue;
+    try {
+      await selectTake(asset.file, last.id);
+      moved += 1;
+    } catch (err) {
+      state.onStatus('bad', said(item.file, err.message));
+      return;
+    }
+  }
+  state.onStatus('ok', `${moved} now on their newest take`);
+}
+
+async function onCommandPublish(items) {
+  let done = 0;
+  const failed = [];
+  for (const [section, files] of bySection(items)) {
+    try {
+      const result = await publishAssets(section, files);
+      done += result?.published?.length ?? 0;
+      for (const entry of result?.failed ?? []) failed.push(said(entry.file, entry.error));
+    } catch (err) {
+      failed.push(err.message);
+    }
+  }
+  state.onStatus(
+    failed.length > 0 ? 'bad' : 'ok',
+    failed.length > 0
+      ? `published ${done}, ${failed.length} failed: ${failed.join(' · ')}`
+      : `published ${done}`,
+  );
+}
+
+async function onCommandPrune(items) {
+  if (
+    !confirm(
+      `Remove ${items.length} recipe${items.length === 1 ? '' : 's'} the scenario no longer ` +
+        `references?\n\nThe prompts on them are thrown away. Takes already generated stay ` +
+        `on disk.`,
+    )
+  ) {
+    return;
+  }
+  await pruneOrphans();
+}
+
+const COMMAND_RUNNERS = {
+  generate: onCommandGenerate,
+  'use-newest': onCommandUseNewest,
+  publish: onCommandPublish,
+  prune: onCommandPrune,
+};
+
+const ACTION_LABELS = {
+  generate: 'Generate',
+  'use-newest': 'Use newest',
+  publish: 'Publish',
+  prune: 'Remove',
+};
+
+/** The button on a group heading, when the group is something a machine can do. */
+function commandGroupButton(group) {
+  const run = COMMAND_RUNNERS[group.action];
+  if (!run) return null;
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'ghost small',
+      disabled: state.run ? true : undefined,
+      onclick: (event) => {
+        event.stopPropagation();
+        void run(group.items);
+      },
+    },
+    `${ACTION_LABELS[group.action]} all ${group.items.length}`,
+  );
+}
+
+function commandItem(group, item) {
+  const run = COMMAND_RUNNERS[group.action];
+  return h(
+    'li',
+    { class: 'command-item' },
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'command-link',
+        title: 'Show me',
+        onclick: () => jumpTo(item),
+      },
+      item.label,
+    ),
+    item.detail ? h('span', { class: 'command-detail' }, item.detail) : null,
+    h('span', { class: 'spacer' }),
+    run
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'ghost small',
+            disabled: state.run ? true : undefined,
+            onclick: (event) => {
+              event.stopPropagation();
+              void run([item]);
+            },
+          },
+          ACTION_LABELS[group.action],
+        )
+      : null,
+  );
+}
+
+function commandGroup(group) {
+  const open = state.commandOpen.has(group.group);
+  const shown = open ? group.items : group.items.slice(0, COMMAND_PEEK);
+  const hidden = group.items.length - shown.length;
+
+  return h(
+    'section',
+    { class: `command-group command-${group.level}` },
+    h(
+      'header',
+      { class: 'command-head' },
+      h('span', { class: `pill pill-${group.level}` }, String(group.items.length)),
+      h('h3', {}, group.label),
+      h('span', { class: 'spacer' }),
+      commandGroupButton(group),
+    ),
+    h('p', { class: 'command-hint' }, group.hint),
+    h('ul', { class: 'command-list' }, shown.map((item) => commandItem(group, item))),
+    hidden > 0 || open
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'command-more',
+            onclick: () => {
+              if (open) state.commandOpen.delete(group.group);
+              else state.commandOpen.add(group.group);
+              render();
+            },
+          },
+          open ? 'Show fewer' : `Show all ${group.items.length}`,
+        )
+      : null,
+  );
+}
+
+/**
+ * The scenario's own complaints, which do not come from the board.
+ *
+ * They are validated in the source pane and live in `state.analysis` on the
+ * other side of the app, so they are passed in rather than read from here —
+ * but they belong at the top of this list, because a scenario that does not
+ * load has no assets to be missing.
+ */
+function scenarioTrouble() {
+  const problems = state.analysis?.problems ?? [];
+  if (problems.length === 0) return null;
+  const errors = problems.filter((problem) => problem.level === 'error').length;
+  return h(
+    'section',
+    { class: `command-group command-${errors > 0 ? 'error' : 'warning'}` },
+    h(
+      'header',
+      { class: 'command-head' },
+      h('span', { class: `pill pill-${errors > 0 ? 'error' : 'warning'}` }, String(problems.length)),
+      h('h3', {}, 'The scenario itself'),
+      h('span', { class: 'spacer' }),
+      h(
+        'button',
+        { type: 'button', class: 'ghost small', onclick: () => state.onTab('nodes') },
+        'Open Nodes',
+      ),
+    ),
+    h(
+      'p',
+      { class: 'command-hint' },
+      'Reported by the validator against the source on the left. Nothing downstream is ' +
+        'trustworthy until these are clear.',
+    ),
+    h(
+      'ul',
+      { class: 'command-list' },
+      problems
+        .slice(0, COMMAND_PEEK)
+        .map((problem) => h('li', { class: 'command-item' }, h('span', {}, problem.message))),
+    ),
+  );
+}
+
+function renderCommand() {
+  const host = $('command');
+  const badge = $('command-badge');
+  if (!host) return;
+
+  const scenario = scenarioTrouble();
+  const outstanding = state.data?.outstanding;
+  const total = (outstanding?.total ?? 0) + (state.analysis?.problems?.length ?? 0);
+
+  if (badge) {
+    badge.hidden = total === 0;
+    badge.textContent = String(total);
+    badge.className = `tab-badge${outstanding?.groups?.some((g) => g.level === 'error') || scenario ? ' bad' : ''}`;
+  }
+
+  if (!state.data) {
+    host.replaceChildren(h('p', { class: 'empty' }, 'No project open.'));
+    return;
+  }
+
+  if (total === 0) {
+    host.replaceChildren(
+      h(
+        'div',
+        { class: 'command-done' },
+        h('h3', {}, 'Nothing outstanding'),
+        h(
+          'p',
+          {},
+          'Every asset the scenario asks for has been made, chosen and published, and ' +
+            'every part has a voice. The show is ready to run.',
+        ),
+      ),
+    );
+    return;
+  }
+
+  host.replaceChildren(
+    ...(scenario ? [scenario] : []),
+    ...(outstanding?.groups ?? []).map(commandGroup),
+  );
+}
+
 function render() {
   const totals = $('totals');
   const container = $('sections');
   renderModelsBar();
+  // Drawn with everything else, and before the early return: the badge has to
+  // be right when no project is open too, which is the one case where the
+  // honest answer is nothing rather than zero.
+  renderCommand();
   // Both panels come off one `state.data`, so they are drawn together. Drawing
   // the cast only when its tab is showing would leave a stale sheet behind
   // every action taken from the other one.
@@ -2162,6 +2517,18 @@ function render() {
  * about both projects and bundled scenarios — a list assembled in two files
  * is a list that can show two different truths.
  */
+/**
+ * Takes the validator's verdict from the source pane.
+ *
+ * Re-renders, because the command centre's badge counts these alongside the
+ * asset work and a badge that is one analysis behind is a badge that says the
+ * show is ready while the scenario does not load.
+ */
+export function setAnalysis(analysis) {
+  state.analysis = analysis;
+  renderCommand();
+}
+
 export function setProjects(projects, workspacePath) {
   $('assets-hint').textContent =
     projects.length === 0

@@ -429,5 +429,9 @@ export async function publishAsset(options: {
     );
   });
 
+  // Recorded so the board can tell a shipped line from a merely chosen one.
+  // The caller saves the ledger; publishing in a batch writes it once.
+  entry.published = entry.selected;
+
   return { file, from: entry.selected };
 }

@@ -325,6 +325,77 @@ describe('deleting a take', () => {
     }
   });
 
+  test('publishing records which take shipped, so a later pick shows as unshipped', async () => {
+    // The gap `ready` never covered. It means "the selected take matches the
+    // recipe" and says nothing about whether anyone published it — so choosing
+    // a different reading afterwards left the board entirely green while the
+    // room went on hearing the old one. Nothing could see it, because nothing
+    // wrote down what had been published.
+    const shop = await workshop();
+    try {
+      // The fixture's takes carry a made-up hash, which would report the clip
+      // as stale and correctly outrank any question of publishing. Give them
+      // the recipe's real hash so the only thing left to notice is the ship.
+      const real = (await shop.openProject('demo')).overview.sections
+        .find((view) => view.section === 'voice')!
+        .assets.find((entry) => entry.file === 'voice/tran-a-01.mp3')!.hash;
+      const book = shop.ledger();
+      for (const take of book.assets['voice/tran-a-01.mp3'].takes) take.hash = real;
+      writeFileSync(join(shop.dir, '.ledger.json'), JSON.stringify(book), 'utf8');
+
+      const { publish } = await import('../tools/editor/projects.ts');
+      await publish('demo', { section: 'voice', files: ['voice/tran-a-01.mp3'] });
+      assert.equal(shop.ledger().assets['voice/tran-a-01.mp3'].published, 'abc123-02.mp3');
+
+      const settled = await shop.openProject('demo');
+      const shipped = settled.overview.sections
+        .find((view) => view.section === 'voice')!
+        .assets.find((entry) => entry.file === 'voice/tran-a-01.mp3')!;
+      assert.equal(shipped.republish, undefined, 'nothing to do while they agree');
+      assert.equal(
+        settled.outstanding.groups.some(
+          (group) => group.group === 'publish' || group.group === 'republish',
+        ),
+        false,
+        'and the command centre asks for no publishing',
+      );
+
+      // Somebody auditions the other take and prefers it.
+      const { selectTake } = await import('../tools/editor/projects.ts');
+      await selectTake('demo', 'voice/tran-a-01.mp3', 'abc123-01.mp3');
+
+      const after = await shop.openProject('demo');
+      const now = after.overview.sections
+        .find((view) => view.section === 'voice')!
+        .assets.find((entry) => entry.file === 'voice/tran-a-01.mp3')!;
+      assert.equal(now.republish, true);
+      assert.ok(
+        after.outstanding.groups.some((group) => group.group === 'republish'),
+        'and it is now asking for a publish it was not asking for before',
+      );
+    } finally {
+      shop.done();
+    }
+  });
+
+  test('a file published before any of this was tracked is left alone', async () => {
+    // Claiming a republish against a file with no record of where it came from
+    // would be telling somebody to overwrite work they did deliberately by
+    // hand. The fixture's published file is exactly that case.
+    const shop = await workshop();
+    try {
+      const open = await shop.openProject('demo');
+      const view = open.overview.sections
+        .find((entry) => entry.section === 'voice')!
+        .assets.find((entry) => entry.file === 'voice/tran-a-01.mp3')!;
+      assert.equal(view.published, true);
+      assert.equal(view.publishedTake, undefined);
+      assert.equal(view.republish, undefined);
+    } finally {
+      shop.done();
+    }
+  });
+
   test('publishing a whole part is a list, and one bad name does not stop it', async () => {
     // What the per-actor Publish button sends: every clip of theirs that has a
     // selection, in one call. A part is ninety lines and the ninetieth failing
