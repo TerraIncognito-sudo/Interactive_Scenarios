@@ -201,6 +201,22 @@
       </footer>
     </dialog>
 
+    <!--
+      Looking at a take, which for a picture is the whole of auditioning it.
+      One element for the same reason there is one <audio>: six open windows of
+      the same jetty is not a comparison, it is a mess to close.
+    -->
+    <dialog id="viewer" class="viewer">
+      <img id="viewer-image" alt="" hidden />
+      <video id="viewer-video" controls hidden></video>
+      <footer class="viewer-foot">
+        <code id="viewer-name"></code>
+        <span class="spacer"></span>
+        <span class="hint" id="viewer-meta"></span>
+        <button id="viewer-close" type="button" class="ghost">Close</button>
+      </footer>
+    </dialog>
+
     <script type="module" src="./app.js"></script>
   </body>
 </html>

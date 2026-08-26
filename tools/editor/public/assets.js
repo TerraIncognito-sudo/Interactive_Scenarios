@@ -699,6 +699,88 @@ function playButton(url, label) {
   );
 }
 
+/**
+ * The control for auditioning one take, whichever sense that takes.
+ *
+ * A picture handed to an `<audio>` element is a decode error, and the message
+ * it produces \u2014 "could not play that file, is it still on disk?" \u2014 sends the
+ * author to look for a file that is right there. Every take carried a play
+ * button because for months every take was a sound; the first image on the
+ * board is what found it.
+ */
+function auditionButton(asset, url, name) {
+  if (AUDIBLE.has(asset.section)) return playButton(url, `Play ${name}`);
+  if (VISIBLE.has(asset.section)) return viewButton(asset, url, name);
+  return null;
+}
+
+/** Sections you hear, and sections you look at. */
+const AUDIBLE = new Set(['voice', 'music', 'ambience', 'sfx']);
+const VISIBLE = new Set(['images', 'video']);
+
+function viewButton(asset, url, name) {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'play',
+      title: `Look at ${name}`,
+      'aria-label': `Look at ${name}`,
+      onclick: (event) => {
+        event.stopPropagation();
+        openViewer(asset, url, name);
+      },
+    },
+    '\u25C9',
+  );
+}
+
+/**
+ * Shows a still or a clip full size.
+ *
+ * The same argument as the play button, and a stronger one: choosing between
+ * six readings of a line by their filenames is hard, and choosing between six
+ * jetties that way is impossible. A board that can only name a picture is a
+ * board whose selection step is a coin toss.
+ */
+function openViewer(asset, url, name) {
+  player.pause();
+  playing = null;
+
+  const dialog = $('viewer');
+  const image = $('viewer-image');
+  const video = $('viewer-video');
+  const clip = asset.section === 'video';
+
+  video.pause();
+  image.hidden = clip;
+  video.hidden = !clip;
+  // Cleared before it is set, so the previous take is not what is on screen
+  // while a two-megabyte still decodes.
+  image.removeAttribute('src');
+  video.removeAttribute('src');
+  if (clip) video.src = url;
+  else image.src = url;
+
+  $('viewer-name').textContent = name;
+  $('viewer-name').title = name;
+  $('viewer-meta').textContent = asset.size?.actual
+    ? `${asset.size.actual}${asset.size.mismatched ? ` \u2014 the row asks for ${asset.size.declared}` : ''}`
+    : (asset.size?.declared ?? '');
+  dialog.showModal();
+  render();
+}
+
+/** The one way out, so a clip can never keep playing behind a closed dialog. */
+function closeViewer() {
+  const dialog = $('viewer');
+  const video = $('viewer-video');
+  video.pause();
+  video.removeAttribute('src');
+  $('viewer-image').removeAttribute('src');
+  if (dialog.open) dialog.close();
+}
+
 function takesStrip(asset) {
   if (asset.takes.length === 0) {
     const folder = state.data?.paths?.generated;
@@ -730,7 +812,7 @@ function takesStrip(asset) {
       return h(
         'div',
         { class: 'take-row' },
-        take.orphaned ? null : playButton(url, `Play ${take.id}`),
+        take.orphaned ? null : auditionButton(asset, url, take.id),
         h(
           'button',
           {
@@ -1141,9 +1223,10 @@ function assetRow(asset, generable = false) {
       // a selection changed after the last publish plays the old reading in
       // front of the room.
       asset.published
-        ? playButton(
+        ? auditionButton(
+            asset,
             mediaUrl({ section: asset.section, file: asset.file }),
-            `Play ${asset.file} as the show will`,
+            asset.file,
           )
         : null,
       h('span', { class: 'spacer' }),
@@ -1506,5 +1589,31 @@ export function initAssets({ onScenario, onStoryboard, onStatus }) {
   state.onStatus = onStatus ?? (() => {});
   state.onScenario = onScenario ?? (() => {});
   state.onStoryboard = onStoryboard ?? (() => {});
+
+  const viewer = $('viewer');
+  $('viewer-close').addEventListener('click', closeViewer);
+  // Clicking the backdrop, which is the gesture everybody tries first. The
+  // target is the dialog itself only when the click missed its contents.
+  viewer.addEventListener('click', (event) => {
+    if (event.target === viewer) closeViewer();
+  });
+  // Escape, handled here rather than left to the dialog.
+  //
+  // `showModal()` and `close()` toggle the open attribute in every browser, but
+  // the `close` event does not arrive in all of them — it does not fire in the
+  // preview browser this was built against. Hanging the cleanup off it left a
+  // clip playing behind a dialog that had visibly gone, so nothing here depends
+  // on it: every route out calls the same function.
+  viewer.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeViewer();
+  });
+  viewer.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeViewer();
+    }
+  });
+
   render();
 }

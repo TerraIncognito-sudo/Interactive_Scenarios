@@ -934,6 +934,54 @@ textarea.prompt:focus {
 
 /* ---------------------------------------------------------------- picker -- */
 
+/*
+ * Looking at a take. Sized to the viewport rather than to the picture: a still
+ * is 1920 wide and a portrait is 1216 tall, and either one at its own size is a
+ * dialog with scrollbars instead of a look at a picture.
+ */
+.viewer {
+  width: min(1200px, 94vw);
+  max-height: 92vh;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  color: var(--text);
+  padding: 0.7rem;
+}
+
+.viewer::backdrop {
+  background: rgba(4, 6, 11, 0.82);
+}
+
+.viewer img,
+.viewer video {
+  display: block;
+  max-width: 100%;
+  max-height: 78vh;
+  margin: 0 auto;
+  border-radius: 6px;
+  /* So a transparent portrait reads as a cutout here too, rather than as a
+     silhouette on whatever the dialog happens to be painted. */
+  background-image: linear-gradient(45deg, #2a2f3a 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2f3a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2f3a 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2f3a 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+}
+
+.viewer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.viewer-foot code {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
 .picker {
   width: min(680px, 92vw);
   max-height: 84vh;

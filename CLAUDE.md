@@ -127,13 +127,23 @@ Flat names stay legal, because every scenario written before this is one. `folde
 migration and `filed()` in `storyboard.ts` is what makes new projects born that way; `takesDir`
 drops the section from a name that already carries it, so filing a project costs it no takes.
 
-**The editor plays what it made.** A board that can only describe a clip is a board whose
-selection step is guesswork, and a pipeline nobody can hear ships the first reading of every
-line. `resolveMedia` in `tools/editor/projects.ts` resolves a take, a published file or a
-reference clip from structured parts and checks the result is under the project — the editor
-browses the whole disk on purpose, but that is a picker a person drives, and a URL that
-dereferences `../..` is a different thing. One `Audio` element serves the whole board: forty of
-them is six readings of one line playing at once.
+**The editor plays what it made — and shows it.** A board that can only describe a clip is a
+board whose selection step is guesswork, and a pipeline nobody can hear ships the first reading
+of every line. Choosing between six jetties by filename is worse than guesswork. `resolveMedia`
+in `tools/editor/projects.ts` resolves a take, a published file or a reference clip from
+structured parts and checks the result is under the project — the editor browses the whole disk
+on purpose, but that is a picker a person drives, and a URL that dereferences `../..` is a
+different thing. One `Audio` element and one `<dialog>` serve the whole board: forty of either is
+six readings of one line at once, or six windows of the same jetty to close.
+
+**What a take is auditioned *with* follows its section, never its presence.** `auditionButton`
+picks by `AUDIBLE`/`VISIBLE`; every take carried a play button for months because every take was
+a sound, and the first image on the board fed a JPEG to an `<audio>` element — whose decode error
+reads "could not play that file — is it still on disk?", sending the author to look for a file
+that is right there. Cleanup on the viewer hangs off an explicit `closeViewer`, not the `close`
+event: `showModal()`/`close()` toggle the attribute everywhere, but the event does not arrive in
+every browser, and a clip playing behind a dialog that has visibly gone is the failure that
+found it.
 
 **The editor and the player must agree on filenames.** The player opens exactly the names in
 `scenario.yaml`, so the editor may never invent one. Seeding prompts from a storyboard keys
