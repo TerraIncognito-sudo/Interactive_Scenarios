@@ -856,10 +856,74 @@ textarea.prompt:focus {
   color: var(--accent);
 }
 
+/*
+ * A part, and every line in it.
+ *
+ * Indented under the section rather than styled as another section: the unit
+ * of work is the voice, but the thing being made is still a voice clip, and a
+ * heading that competed with the section's would say otherwise.
+ */
+.actor {
+  border-left: 2px solid var(--border);
+  margin: 0.5rem 0 0.9rem;
+  padding-left: 0.7rem;
+}
+
+.actor-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  user-select: none;
+}
+
+.actor-head h4 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.actor-id,
+.actor-count {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text-faint);
+}
+
+.actor.collapsed {
+  margin-bottom: 0.3rem;
+}
+
 .take-row {
   display: flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+/*
+ * Throwing a take away. Faint until the row is hovered: it sits beside the
+ * button that chooses a take, and a delete with the same weight as a select is
+ * a delete somebody eventually hits by accident.
+ */
+.take-drop {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0 0.25rem;
+  font-size: 0.78rem;
+  line-height: 1;
+  color: transparent;
+  cursor: pointer;
+}
+
+.take-row:hover .take-drop,
+.take-drop:focus-visible {
+  color: var(--text-faint);
+}
+
+.take-drop:hover {
+  color: var(--bad);
 }
 
 .take {

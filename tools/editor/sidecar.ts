@@ -119,6 +119,13 @@ const THIRD_PARTY_WARNING = /^.*:\d+: (Future|Deprecation|User|Runtime|Pending\w
 const KNOWN_CHATTER = [
   /You are sending unauthenticated requests to the HF Hub/,
   /attention does not support `output_attentions=True`/,
+  // Chatterbox measuring its reference clip. A mel spectrogram is framed at
+  // twice the token rate, so the two line up only when the clip's length falls
+  // exactly on a frame boundary — which it never does, because a reference is a
+  // recording of somebody talking and not a multiple of 40 milliseconds. The
+  // model trims the odd frame and carries on. It says this once per clip, so
+  // for a run of ninety it is ninety lines of a fact about arithmetic.
+  /Reference mel length is not equal to 2 \* reference token length/,
 ];
 
 /**

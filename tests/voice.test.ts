@@ -355,6 +355,20 @@ describe('the noise between a model and a traceback', () => {
     );
   });
 
+  test('the one chatterbox repeats once per clip', () => {
+    // A mel spectrogram is framed at twice the token rate, so the two line up
+    // only when the reference clip's length lands exactly on a frame boundary.
+    // A recording of somebody talking never does. The model trims a frame and
+    // carries on — and says so ninety times during a run of ninety lines.
+    assert.equal(
+      isConsoleNoise(
+        'WARNING:root:Reference mel length is not equal to 2 * reference token length.',
+        false,
+      ),
+      true,
+    );
+  });
+
   test('an ordinary line after a swallowed warning still shows', () => {
     // Only *indented* lines belong to the warning above them. A flush-left line
     // has moved on to something else, and that something else may be the error.

@@ -22,7 +22,7 @@
  * anyone touched a text box.
  */
 
-import { mkdir, readdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile, rename, stat } from 'node:fs/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { parseDocument, Scalar, stringify as stringifyYaml } from 'yaml';
 import { ASSET_SECTIONS, parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
@@ -91,8 +91,19 @@ function safeAsset(name: string): boolean {
   return name.split('/').every((part) => part !== '.' && part !== '..');
 }
 
-/** A take is one file inside one folder, and never a path. */
-const SAFE_TAKE = /^[A-Za-z0-9._-]+$/;
+/**
+ * A take is one file inside one folder, and never a path.
+ *
+ * The dot is in the character class because a take has an extension — which
+ * means `..` matches the pattern, the same trap `safeAsset` has. It reached
+ * `join()` on the way to an `rm` before a test went looking for it. The
+ * containment check downstream caught it, but a name that is not a name should
+ * be refused by the thing whose job that is.
+ */
+function safeTake(name: string): boolean {
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return false;
+  return name !== '.' && name !== '..';
+}
 
 export type OpenProject = {
   name: string;
@@ -806,7 +817,7 @@ export async function resolveMedia(
     if (!request.file || !safeAsset(request.file)) throw new ProjectError('Bad asset name');
 
     if (request.take) {
-      if (!SAFE_TAKE.test(request.take)) throw new ProjectError('Bad take name');
+      if (!safeTake(request.take)) throw new ProjectError('Bad take name');
       root = takesDir(paths, section as AssetSection, request.file);
       target = join(root, request.take);
     } else {
@@ -1280,6 +1291,54 @@ export async function saveStoryboardSource(name: string, source: string): Promis
  * moved. Changing your mind about a take is meant to be free, which is what
  * makes keeping every attempt worth doing in the first place.
  */
+/**
+ * Throws away one take.
+ *
+ * Re-rolling is free, which is the point of it — and a folder holding nine
+ * readings of one line, six of them rejected on the first listen, is a folder
+ * where finding the good one is the work. So the board can delete.
+ *
+ * The published file is never touched. Publishing is the deliberate act that
+ * puts a reading in front of an audience, and a delete that quietly un-shipped
+ * a line would be a very quiet way to lose one. If the deleted take was the
+ * selected one the selection is cleared rather than moved — picking a
+ * replacement is the author's, and guessing would ship a reading nobody chose.
+ */
+export async function deleteTake(
+  name: string,
+  section: AssetSection,
+  asset: string,
+  take: string,
+): Promise<void> {
+  if (!(ASSET_SECTIONS as readonly string[]).includes(section)) {
+    throw new ProjectError('Unknown section');
+  }
+  if (!safeAsset(asset)) throw new ProjectError('Bad asset name');
+  // The same guard the media route uses. This string reaches `join()` on the
+  // way to an `rm`, and the editor deletes without asking anyone twice.
+  if (!safeTake(take)) throw new ProjectError('Bad take name');
+
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const folder = takesDir(paths, section, asset);
+  const target = resolve(join(folder, take));
+  if (!within(resolve(folder), target)) throw new ProjectError('Outside the takes folder');
+
+  // `force` because a ledger entry for a file already gone is exactly the case
+  // an author is trying to clear, and refusing would leave it unclearable.
+  await rm(target, { force: true });
+
+  const { ledger } = await loadLedger(paths.ledger);
+  const entry = ledger.assets[asset];
+  if (!entry) return;
+  entry.takes = entry.takes.filter((recorded) => recorded.id !== take);
+  if (entry.selected === take) delete entry.selected;
+  await saveLedger(paths.ledger, ledger);
+}
+
 export async function selectTake(
   name: string,
   asset: string,

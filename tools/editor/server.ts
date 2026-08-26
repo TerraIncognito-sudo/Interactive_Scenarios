@@ -20,7 +20,7 @@ import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { join, extname } from 'node:path';
-import { parseScenarioSource } from '../../src/scenario/load.ts';
+import { parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
 import { ProjectError } from './project.ts';
 import { modelStatuses } from './models.ts';
@@ -35,6 +35,7 @@ import {
   initProject,
   listProjects,
   migrateShots,
+  deleteTake,
   recordReference,
   sortAssets,
   wireSprites,
@@ -290,7 +291,10 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return sendJson(response, 200, { projects: await listProjects(), dir: workspace() });
   }
 
-  const projectMatch = /^\/api\/projects\/([^/]+)(?:\/([a-z]+))?$/.exec(path);
+  // `[a-z-]` rather than `[a-z]`: a two-word action is a route that 404s while
+  // looking perfectly correct at both ends, and the client's error for it —
+  // "Not found" — points at the asset rather than at the URL.
+  const projectMatch = /^\/api\/projects\/([^/]+)(?:\/([a-z][a-z-]*))?$/.exec(path);
   if (projectMatch) {
     const name = decodeURIComponent(projectMatch[1]!);
     const action = projectMatch[2];
@@ -452,6 +456,23 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
           files: body.files.map(String),
         });
         return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'delete-take' && request.method === 'POST') {
+        const body = (await readBody(request)) as {
+          section?: unknown;
+          asset?: unknown;
+          take?: unknown;
+        };
+        if (
+          typeof body.section !== 'string' ||
+          typeof body.asset !== 'string' ||
+          typeof body.take !== 'string'
+        ) {
+          return sendJson(response, 400, { error: 'Expected { section, asset, take }' });
+        }
+        await deleteTake(name, body.section as AssetSection, body.asset, body.take);
+        return sendJson(response, 200, await openProject(name));
       }
 
       if (action === 'select' && request.method === 'POST') {

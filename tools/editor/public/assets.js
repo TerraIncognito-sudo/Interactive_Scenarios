@@ -351,6 +351,15 @@ async function selectTake(asset, take) {
   render();
 }
 
+async function deleteTake(section, asset, take) {
+  state.data = await api(`/api/projects/${encodeURIComponent(state.name)}/delete-take`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ section, asset, take }),
+  });
+  render();
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -831,9 +840,43 @@ function takesStrip(asset) {
           take.id,
           take.untracked ? h('span', { class: 'take-tag' }, 'manual') : null,
         ),
+        // Re-rolling is free, so a folder fills up with readings rejected on
+        // the first listen — and finding the good one among nine becomes the
+        // work. The published file is never touched by this; un-shipping a
+        // line has to be a thing somebody meant to do.
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'take-drop',
+            title: chosen
+              ? `Delete ${take.id} — it is the selected take, so nothing will be selected after`
+              : `Delete ${take.id}`,
+            'aria-label': `Delete ${take.id}`,
+            onclick: (event) => {
+              event.stopPropagation();
+              void onDeleteTake(asset, take, chosen);
+            },
+          },
+          '✕',
+        ),
       );
     }),
   );
+}
+
+async function onDeleteTake(asset, take, chosen) {
+  const warning = chosen
+    ? '\n\nThis is the selected take. Nothing will be selected for this line ' +
+      'afterwards — the published file stays as it is.'
+    : '';
+  if (!confirm(`Delete take ${take.id}?${warning}\n\nThis cannot be undone.`)) return;
+  try {
+    await deleteTake(asset.section, asset.file, take.id);
+    state.onStatus('ok', `deleted ${take.id}`);
+  } catch (err) {
+    state.onStatus('bad', said(asset.file, err.message));
+  }
 }
 
 /**
@@ -1285,6 +1328,20 @@ async function onGenerateMissing(section, files) {
     return;
   }
 
+  await runBatch(section, files, `missing ${SECTION_LABELS[section].toLowerCase()}`);
+}
+
+/**
+ * The loop itself, shared by the section run and the per-actor one.
+ *
+ * One `state.run` for the whole board, so the Stop button and the progress
+ * count belong to whichever started it. Two concurrent batches would be two
+ * queues into one sidecar, which serialises them anyway — with no way to tell
+ * which of them the count on screen is describing.
+ */
+async function runBatch(section, files, what) {
+  if (files.length === 0) return;
+
   state.run = { section, done: 0, total: files.length, stop: false, failed: [] };
   render();
 
@@ -1318,7 +1375,7 @@ async function onGenerateMissing(section, files) {
 
   const seconds = Math.round((Date.now() - started) / 1000);
   const parts = [
-    `${stop ? 'stopped after' : 'made'} ${done} of ${files.length} in ${seconds}s`,
+    `${what}: ${stop ? 'stopped after' : 'made'} ${done} of ${files.length} in ${seconds}s`,
   ];
   if (failed.length > 0) parts.push(`${failed.length} failed: ${failed.join(' · ')}`);
   state.onStatus(failed.length > 0 ? 'bad' : 'ok', parts.join(' · '));
@@ -1493,8 +1550,243 @@ function sectionBlock(section) {
       ? null
       : section.assets.length === 0
         ? h('p', { class: 'empty' }, 'Nothing in the scenario asks for this yet.')
-        : section.assets.map((asset) => assetRow(asset, generable)),
+        : section.section === 'voice'
+          ? byActor(section).map((group) => actorBlock(group, section, generable))
+          : section.assets.map((asset) => assetRow(asset, generable)),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Voice, by who reads it
+// ---------------------------------------------------------------------------
+
+/**
+ * The voice section grouped by the part rather than by the filename.
+ *
+ * A show's clips sort as `beau-a4-01`, `beau-c2-03`, `narr-a1-01` — which is
+ * alphabetical, which is nearly the right answer and not the right answer. The
+ * unit of work here is a *voice*: it is set once, it belongs to one person, and
+ * changing it makes every line they speak stale at once. Ninety rows in filename
+ * order means finding those lines is a scroll, and re-doing them is ninety
+ * clicks.
+ *
+ * Order is the cast's, not the alphabet's — `buildCast` already sorts it, and
+ * two orderings of the same people is one of them being wrong.
+ */
+function byActor(section) {
+  const cast = state.data?.overview?.cast ?? [];
+  const groups = new Map();
+  const place = (id) => {
+    if (!groups.has(id)) groups.set(id, { id, name: id, assets: [] });
+    return groups.get(id);
+  };
+
+  for (const member of cast) {
+    const group = place(member.id);
+    group.name = member.name;
+    group.member = member;
+  }
+
+  for (const asset of section.assets) {
+    // A row with no `voice:` has never been wired. It still has to appear, or a
+    // line nobody can generate is a line nobody can see is missing.
+    place(asset.row?.voice ?? UNCAST).assets.push(asset);
+  }
+
+  return [...groups.values()].filter((group) => group.assets.length > 0);
+}
+
+const UNCAST = '—';
+
+/** What each of the three actor-level actions has to work on. */
+function actorWork(group) {
+  const files = group.assets.map((asset) => asset.file);
+  // Every clip, not the missing ones. Re-voicing a character is the case this
+  // exists for, and after it every line they have needs saying again — the
+  // section-level button's "missing only" rule would skip all of them.
+  const stale = group.assets.filter((asset) => asset.status === 'stale');
+  // A take newer than the chosen one is what a regenerate leaves behind:
+  // generating never steals a selection, so the row still points at a reading
+  // made by a voice that no longer exists.
+  const superseded = group.assets.filter((asset) => {
+    const last = asset.takes?.[asset.takes.length - 1];
+    return last && asset.selected && asset.selected !== last.id;
+  });
+  // Everything with a selection, not "everything that looks like it needs it".
+  // `ready` means the selected take matches the recipe — it says nothing about
+  // whether that take was ever copied to the name the show opens, and nothing
+  // on this board knows. Publishing is a file copy and it is idempotent, so the
+  // honest filter is the one the author asked for: the selected clips.
+  // `unselected` is what a selection pointing at a deleted take reads as, and
+  // publishing that is an error rather than a copy.
+  const publishable = group.assets.filter(
+    (asset) => asset.selected && asset.status !== 'unselected',
+  );
+  return { files, stale, superseded, publishable };
+}
+
+function actorBlock(group, section, generable) {
+  const key = `actor:${section.section}:${group.id}`;
+  const collapsed = state.collapsed.has(key);
+  const work = actorWork(group);
+  const ready = group.assets.filter((asset) => asset.status === 'ready').length;
+
+  const head = h(
+    'header',
+    {
+      class: 'actor-head',
+      onclick: () => {
+        if (collapsed) state.collapsed.delete(key);
+        else state.collapsed.add(key);
+        render();
+      },
+    },
+    h('span', { class: 'section-caret' }, collapsed ? '▸' : '▾'),
+    h('h4', {}, group.id === UNCAST ? 'no voice set' : group.name),
+    h('span', { class: 'actor-id' }, group.id === UNCAST ? '' : group.id),
+    h('span', { class: 'actor-count' }, `${ready}/${group.assets.length} ready`),
+    h('span', { class: 'spacer' }),
+    actorActions(group, section, generable, work),
+  );
+
+  return h(
+    'div',
+    { class: `actor${collapsed ? ' collapsed' : ''}` },
+    head,
+    collapsed ? null : group.assets.map((asset) => assetRow(asset, generable)),
+  );
+}
+
+/**
+ * The three things you do to a whole part at once.
+ *
+ * Each appears only when it has work, and each says how much. A row of buttons
+ * that are always there teaches nobody what state the part is in; a row that
+ * says "Regenerate 34 · Use newest 34 · Publish 34" is the re-voicing job,
+ * written down in the order it has to happen.
+ */
+function actorActions(group, section, generable, work) {
+  if (group.id === UNCAST) return null;
+  const busy = Boolean(state.run);
+  const buttons = [];
+
+  if (generable) {
+    // Stale first when there are any: changing a voice marks exactly the lines
+    // that need saying again, and re-rolling the eleven that were already right
+    // is GPU time spent to replace readings somebody had approved. The label
+    // says which of the two it is, because "Regenerate 3" next to fourteen rows
+    // is otherwise a number with no explanation.
+    const stale = work.stale.length > 0;
+    const files = stale ? work.stale.map((asset) => asset.file) : work.files;
+    buttons.push(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost small',
+          disabled: busy ? true : undefined,
+          title: stale
+            ? 'Make a new take of every line of theirs whose voice has changed since it was made'
+            : 'Make a new take of every line they have',
+          onclick: (event) => {
+            event.stopPropagation();
+            void onRegenerateActor(section.section, group, files);
+          },
+        },
+        stale ? `Regenerate ${files.length} stale` : `Regenerate ${files.length}`,
+      ),
+    );
+  }
+
+  if (work.superseded.length > 0) {
+    buttons.push(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost small',
+          disabled: busy ? true : undefined,
+          // Separate from generating on purpose. Generating never steals a
+          // selection, because the first acceptable reading of every line is
+          // otherwise the one that ships — so moving the selection is its own
+          // act, and this is it, said out loud with a count.
+          title: 'Select the newest take for every line of theirs that has one waiting',
+          onclick: (event) => {
+            event.stopPropagation();
+            void onUseNewest(group, work.superseded);
+          },
+        },
+        `Use newest ${work.superseded.length}`,
+      ),
+    );
+  }
+
+  if (work.publishable.length > 0) {
+    buttons.push(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost small',
+          disabled: busy ? true : undefined,
+          title: 'Copy the selected take of every line of theirs to the name the show opens',
+          onclick: (event) => {
+            event.stopPropagation();
+            void onPublishActor(section.section, group, work.publishable);
+          },
+        },
+        `Publish ${work.publishable.length}`,
+      ),
+    );
+  }
+
+  return buttons.length > 0 ? buttons : null;
+}
+
+async function onRegenerateActor(section, group, files) {
+  if (
+    !confirm(
+      `Make a new take of ${files.length} line${files.length === 1 ? '' : 's'} for ${group.name}?` +
+        `\n\nNothing is replaced — each one is added beside the takes already there, and ` +
+        `nothing is published. You can stop it partway.`,
+    )
+  ) {
+    return;
+  }
+  await runBatch(section, files, `${group.name}`);
+}
+
+async function onUseNewest(group, assets) {
+  let moved = 0;
+  for (const asset of assets) {
+    const last = asset.takes[asset.takes.length - 1];
+    try {
+      await selectTake(asset.file, last.id);
+      moved += 1;
+    } catch (err) {
+      state.onStatus('bad', said(asset.file, err.message));
+      return;
+    }
+  }
+  state.onStatus('ok', `${group.name}: ${moved} now on their newest take`);
+}
+
+async function onPublishActor(section, group, assets) {
+  const files = assets.map((asset) => asset.file);
+  try {
+    const result = await publishAssets(section, files);
+    const failed = result?.failed ?? [];
+    const done = result?.published?.length ?? 0;
+    state.onStatus(
+      failed.length > 0 ? 'bad' : 'ok',
+      failed.length > 0
+        ? `${group.name}: published ${done}, ${failed.length} failed: ` +
+            failed.map((entry) => said(entry.file, entry.error)).join(' · ')
+        : `${group.name}: published ${done}`,
+    );
+  } catch (err) {
+    state.onStatus('bad', err.message);
+  }
 }
 
 function render() {

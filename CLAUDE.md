@@ -127,6 +127,28 @@ Flat names stay legal, because every scenario written before this is one. `folde
 migration and `filed()` in `storyboard.ts` is what makes new projects born that way; `takesDir`
 drops the section from a name that already carries it, so filing a project costs it no takes.
 
+**Voice is grouped by the part, not by the filename.** A voice is set once, belongs to one
+person, and changing it makes every line they speak stale at once — so the part is the unit of
+work, and `byActor` in `assets.js` groups by `row.voice` in the cast's own order. The three
+actor-level actions are the re-voicing job written down in the order it happens: **Regenerate**
+(stale ones when there are any, all of them otherwise), **Use newest**, **Publish**. *Use newest*
+is separate from generating on purpose — generating never steals a selection, so moving one is
+its own act with its own count. **Publish covers every clip with a selection**, not the ones that
+"look like they need it": `ready` means the selected take matches the recipe and says nothing
+about whether it was ever copied to the published name, which nothing on the board knows.
+
+**A destructive route validates the name itself.** `deleteTake` takes a string that reaches
+`join()` on the way to an `rm`. `safeTake` rejects `.` and `..` — the dot is in the character
+class because a take has an extension, which is the same trap `safeAsset` had — and the result is
+checked for containment as well. Deleting never touches the published file: publishing is the
+deliberate act that puts a reading in front of an audience, and a delete that quietly un-shipped a
+line would not be noticed until the room went silent. Deleting the *selected* take clears the
+selection rather than moving it, because guessing a replacement ships a reading nobody chose.
+
+**A project route's action may contain a hyphen.** The router's `([a-z][a-z-]*)` was `([a-z]+)`,
+and `delete-take` 404d while looking correct at both ends — the client reported "Not found"
+against the asset rather than the URL.
+
 **The editor plays what it made — and shows it.** A board that can only describe a clip is a
 board whose selection step is guesswork, and a pipeline nobody can hear ships the first reading
 of every line. Choosing between six jetties by filename is worse than guesswork. `resolveMedia`
