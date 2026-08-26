@@ -24,6 +24,7 @@ import {
   type AssetSection,
 } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
+import { composePrompt } from './prompt.ts';
 import {
   fromProject,
   NARRATION_VOICE,
@@ -61,6 +62,17 @@ export type AssetView = {
   row: AssetRow;
   /** Every place in the scenario that asks for this file. */
   origins: AssetOrigin[];
+  /**
+   * What a generator would actually be handed: the row's prompt with the
+   * storyboard's named blocks put back in, and the negative that goes with it.
+   *
+   * On the board rather than only inside the generator because a prompt nobody
+   * can read is a prompt nobody can fix. Every complaint about the art this
+   * pipeline produces starts with not being able to see what the model was
+   * given — and the row shows `STYLE. SHIP. Pre-dawn at a jetty…`, which is not
+   * what any model would receive.
+   */
+  composed?: { positive: string; negative: string; unresolved: string[] };
   takes: TakeView[];
   selected?: string;
   /** The file exists at its canonical name in the publish folder. */
@@ -315,13 +327,18 @@ export async function buildOverview(
     for (const file of files) {
       const info = grouped.get(file)!;
       const row = project.assets[file];
-      const hash = recipeHash(resolveRecipe(project, section, file));
+      const recipe = resolveRecipe(project, section, file);
+      const hash = recipeHash(recipe);
+
       const entry = ledger.assets[file];
       const takes = await scanTakes(takesDir(paths, section, file), entry?.takes ?? []);
       const selected = entry?.selected;
       const selectedTake = takes.find((take) => take.id === selected);
 
       const notes = notesFor(scenario, section, info.origins);
+      // Voice has no prompt in this sense — its text is the line — and running
+      // a composer over it would offer to expand words in the dialogue.
+      const composed = section === 'voice' ? undefined : composePrompt(recipe);
 
       const base: Omit<AssetView, 'status'> = {
         file,
@@ -331,6 +348,7 @@ export async function buildOverview(
         hasPrompt: Boolean(row?.prompt?.trim() || row?.text?.trim()),
         row: row ?? ({ refs: [], params: {}, freeze: false } as AssetRow),
         origins: info.origins,
+        ...(composed ? { composed } : {}),
         takes,
         selected,
         published: await fileExists(join(paths.publish, file)),
@@ -357,6 +375,29 @@ export async function buildOverview(
           `"${member.id}" points at a reference clip that is not there: ${member.reference}`,
       });
     }
+  }
+
+  // A prompt still carrying a name nothing defines reaches the model with
+  // `SHIP.` in it, which it reads as a word. The picture comes back without the
+  // ship, and nothing else on this board would ever mention it.
+  const undefinedTokens = new Map<string, string[]>();
+  for (const view of sections) {
+    for (const asset of view.assets) {
+      for (const name of asset.composed?.unresolved ?? []) {
+        const files = undefinedTokens.get(name);
+        if (files) files.push(asset.file);
+        else undefinedTokens.set(name, [asset.file]);
+      }
+    }
+  }
+  for (const [name, files] of [...undefinedTokens].sort(([a], [b]) => a.localeCompare(b))) {
+    problems.push({
+      level: 'warning',
+      message:
+        `${files.length} prompt${files.length === 1 ? '' : 's'} refer to "${name}", which ` +
+        `nothing defines — the model will read it as a word. Add it under \`tokens:\`, or ` +
+        `re-seed from the storyboard if it states one.`,
+    });
   }
 
   const orphans = Object.keys(project.assets)

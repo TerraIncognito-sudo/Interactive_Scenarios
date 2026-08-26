@@ -51,9 +51,32 @@ export type StoryboardShot = {
 
 export type StoryboardParse = {
   shots: StoryboardShot[];
+  /**
+   * Named blocks the document defines once and the shots refer to by name:
+   * `STYLE`, `NEGATIVE`, `SHIP`.
+   *
+   * A storyboard writes `STYLE. SHIP. Pre-dawn at a working naval jetty…`
+   * rather than pasting four hundred characters of palette into every shot, and
+   * it is right to — the style belongs to the production, not to the shot. But
+   * a prompt that reaches a model still saying `STYLE.` has none of it, and
+   * `STYLE` is not a word any model knows. This is where the definitions come
+   * from; `prompt.ts` is where they go back in.
+   */
+  tokens: Record<string, string>;
   /** Things the parser understood but that look like mistakes. */
   warnings: string[];
 };
+
+/**
+ * A fenced block that opens `NAME: …` and sits outside any shot.
+ *
+ * Narrow deliberately. A storyboard is full of fenced blocks — YAML samples,
+ * shell commands, the beat sheet — and a rule that took all of them would fill
+ * the project file with furniture. Capitals, a colon and prose after it is what
+ * a definition looks like in this document and in every storyboard modelled on
+ * it, and anything else stays furniture.
+ */
+const TOKEN_DEFINITION = /^([A-Z][A-Z0-9_]{2,}):\s*([\s\S]*)$/;
 
 const SHOT_HEADING = /^###\s+Shot\s+([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:[—–-]\s*(.*))?$/;
 /**
@@ -164,6 +187,7 @@ function readFence(lines: string[], index: number): { text: string; next: number
 export function parseStoryboard(source: string): StoryboardParse {
   const lines = source.split(/\r?\n/);
   const shots: StoryboardShot[] = [];
+  const tokens: Record<string, string> = {};
   const warnings: string[] = [];
 
   let act: string | undefined;
@@ -203,6 +227,21 @@ export function parseStoryboard(source: string): StoryboardParse {
     }
 
     if (!shot) {
+      // Before the first shot is where a storyboard states its style, its
+      // negative and its design bibles. The parser used to skip all of it,
+      // which is how twenty-six prompts reached the board with `STYLE.` in
+      // them and nothing anywhere that said what STYLE was.
+      if (line.startsWith('```')) {
+        const fence = readFence(lines, i);
+        const defined = TOKEN_DEFINITION.exec(fence.text);
+        if (defined) {
+          const [, name, body] = defined;
+          if (tokens[name!] === undefined) tokens[name!] = body!.trim();
+          else warnings.push(`${name} is defined more than once; the first one is used`);
+        }
+        i = fence.next;
+        continue;
+      }
       i += 1;
       continue;
     }
@@ -277,7 +316,7 @@ export function parseStoryboard(source: string): StoryboardParse {
     if (!entry.image) warnings.push(`Shot ${entry.id} has no **IMAGE** prompt`);
   }
 
-  return { shots, warnings };
+  return { shots, tokens, warnings };
 }
 
 // ---------------------------------------------------------------------------

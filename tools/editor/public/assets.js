@@ -47,6 +47,8 @@ const state = {
   busy: new Set(),
   /** Collapsed sections, so a long board stays navigable. */
   collapsed: new Set(),
+  /** Rows whose composed-prompt preview is open. */
+  expanded: new Set(),
   /**
    * A section-wide generate in flight: which section, how far, and whether the
    * author has asked it to stop. One at a time — there is one GPU, and two runs
@@ -873,6 +875,107 @@ function assetActions(asset, generable) {
   return actions.length > 0 ? h('div', { class: 'asset-actions' }, actions) : null;
 }
 
+/**
+ * What the model is actually handed, under the box where the prompt is typed.
+ *
+ * A row shows `STYLE. SHIP. Pre-dawn at a working naval jetty…` because that is
+ * what the storyboard wrote, and it is the right thing to keep editing — but it
+ * is not what any generator receives, and an author judging their prompts by
+ * that line is judging something else. Collapsed by default: expanded it is
+ * nine hundred characters of palette that would bury the twenty-six rows around
+ * it.
+ */
+function promptPreview(asset) {
+  const composed = asset.composed;
+  if (!composed) return null;
+
+  const key = `preview:${asset.file}`;
+  const open = state.expanded.has(key);
+
+  return h(
+    'div',
+    { class: 'preview' },
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'preview-toggle',
+        onclick: () => {
+          if (open) state.expanded.delete(key);
+          else state.expanded.add(key);
+          render();
+        },
+      },
+      open ? '▾' : '▸',
+      ' what the model gets',
+      h('span', { class: 'preview-size' }, `${composed.positive.length} chars`),
+      // A name nothing defines reaches the model as a word, and this is the
+      // row it belongs to. The board says it too, but a warning about a prompt
+      // is most useful next to the prompt.
+      composed.unresolved.length > 0
+        ? h(
+            'span',
+            { class: 'pill pill-stale' },
+            `${composed.unresolved.join(', ')} undefined`,
+          )
+        : null,
+    ),
+    open
+      ? h(
+          'div',
+          { class: 'preview-body' },
+          h('p', { class: 'preview-text' }, composed.positive),
+          composed.negative
+            ? h(
+                'p',
+                { class: 'preview-text preview-negative' },
+                h('span', { class: 'preview-label' }, 'negative '),
+                composed.negative,
+              )
+            : null,
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'ghost small',
+              // Until an image generator is wired up, the way art gets made is
+              // somebody pasting this into one. Making them select nine hundred
+              // characters by hand is the difference between a tool and a demo.
+              onclick: (event) => {
+                event.stopPropagation();
+                void copyText(composed.positive, 'prompt');
+              },
+            },
+            'Copy prompt',
+          ),
+          composed.negative
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'ghost small',
+                  onclick: (event) => {
+                    event.stopPropagation();
+                    void copyText(composed.negative, 'negative');
+                  },
+                },
+                'Copy negative',
+              )
+            : null,
+        )
+      : null,
+  );
+}
+
+async function copyText(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+    state.onStatus('ok', `${what} copied — ${text.length} characters`);
+  } catch {
+    state.onStatus('bad', 'the browser would not let the page write to the clipboard');
+  }
+}
+
 function assetRow(asset, generable = false) {
   const isVoice = asset.section === 'voice';
   const promptField = isVoice ? 'text' : 'prompt';
@@ -930,6 +1033,7 @@ function assetRow(asset, generable = false) {
         )
       : null,
     box,
+    promptPreview(asset),
     takesStrip(asset),
     assetActions(asset, generable),
   );

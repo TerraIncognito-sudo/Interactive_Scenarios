@@ -24,6 +24,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { ASSET_SECTIONS, type AssetSection } from '../../src/scenario/load.ts';
+import { tokensIn } from './prompt.ts';
 
 /**
  * Generation parameters vary by model — steps and cfg for a sampler, seconds
@@ -154,6 +155,20 @@ export type AssetRow = z.infer<typeof AssetRowSchema>;
  */
 export const ProjectSchema = z.strictObject({
   project: z.string().min(1),
+  /**
+   * Named blocks a prompt can refer to instead of repeating: `SHIP`, a design
+   * bible pasted into every hull shot so the ship stays the same ship.
+   *
+   * The same argument as a section's `style`, one level down. Twenty shots that
+   * each carry their own copy of the bible are twenty places to re-tune it, and
+   * nineteen of them will be missed. Referring to it by name means one edit
+   * changes all of them — and because the resolved text is folded into the
+   * recipe, one edit also makes all of them visibly stale.
+   *
+   * `STYLE` and `NEGATIVE` are not here: they are the section's own `style` and
+   * `negative`, which existed first and mean exactly this.
+   */
+  tokens: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{2,}$/), z.string()).prefault({}),
   title: z.string().min(1).optional(),
   /** All paths resolve relative to the project file, and may be absolute. */
   storyboard: z.string().min(1).optional(),
@@ -282,6 +297,15 @@ export type Recipe = {
   reference?: string;
   preset?: string;
   direction?: string;
+  /**
+   * The named blocks this prompt refers to, resolved.
+   *
+   * Only the ones it uses. A recipe has to contain everything that decides what
+   * comes out, so the ship's bible belongs in a hull shot's hash — but folding
+   * in every token the project defines would age forty images because somebody
+   * corrected a typo in a bible none of them mention.
+   */
+  tokens: Record<string, string>;
   model: { backend: string; file?: string };
 };
 
@@ -308,8 +332,19 @@ export function resolveRecipe(
     reference: voice?.reference,
     preset: voice?.preset,
     direction: voice?.direction,
+    tokens: usedTokens(project, row.prompt ?? ''),
     model: { backend: model?.backend ?? 'manual', file: model?.file },
   };
+}
+
+/** The definitions a prompt actually refers to, resolved. Unknown names are left out. */
+function usedTokens(project: Project, prompt: string): Record<string, string> {
+  const used: Record<string, string> = {};
+  for (const name of tokensIn(prompt)) {
+    const defined = project.tokens[name];
+    if (defined !== undefined) used[name] = defined;
+  }
+  return used;
 }
 
 /** Key-order-independent JSON, so a reordered YAML map is not a new recipe. */

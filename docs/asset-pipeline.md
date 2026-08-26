@@ -135,6 +135,36 @@ which is which.
 
 ---
 
+### What the storyboard defines once
+
+A storyboard states its style, its negative and its design bibles in a section of its own, and
+every shot refers to them by name:
+
+```
+STYLE. SHIP. Pre-dawn at a working naval jetty in Halifax Harbour, low tide…
+NEGATIVE.
+```
+
+That is the right way to *write* it and exactly the wrong thing to hand a generator, which reads
+`STYLE.` as a word. Import reads the definitions — any fenced block outside a shot that opens
+`NAME:` — and routes them:
+
+| In the storyboard | Lands in | Why there |
+|---|---|---|
+| `STYLE:` | `sections.images.style` | the field already means this, and is already in every recipe |
+| `NEGATIVE:` | `sections.images.negative` | same |
+| anything else | `tokens:` | a bible referred to by some shots, not all |
+
+Rows keep the prompt exactly as written. Expansion happens when the prompt is composed, so one
+edit to the ship's bible changes every hull shot — and because only the definitions a prompt
+*uses* are folded into its recipe, that edit makes exactly those shots stale and nothing else.
+
+Each row on the board carries a **what the model gets** preview with the composed positive and
+negative, and a copy button for each. Until an image generator is wired up, that copy button is
+how art gets made.
+
+---
+
 ## 4. Model selection per section
 
 Each section opens with its model block. Point it at a folder; the editor scans that folder and

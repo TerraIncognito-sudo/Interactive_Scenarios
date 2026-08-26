@@ -311,7 +311,7 @@ export async function initProject(name: string): Promise<OpenProject> {
   }
 
   const project = await defaultProject(name, dir);
-  const { rows: assets } = await seedFromStoryboard(dir, project, new Set());
+  const { rows: assets, placement } = await seedFromStoryboard(dir, project, new Set());
 
   const document = {
     project: project.project,
@@ -321,13 +321,22 @@ export async function initProject(name: string): Promise<OpenProject> {
     publish: project.publish,
     generated: project.generated,
     sections: {
-      images: { backend: 'manual', style: '', negative: '' },
+      // The storyboard's own style and negative, if it stated them. A project
+      // born with `style: ""` is one where every prompt still says `STYLE.` and
+      // nothing anywhere says what STYLE is — which is a word the model reads
+      // literally and a film whose frames do not match.
+      images: {
+        backend: 'manual',
+        style: placement.style ?? '',
+        negative: placement.negative ?? '',
+      },
       video: { backend: 'manual' },
       voice: { backend: 'manual' },
       sfx: { backend: 'manual' },
       ambience: { backend: 'manual' },
       music: { backend: 'manual' },
     },
+    ...(Object.keys(placement.tokens).length > 0 ? { tokens: placement.tokens } : {}),
     assets,
   };
 
@@ -362,8 +371,9 @@ async function seedFromStoryboard(
   rows: Record<string, Record<string, unknown>>;
   fills: { file: string; path: string[]; value: unknown }[];
   unmatched: SeedResult['unmatched'];
+  placement: TokenPlacement;
 }> {
-  const nothing = { rows: {}, fills: [], unmatched: [] };
+  const nothing = { rows: {}, fills: [], unmatched: [], placement: { tokens: {} } };
   if (!project.storyboard) return nothing;
 
   const storyboard = await readFile(join(dir, project.storyboard), 'utf8').catch(() => undefined);
@@ -376,7 +386,9 @@ async function seedFromStoryboard(
   const parsed = parseScenarioSource(scenarioSource);
   if (!parsed.ok) return nothing;
 
-  const seeded = seedRowsFor(parsed.scenario, parseStoryboard(storyboard).shots);
+  const document = parseStoryboard(storyboard);
+  const seeded = seedRowsFor(parsed.scenario, document.shots);
+  const placement = placeTokens(document.tokens);
 
   const rows: Record<string, Record<string, unknown>> = {};
   /** Field paths to write onto rows that already exist. */
@@ -422,7 +434,42 @@ async function seedFromStoryboard(
     }
   }
 
-  return { rows, fills, unmatched: seeded.unmatched };
+  return { rows, fills, unmatched: seeded.unmatched, placement };
+}
+
+/**
+ * Routes the storyboard's named blocks to the fields that already mean them.
+ *
+ * `STYLE` and `NEGATIVE` are a section's `style` and `negative` — those fields
+ * exist for exactly this and are already folded into every recipe in the
+ * section, so putting the text anywhere else would be a second copy of a fact
+ * the schema already holds. Everything else is a bible a prompt refers to by
+ * name, and lives in `tokens`.
+ *
+ * Only images. The storyboard says "prepend to *every* image prompt", and a
+ * motion prompt is "slow parallax push toward the bow" — a camera instruction
+ * over a still that already carries the palette. Style on it would be four
+ * hundred characters of paint applied to a move.
+ */
+export type TokenPlacement = {
+  style?: string;
+  negative?: string;
+  tokens: Record<string, string>;
+};
+
+export function placeTokens(defined: Record<string, string>): TokenPlacement {
+  const placement: TokenPlacement = { tokens: {} };
+  for (const [name, body] of Object.entries(defined)) {
+    if (name === 'STYLE') placement.style = body;
+    else if (name === 'NEGATIVE') placement.negative = body;
+    else placement.tokens[name] = body;
+  }
+  return placement;
+}
+
+/** Absent, or present and empty. Both are holes; neither is tuning to protect. */
+function isHole(value: unknown): boolean {
+  return value === undefined || value === null || String(value).trim() === '';
 }
 
 export type StoryboardSync = {
@@ -435,6 +482,12 @@ export type StoryboardSync = {
   filled: string[];
   /** Already in the project; left exactly as they were. */
   kept: number;
+  /**
+   * Named blocks that reached the project for the first time — the style, the
+   * negative, a design bible. Reported because a board whose prompts suddenly
+   * grew four hundred characters of palette should say so out loud.
+   */
+  defined: string[];
   /**
    * Storyboard prompts with no file in the scenario to attach them to — most
    * often spoken lines that have no `voice:` in the scenario yet. Reported
@@ -464,14 +517,36 @@ export async function syncFromStoryboard(name: string): Promise<StoryboardSync> 
   const project = parseProjectSource(source);
   const existing = new Set(Object.keys(project.assets));
 
-  const { rows, fills, unmatched } = await seedFromStoryboard(dir, project, existing);
+  const { rows, fills, unmatched, placement } = await seedFromStoryboard(dir, project, existing);
   const added = Object.keys(rows).sort();
   const filled = [...new Set(fills.map((fill) => fill.file))].sort();
-  if (added.length === 0 && fills.length === 0) {
-    return { added, filled, kept: existing.size, unmatched };
+
+  // The style, the negative and the bibles. Filled only where the project has
+  // a hole: once an author has tuned a style, the document that suggested it
+  // has no business overwriting it.
+  const defining: { path: (string | number)[]; value: string; name: string }[] = [];
+  if (placement.style && isHole(project.sections.images?.style)) {
+    defining.push({ path: ['sections', 'images', 'style'], value: placement.style, name: 'STYLE' });
+  }
+  if (placement.negative && isHole(project.sections.images?.negative)) {
+    defining.push({
+      path: ['sections', 'images', 'negative'],
+      value: placement.negative,
+      name: 'NEGATIVE',
+    });
+  }
+  for (const [name, body] of Object.entries(placement.tokens)) {
+    if (isHole(project.tokens[name])) {
+      defining.push({ path: ['tokens', name], value: body, name });
+    }
+  }
+
+  if (added.length === 0 && fills.length === 0 && defining.length === 0) {
+    return { added, filled, kept: existing.size, unmatched, defined: [] };
   }
 
   const doc = parseDocument(source);
+  for (const entry of defining) doc.setIn(entry.path, blockValue(entry.value));
   for (const [assetFile, row] of Object.entries(rows)) {
     for (const [field, value] of Object.entries(row)) {
       doc.setIn(['assets', assetFile, field], blockValue(value));
@@ -480,7 +555,13 @@ export async function syncFromStoryboard(name: string): Promise<StoryboardSync> 
   for (const fill of fills) doc.setIn(['assets', fill.file, ...fill.path], blockValue(fill.value));
   await writeAtomic(file, doc.toString());
 
-  return { added, filled, kept: existing.size, unmatched };
+  return {
+    added,
+    filled,
+    kept: existing.size,
+    unmatched,
+    defined: defining.map((entry) => entry.name),
+  };
 }
 
 // ---------------------------------------------------------------------------

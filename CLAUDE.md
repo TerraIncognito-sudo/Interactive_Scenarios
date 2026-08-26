@@ -163,6 +163,24 @@ who wanted to hear a line read aloud.
 to other machines and is opened a year later, so it names a model (`chatterbox`) while the
 editor's own config holds the path. The same reasoning as the workspace, for the same reason.
 
+**A prompt is not what the model gets.** A storyboard writes `STYLE. SHIP. Pre-dawn at a
+jetty…` and defines STYLE and SHIP once, hundreds of characters each, because the style belongs
+to the production rather than to any one shot. Handed to a model unchanged that is five dead
+characters and a picture with none of the palette. `prompt.ts` puts them back: `STYLE` and
+`NEGATIVE` resolve from the section's own `style`/`negative`, everything else from
+`project.tokens`. Expansion happens at compose time, never at import — pasting a bible into
+twenty hull shots means re-tuning it twenty times — and only the definitions a prompt *uses* go
+into its recipe, so editing one ages exactly the shots that mention it.
+
+An undefined name is reported only where the prompt is plainly invoking it: the leading run, or
+a trailing marker on its own line. Every storyboard is full of `RIB.` and `AIS.`, which are
+indistinguishable from a reference by shape, and a warning that fires on those is one people
+learn to skip.
+
+**The board shows the composed prompt.** Every complaint about the art this pipeline makes has
+started with not being able to see what the model was given. A prompt you cannot read is one you
+cannot fix.
+
 **A line with no `who:` is still somebody's to read.** Narration with no nameplate — a fiction
 notice, a title card — is cast under `NARRATION_VOICE` (`vo` in `project.ts`), an id that is
 deliberately not a character, because attributing the line to one to give it a voice would put
