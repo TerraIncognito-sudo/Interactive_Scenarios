@@ -110,7 +110,12 @@ function sessionRow(session: LiveSession, serverNow: number): HTMLLIElement {
     session.presence.displays > 0
       ? session.displayReady
         ? 'display ready'
-        : 'display loading'
+        : session.displayLoading && session.displayLoading.total > 0
+          ? // The number, for the same reason the host console has it: a
+            // projector working through three hundred megabytes and one that
+            // has hung read identically without it.
+            `display loading ${session.displayLoading.done}/${session.displayLoading.total}`
+          : 'display fetching the story'
       : 'no display',
     ago(serverNow - session.lastActivityAt),
   ];

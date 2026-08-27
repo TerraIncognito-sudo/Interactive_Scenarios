@@ -82,12 +82,12 @@ scenes:
   # hold that location's establishing shot (A.1 and A.3); the siblings below
   # exist purely to carry a second camera setup in the same room.
   halifax: { background: images/jetty_ship.jpg, ambience: ambience/harbour.mp3 }
-  control_cell: { background: images/operations_centre.jpg, ambience: ambience/cell.mp3 }
-  transit: { background: images/ship-ocean.jpg, ambience: ambience/sea.mp3 }
-  transit_ice: { background: images/ship-ice.jpg, ambience: ambience/sea.mp3 }
-  engagement_ships: { background: images/engagement_ships.jpg }
-  engagement_drone: { background: images/engagement_drone.jpg }
-  standoff: { background: images/standoff.jpg }
+  control_cell: { background: images/operations_centre.png, ambience: ambience/cell.mp3 }
+  transit: { background: images/ship-ocean.png, ambience: ambience/sea.mp3 }
+  transit_ice: { background: images/ship-ice.png, ambience: ambience/sea.mp3 }
+  engagement_ships: { background: images/engagement_ships.png }
+  engagement_drone: { background: images/engagement_drone.png }
+  standoff: { background: images/standoff.png }
   debrief: { }
 
 nodes:
@@ -166,7 +166,7 @@ nodes:
   - id: a5_departure
     type: dialogue
     scene: halifax
-    background: images/ship-departure.jpg
+    background: images/ship-departure.png
     lines:
       - who: narr
         text: No one waves it off. There's no one at the rail to wave to.

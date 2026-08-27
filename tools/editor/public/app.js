@@ -770,10 +770,12 @@ async function boot() {
       state.saved = source;
       $('source').value = source;
       markClean();
-      // Where an action leaves you is where its status line is, which is the
-      // Assets tab — but *opening* a project is not an action, and the first
-      // thing anybody wants to see is the cast.
-      showTab(tab);
+      // Where an action leaves you is where it was pressed. `null` says so:
+      // an action that rewrites the scenario refreshes this pane as a side
+      // effect, and a side effect must not move the tab out from under the
+      // person who pressed the button. Opening a project *is* a move, and the
+      // first thing anybody wants to see is the cast.
+      if (tab !== null) showTab(tab);
       return analyze();
     },
     onStoryboard: (source, path) => {

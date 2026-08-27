@@ -44,6 +44,7 @@ function overview(assets: AssetView[], over: Partial<Overview> = {}): Overview {
     sections: [section],
     cast: [],
     orphans: [],
+    strays: [],
     counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
     problems: [],
     ...over,
@@ -395,10 +396,21 @@ describe('the contract', () => {
             publishedTake: 't1',
             notes: ['something to look at'],
           }),
+          asset({
+            file: 'images/lying.jpg',
+            section: 'images',
+            status: 'ready',
+            selected: 't1',
+            publishedTake: 't1',
+            format: { actual: 'PNG', declared: 'jpg', rename: 'images/lying.png' },
+          }),
         ],
         {
           cast: [{ id: 'beau', name: 'Beau', lines: 2, ready: 0, referenceExists: false }],
           orphans: ['voice/gone.mp3'],
+          strays: [
+            { section: 'voice', file: 'voice/cut.mp3', published: true, takes: 2, bytes: 90_000 },
+          ],
         },
       ),
     );
@@ -406,7 +418,7 @@ describe('the contract', () => {
     assert.deepEqual(
       produced.groups.map((group) => group.group),
       [...OUTSTANDING_GROUPS],
-      'all nine, in declaration order',
+      'every one of them, in declaration order',
     );
     for (const group of produced.groups) {
       assert.ok(group.label && group.hint, `${group.group} is described`);

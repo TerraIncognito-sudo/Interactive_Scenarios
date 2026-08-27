@@ -157,7 +157,26 @@ export function attachWebSocketServer(server: Server, registry: RoomRegistry): W
             fail(socket, 'badToken', 'Only the display may report ready.', false);
             return;
           }
-          room.markDisplayReady();
+          room.markDisplayReady(
+            message.failed !== undefined && message.total !== undefined
+              ? { failed: message.failed, total: message.total }
+              : undefined,
+          );
+          return;
+        }
+
+        case 'displayProgress': {
+          if (subscriber.role !== 'display') {
+            fail(socket, 'badToken', 'Only the display may report progress.', false);
+            return;
+          }
+          room.noteDisplayProgress({
+            done: message.done,
+            total: message.total,
+            failed: message.failed,
+            ...(message.bytes !== undefined ? { bytes: message.bytes } : {}),
+            ...(message.totalBytes !== undefined ? { totalBytes: message.totalBytes } : {}),
+          });
           return;
         }
 

@@ -13,7 +13,8 @@
 
 import QRCode from 'qrcode';
 import { Connection, queryParam } from '../shared/connection.ts';
-import type { Snapshot, SnapshotBeat } from '../../shared/protocol.ts';
+import { pooled } from '../shared/pool.ts';
+import type { DisplayLoading, Snapshot, SnapshotBeat } from '../../shared/protocol.ts';
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, type Scenario } from '../../scenario/schema.ts';
 import { beatOf, initialState, reduce, activeScene, type RunState } from '../../engine/engine.ts';
 
@@ -59,6 +60,16 @@ fitStage();
 let scenario: Scenario | undefined;
 let assetBase = '';
 let assetsLoaded = false;
+/** What never arrived, reported with readiness so the host hears about it. */
+let assetsMissing = { failed: 0, total: 0 };
+/**
+ * How far the prefetch has got, while it is still going.
+ *
+ * Kept rather than derived so the same numbers reach the screen and the host
+ * console — two counters over one download would eventually disagree, and the
+ * one on the far end of a socket is the one nobody could check.
+ */
+let loading: DisplayLoading | undefined;
 let local: RunState | undefined;
 let localTimer: ReturnType<typeof setTimeout> | undefined;
 let lastRenderedBeat = -1;
@@ -86,31 +97,38 @@ function show(which: keyof typeof views): void {
 // Assets
 // ---------------------------------------------------------------------------
 
-function preloadImage(url: string): Promise<void> {
+/**
+ * Each preloader answers "did it arrive", not just "is it finished".
+ *
+ * Resolving on error is still right — a missing decoration must not stop a
+ * show — but it must not be silent either. "Ready" over eleven assets that
+ * never arrived is the same lie as "ready" halfway through the download, and
+ * the whole point of this screen is that somebody can read it and know.
+ */
+function preloadImage(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const img = new Image();
-    // Resolve on error too: a missing decoration must not block the show.
-    img.onload = () => resolve();
-    img.onerror = () => resolve();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
     img.src = url;
   });
 }
 
-function preloadAudio(url: string): Promise<void> {
+function preloadAudio(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const audio = new Audio();
-    audio.oncanplaythrough = () => resolve();
-    audio.onerror = () => resolve();
+    audio.oncanplaythrough = () => resolve(true);
+    audio.onerror = () => resolve(false);
     audio.preload = 'auto';
     audio.src = url;
   });
 }
 
-function preloadVideo(url: string): Promise<void> {
+function preloadVideo(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const video = document.createElement('video');
-    video.oncanplaythrough = () => resolve();
-    video.onerror = () => resolve();
+    video.oncanplaythrough = () => resolve(true);
+    video.onerror = () => resolve(false);
     video.preload = 'auto';
     video.muted = true;
     video.src = url;
@@ -124,56 +142,142 @@ function preloadVideo(url: string): Promise<void> {
  */
 const PRELOAD_TIMEOUT_MS = 20_000;
 
-function bounded(work: Promise<void>): Promise<void> {
-  return Promise.race([
-    work,
-    new Promise<void>((resolve) => setTimeout(resolve, PRELOAD_TIMEOUT_MS)),
-  ]);
+/**
+ * How many at once. About what a browser will open to one host anyway, and the
+ * reason the count used to lie — see `pooled`, where that story is written down.
+ */
+const PRELOAD_CONCURRENCY = 6;
+
+function preload(url: string): Promise<boolean> {
+  if (VIDEO_EXTENSIONS.test(url)) return preloadVideo(url);
+  if (AUDIO_EXTENSIONS.test(url)) return preloadAudio(url);
+  return preloadImage(url);
 }
 
-function preload(url: string): Promise<void> {
-  if (VIDEO_EXTENSIONS.test(url)) return bounded(preloadVideo(url));
-  if (AUDIO_EXTENSIONS.test(url)) return bounded(preloadAudio(url));
-  return bounded(preloadImage(url));
+/** One asset, with its own clock, started now. */
+async function fetchOne(url: string): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      preload(url),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), PRELOAD_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
+/** Megabytes, at one decimal — the unit a person can hold in their head. */
+function mb(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+/** What the lobby says while it is fetching. */
+function describeLoading(at: DisplayLoading): string {
+  const size =
+    at.totalBytes !== undefined && at.totalBytes > 0
+      ? ` · ${mb(at.bytes ?? 0)} of ${mb(at.totalBytes)}`
+      : '';
+  const bad = at.failed > 0 ? ` · ${at.failed} unavailable` : '';
+  return `Loading artwork… ${at.done} of ${at.total}${size}${bad}`;
+}
+
+/**
+ * How often to tell the server. Often enough that the host console reads as
+ * live, rarely enough that a two-hundred-file show is not two hundred
+ * broadcasts to every connected phone.
+ */
+const PROGRESS_EVERY_MS = 500;
+let progressSentAt = 0;
+
+function reportProgress(force = false): void {
+  if (!loading || assetsLoaded) return;
+  const now = Date.now();
+  if (!force && now - progressSentAt < PROGRESS_EVERY_MS) return;
+  progressSentAt = now;
+  connection.send({ type: 'displayProgress', ...loading });
 }
 
 async function loadScenario(): Promise<void> {
+  const state = el('asset-state');
   if (!room || !token) {
-    el('asset-state').textContent = 'Missing room or token in the URL.';
+    state.textContent = 'Missing room or token in the URL.';
     return;
   }
 
+  // Said out loud because it is a real step with a real wait behind it: the
+  // whole story, every branch, over the same link the artwork is about to come
+  // down. Before this the screen sat blank and the console said "loading…"
+  // with nothing to say how much of that was even reachable yet.
+  state.textContent = 'Fetching the story…';
+
   const response = await fetch(
     `/api/rooms/${encodeURIComponent(room)}/scenario?token=${encodeURIComponent(token)}`,
-  );
+  ).catch(() => undefined);
+  if (!response) {
+    state.textContent = 'Could not reach the server. Retrying when the connection returns.';
+    return;
+  }
   if (!response.ok) {
-    el('asset-state').textContent = `Could not load scenario (${response.status}).`;
+    state.textContent = `Could not load scenario (${response.status}).`;
     return;
   }
 
   const body = (await response.json()) as {
     scenario: Scenario;
     assets: string[];
+    sizes?: Record<string, number>;
     assetBase: string;
   };
   scenario = body.scenario;
   assetBase = body.assetBase;
   local = initialState(body.scenario);
 
+  const sizes = body.sizes ?? {};
   const total = body.assets.length;
-  let done = 0;
-  const state = el('asset-state');
-  state.textContent = total ? `Loading assets… 0/${total}` : 'Ready.';
+  // Only over files the server could actually measure. A total that silently
+  // counted the unmade ones as nothing would creep towards a number the
+  // download can never reach.
+  const totalBytes = body.assets.reduce((sum, file) => sum + (sizes[file] ?? 0), 0);
 
-  await Promise.all(
-    body.assets.map(async (file) => {
-      await preload(assetBase + file);
-      done++;
-      state.textContent = `Loading assets… ${done}/${total}`;
-    }),
-  );
+  loading = { done: 0, total, failed: 0, bytes: 0, ...(totalBytes > 0 ? { totalBytes } : {}) };
+  if (total === 0) {
+    state.textContent = 'Ready.';
+    loading = undefined;
+    assetsLoaded = true;
+    announceReady();
+    return;
+  }
 
-  state.textContent = 'Ready.';
+  state.textContent = describeLoading(loading);
+  reportProgress(true);
+
+  await pooled(body.assets, PRELOAD_CONCURRENCY, async (file) => {
+    const ok = await fetchOne(assetBase + file);
+    if (!loading) return;
+    loading.done += 1;
+    if (!ok) loading.failed += 1;
+    // Counted as it lands rather than as it streams: a media element gives no
+    // byte progress, and a bar that moved smoothly by guessing would be a
+    // prettier version of the thing this exists to stop.
+    if (ok) loading.bytes = (loading.bytes ?? 0) + (sizes[file] ?? 0);
+    state.textContent = describeLoading(loading);
+    reportProgress();
+  });
+
+  const failed = loading.failed;
+  // Ready either way — a missing decoration must never stop a show — but never
+  // silently. A bare "Ready." over eleven assets that are not there is how a
+  // black background reaches a projector unannounced.
+  state.textContent =
+    failed === 0
+      ? 'Ready.'
+      : `Ready — ${failed} of ${total} could not be fetched. The show can still run.`;
+  assetsMissing = { failed, total };
+  loading = undefined;
   assetsLoaded = true;
   announceReady();
 }
@@ -183,9 +287,17 @@ async function loadScenario(): Promise<void> {
  * often finish loading before the socket opens (and always do when a scenario
  * has none), and a send on a closed socket is silently dropped — which would
  * leave the host staring at "loading…" forever.
+ *
+ * The same is true of progress, for the same reason: a projector that
+ * reconnects halfway through its download would otherwise go back to being a
+ * console entry with no number against it.
  */
 function announceReady(): void {
-  if (assetsLoaded && connection.isOpen) connection.send({ type: 'displayReady' });
+  if (assetsLoaded && connection.isOpen) {
+    connection.send({ type: 'displayReady', ...assetsMissing });
+  } else if (loading && connection.isOpen) {
+    reportProgress(true);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, lanAddress, lanCandidates, type Config } from './config.ts';
 import { Store } from './db.ts';
@@ -175,9 +176,17 @@ export async function buildServer(config: Config) {
       if (!registry.hasAnyToken(room, request.query.token)) {
         return reply.code(403).send({ error: 'A host or display token is required' });
       }
+      const assets = assetsOf(room.loaded.scenario);
       return {
         scenario: room.loaded.scenario,
-        assets: assetsOf(room.loaded.scenario),
+        assets,
+        // What each one weighs, so the display can report megabytes rather
+        // than a file count — eighty-six is a number nobody can turn into a
+        // guess about how long is left, and "18 of 31 MB" is. Read here rather
+        // than cached with the library so a re-read after `reload` is right,
+        // and missing where the art has not been made, which the display is
+        // already built to cope with.
+        sizes: await assetSizes(room.loaded.dir, assets),
         // Down to `assets/`, because that is where the files are and the
         // display joins this to a name straight out of the scenario. Stopping
         // one level short went unnoticed for as long as it did because no
@@ -187,6 +196,24 @@ export async function buildServer(config: Config) {
       };
     },
   );
+
+  /**
+   * Each asset's size on disk, by name. Absent for a file that is not there.
+   *
+   * Stats in parallel: a show is a few hundred files and doing them one after
+   * another turns milliseconds into a visible pause before a projector starts
+   * downloading anything at all.
+   */
+  async function assetSizes(dir: string, assets: string[]): Promise<Record<string, number>> {
+    const sizes: Record<string, number> = {};
+    await Promise.all(
+      assets.map(async (file) => {
+        const info = await stat(join(dir, 'assets', file)).catch(() => null);
+        if (info?.isFile()) sizes[file] = info.size;
+      }),
+    );
+    return sizes;
+  }
 
   app.post('/api/rooms', async (request, reply): Promise<CreateRoomResponse | undefined> => {
     if (!isAuthed(request)) {
@@ -246,6 +273,7 @@ export async function buildServer(config: Config) {
         nodeId: room.state.nodeId,
         beat: room.state.beat,
         displayReady: room.displayReady,
+        ...(room.displayLoading ? { displayLoading: room.displayLoading } : {}),
         presence: { displays: room.displayCount, players: room.playerCount },
         pollEndsAt: room.state.phase === 'polling' ? room.state.poll?.endsAt : undefined,
         createdAt: room.createdAt,

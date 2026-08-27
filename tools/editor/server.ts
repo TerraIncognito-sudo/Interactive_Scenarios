@@ -49,6 +49,9 @@ import {
   syncFromStoryboard,
   pruneOrphans,
   retime,
+  discardStrays,
+  adoptTakes,
+  renameToFormat,
   wireVoice,
 } from './projects.ts';
 import {
@@ -380,6 +383,38 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'prune' && request.method === 'POST') {
         const result = await pruneOrphans(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'extensions' && request.method === 'POST') {
+        const body = (await readBody(request)) as { files?: unknown };
+        const files = Array.isArray(body.files)
+          ? body.files.filter((entry): entry is string => typeof entry === 'string')
+          : undefined;
+        const result = await renameToFormat(name, files);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'adopt' && request.method === 'POST') {
+        const body = (await readBody(request)) as { files?: unknown };
+        // Names only, and the server decides which of them are actually
+        // waiting to be adopted — the same rule discard and retime follow.
+        const files = Array.isArray(body.files)
+          ? body.files.filter((entry): entry is string => typeof entry === 'string')
+          : undefined;
+        const result = await adoptTakes(name, files);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'discard' && request.method === 'POST') {
+        const body = (await readBody(request)) as { files?: unknown };
+        // Omitted means every stray the board found. Names only — the paths
+        // are the server's to work out, and a name the board does not already
+        // call a stray is refused rather than deleted.
+        const files = Array.isArray(body.files)
+          ? body.files.filter((entry): entry is string => typeof entry === 'string')
+          : undefined;
+        const result = await discardStrays(name, files);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 

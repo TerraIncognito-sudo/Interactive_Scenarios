@@ -219,6 +219,16 @@ export const TakeSchema = z.strictObject({
   id: z.string().min(1),
   /** Recipe hash at the moment this take was made. Drives staleness. */
   hash: z.string().min(1),
+  /**
+   * Where a take no generator made came from — a dialog filename, or the
+   * published file it was adopted out of.
+   *
+   * Present exactly when nothing generated it, which is the honest way to
+   * record art made in another program: the hash still says which recipe it
+   * answers, so editing the prompt marks it stale like anything else, and this
+   * says not to expect a seed to reproduce it.
+   */
+  from: z.string().min(1).optional(),
   seed: z.number().optional(),
   at: z.string().min(1),
   ms: z.number().optional(),

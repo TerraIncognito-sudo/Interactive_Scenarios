@@ -23,7 +23,7 @@
  */
 
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, readFile, rm, writeFile, rename, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rm, writeFile, rename, stat } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
@@ -35,6 +35,8 @@ import {
   loadProject,
   parseProjectSource,
   pathsOf,
+  recipeHash,
+  resolveRecipe,
   saveLedger,
   takesDir,
   ProjectError,
@@ -51,7 +53,12 @@ import {
   type StoryboardShot,
 } from './storyboard.ts';
 import { migrateShotsInto, type ShotMigration } from './shots.ts';
-import { renameRows, sortIntoFolders, type FolderSort } from './folders.ts';
+import {
+  renameReferences,
+  renameRows,
+  sortIntoFolders,
+  type FolderSort,
+} from './folders.ts';
 import {
   generateAsset,
   makeReferenceClip,
@@ -62,7 +69,7 @@ import {
   type ReferenceClip,
 } from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
-import { wireSpritesInto, type SpriteWiring } from './sprites.ts';
+import { portraitFilesOf, wireSpritesInto, type SpriteWiring } from './sprites.ts';
 import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
 import { retimeInto, type Retimed } from './timing.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
@@ -835,6 +842,372 @@ export async function pruneOrphans(name: string): Promise<{ removed: string[] }>
   return { removed: [...overview.orphans] };
 }
 
+export type Retyped = {
+  from: string;
+  to: string;
+  section: AssetSection;
+  /** What the bytes turned out to be. */
+  kind: string;
+};
+
+export type RetypeWork = {
+  renamed: Retyped[];
+  /** Names that cannot be corrected without a decision. */
+  skipped: { file: string; why: string }[];
+  /** Line numbers where a comment sits beside a name that just changed. */
+  comments: number[];
+  source: string;
+  reconciled?: ReconcilePlan;
+};
+
+/**
+ * Makes every asset's extension say what the file actually is.
+ *
+ * A name is a promise the show relies on. The display asks for the name in
+ * `scenario.yaml`, the server picks a content type out of its extension, and
+ * PNG bytes called `.jpg` go out labelled `image/jpeg`. Browsers sniff images
+ * and get away with it; a `.wav` served as `audio/mpeg` is a silent beat in
+ * front of a room with nothing in any log about it.
+ *
+ * The name follows the bytes, never the other way round. Converting the file
+ * would mean owning an encoder, which is the one thing `size.ts`, `duration.ts`
+ * and `format.ts` all exist by refusing to do — and it would also be the wrong
+ * answer: re-encoding a PNG as a JPEG to satisfy a name somebody typed months
+ * ago throws away the transparency a portrait needs.
+ *
+ * A rename here is the same rename filing by media type performs, so it goes
+ * through the same two pieces: `renameReferences` for every place the scenario
+ * names the file, and `carryRename` for the published file, the recipe row, the
+ * takes folder and the ledger entry.
+ */
+export async function renameToFormat(name: string, files?: string[]): Promise<RetypeWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const { overview } = await openProject(name);
+  const asked = files ? new Set(files) : undefined;
+
+  const source = await readFile(paths.scenario, 'utf8');
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  // Every name the scenario already uses, so a correction cannot land on top of
+  // a different asset — `hero.jpg` holding a PNG beside a real `hero.png` is
+  // two files that would become one.
+  const taken = new Set(
+    overview.sections.flatMap((view) => view.assets).map((asset) => asset.file),
+  );
+
+  const renamed: Retyped[] = [];
+  const skipped: { file: string; why: string }[] = [];
+  const decided = new Map<string, string>();
+
+  for (const wanted of asked ?? []) {
+    const known = overview.sections
+      .flatMap((view) => view.assets)
+      .find((asset) => asset.file === wanted);
+    if (!known?.format?.rename) skipped.push({ file: wanted, why: 'not misnamed' });
+  }
+
+  for (const view of overview.sections) {
+    for (const asset of view.assets) {
+      const to = asset.format?.rename;
+      if (!to) continue;
+      if (asked && !asked.has(asset.file)) continue;
+      if (!safeAsset(asset.file) || !safeAsset(to)) {
+        skipped.push({ file: asset.file, why: 'not a name this route will act on' });
+        continue;
+      }
+      if (taken.has(to)) {
+        skipped.push({ file: asset.file, why: `${to} is already a different asset` });
+        continue;
+      }
+      taken.add(to);
+      decided.set(asset.file, to);
+      renamed.push({ from: asset.file, to, section: asset.section, kind: asset.format!.actual });
+    }
+  }
+
+  if (renamed.length === 0) return { renamed, skipped, comments: [], source };
+
+  const next = renameReferences(source, parsed.scenario, decided);
+  // Validated before it reaches the author's file, like every other action that
+  // rewrites a scenario.
+  const check = parseScenarioSource(next);
+  if (!check.ok) {
+    throw new ProjectError('Correcting the extensions would have broken the scenario', check.problems);
+  }
+
+  // Files first. A failure that is going to happen — a locked file, a full disk
+  // — happens before the scenario points at names nothing has moved to.
+  await carryRename(file, paths, renamed);
+  await writeAtomic(paths.scenario, next);
+
+  return {
+    renamed,
+    skipped,
+    // A sentence beside a name that just changed may now be describing the old
+    // one. Reported by line, never reworded: a machine that edits prose to keep
+    // it true will eventually edit prose that was already true.
+    comments: commentedLines(source, renamed.map((move) => move.from)),
+    source: next,
+    reconciled: await reconcileProject(name),
+  };
+}
+
+/** Lines carrying a comment that mentions one of these names. */
+function commentedLines(source: string, names: string[]): number[] {
+  if (names.length === 0) return [];
+  const found: number[] = [];
+  source.split(/\r?\n/).forEach((line, index) => {
+    const hash = line.indexOf('#');
+    if (hash === -1) return;
+    const comment = line.slice(hash);
+    if (names.some((name) => comment.includes(name))) found.push(index + 1);
+  });
+  return found;
+}
+
+/**
+ * The recipe hash the board would show for this asset, right now.
+ *
+ * Derived here the same way `buildOverview` and the generator derive it —
+ * `portraitFilesOf` and all — because a take filed under a hash the board never
+ * computes reads as stale the moment it is made. `undefined` when the scenario
+ * will not load, which is a real state: the file can still be copied in, it
+ * just cannot be said which recipe it answers.
+ */
+async function currentHash(
+  paths: ProjectPaths,
+  project: Project,
+  section: AssetSection,
+  file: string,
+): Promise<string | undefined> {
+  const source = await readFile(paths.scenario, 'utf8').catch(() => undefined);
+  if (source === undefined) return undefined;
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) return undefined;
+  return recipeHash(
+    resolveRecipe(project, section, file, {
+      portrait: portraitFilesOf(parsed.scenario).has(file),
+    }),
+  );
+}
+
+export type Adopted = {
+  file: string;
+  take: string;
+  /** What it was adopted out of, as it will read on the row. */
+  from: string;
+  /** True when the take was copied out of the publish folder just now. */
+  copied: boolean;
+};
+
+export type AdoptWork = {
+  adopted: Adopted[];
+  /** Assets that need a decision first — several takes and none chosen. */
+  skipped: { file: string; why: string }[];
+};
+
+/**
+ * Brings a file nothing generated into the pipeline.
+ *
+ * `unmanaged` is the board's name for "there is a file here and no record of
+ * where it came from". For a section with no generator that is every asset in
+ * it, permanently: importing a take wrote the bytes and nothing else, so the
+ * row went on reporting `unmanaged` with the file sitting in its own takes
+ * folder, selected — and the command centre told the author to import it,
+ * which is the thing they had already done. There was no way out of the state
+ * at all.
+ *
+ * Adopting writes the take into the ledger against the recipe as it stands.
+ * That is not a claim that a model made it — `from` says otherwise, and there
+ * is no seed — it is the author saying "this file is my answer to this row".
+ * Which makes the rest of the board work on it: edit the prompt afterwards and
+ * it goes stale like anything else, which is exactly the reminder somebody
+ * wants when the shot they drew no longer matches what the row asks for.
+ *
+ * Copying out of the publish folder is the one case that sets `published` as
+ * well, because the copy is where the bytes came from — everywhere else the
+ * size comparison in `buildOverview` is left to decide, since guessing that a
+ * shipped file is a given take is how the room ends up hearing the old one.
+ */
+export async function adoptTakes(name: string, files?: string[]): Promise<AdoptWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const { overview } = await openProject(name);
+  const asked = files ? new Set(files) : undefined;
+
+  const adopted: Adopted[] = [];
+  const skipped: { file: string; why: string }[] = [];
+  const { ledger } = await loadLedger(paths.ledger);
+  let touched = false;
+
+  const candidates = overview.sections
+    .flatMap((view) => view.assets)
+    .filter((asset) => asset.status === 'unmanaged');
+  const known = new Set(candidates.map((asset) => asset.file));
+
+  for (const wanted of asked ?? []) {
+    if (!known.has(wanted)) skipped.push({ file: wanted, why: 'not waiting to be adopted' });
+  }
+
+  for (const asset of candidates) {
+    if (asked && !asked.has(asset.file)) continue;
+    if (!safeAsset(asset.file)) {
+      skipped.push({ file: asset.file, why: 'not a name this route will act on' });
+      continue;
+    }
+
+    const folder = takesDir(paths, asset.section, asset.file);
+    if (!within(resolve(paths.generated), resolve(folder))) {
+      throw new ProjectError('Outside the project');
+    }
+
+    // The *selected* take, and only that one. An asset is only `unmanaged` with
+    // takes present when the take it points at is the unrecorded one — a folder
+    // of files with none picked reads as `unselected` instead, which is a
+    // different question and gets a different answer. Picking one here would be
+    // answering it on the author's behalf.
+    const chosen = asset.takes.find(
+      (take) => take.untracked && !take.orphaned && take.id === asset.selected,
+    );
+
+    let id: string;
+    let from: string;
+    let copied = false;
+
+    if (chosen) {
+      id = chosen.id;
+      from = 'the takes folder';
+    } else if (asset.published) {
+      // Nothing in the takes folder, but there is a shipped file. It came from
+      // somewhere and this is the only copy of it, so the takes folder gets one
+      // — otherwise adopting would record a take that does not exist.
+      const source = resolve(join(paths.publish, asset.file));
+      if (!within(resolve(paths.publish), source)) throw new ProjectError('Outside the project');
+      await mkdir(folder, { recursive: true });
+      id = await freeName(folder, basename(asset.file));
+      await copyFile(source, join(folder, id));
+      from = 'the published file';
+      copied = true;
+    } else {
+      skipped.push({ file: asset.file, why: 'nothing on disk to adopt' });
+      continue;
+    }
+
+    const hash = await currentHash(paths, project, asset.section, asset.file);
+    if (hash === undefined) {
+      skipped.push({ file: asset.file, why: 'the scenario will not load, so there is no recipe' });
+      continue;
+    }
+
+    const entry = (ledger.assets[asset.file] ??= { takes: [] });
+    entry.takes.push({ id, hash, from, at: new Date().toISOString(), params: {} });
+    entry.selected = id;
+    if (copied) entry.published = id;
+    touched = true;
+
+    adopted.push({ file: asset.file, take: id, from, copied });
+  }
+
+  if (touched) await saveLedger(paths.ledger, ledger);
+  return { adopted, skipped };
+}
+
+export type Discarded = {
+  file: string;
+  published: boolean;
+  takes: number;
+  bytes: number;
+};
+
+export type DiscardWork = {
+  removed: Discarded[];
+  /** What the whole sweep freed, so the report is worth reading. */
+  bytes: number;
+  /** Names asked for that are not on the stray list. See below. */
+  skipped: string[];
+};
+
+/**
+ * Deletes what is left on disk for assets the scenario stopped asking for.
+ *
+ * The client sends which files, never which *paths* — the same rule retiming
+ * follows, and here it is the whole safety argument. Every candidate is
+ * recomputed from `buildOverview`, and a name the board does not already list
+ * as a stray is refused rather than acted on. So the worst a caller can do is
+ * name something already agreed to be rubbish; it cannot name a path at all.
+ * The segment check and the containment check are the two after that, because
+ * this string reaches `join()` on the way to a recursive `rm`.
+ *
+ * The recipe row is left alone on purpose. A prompt is an afternoon of tuning
+ * and `pruneOrphans` is where that decision is made, in front of the list —
+ * whereas this is bytes, and the two are not the same trade.
+ */
+export async function discardStrays(name: string, files?: string[]): Promise<DiscardWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const { overview } = await openProject(name);
+  const asked = files ? new Set(files) : undefined;
+  const known = new Set(overview.strays.map((stray) => stray.file));
+
+  const removed: Discarded[] = [];
+  const skipped = [...(asked ?? [])].filter((entry) => !known.has(entry));
+
+  const { ledger } = await loadLedger(paths.ledger);
+  let touched = false;
+
+  for (const stray of overview.strays) {
+    if (asked && !asked.has(stray.file)) continue;
+    if (!safeAsset(stray.file)) {
+      skipped.push(stray.file);
+      continue;
+    }
+
+    if (stray.published) {
+      const target = resolve(join(paths.publish, stray.file));
+      if (!within(resolve(paths.publish), target)) throw new ProjectError('Outside the project');
+      await rm(target, { force: true });
+    }
+
+    const folder = resolve(takesDir(paths, stray.section, stray.file));
+    if (!within(resolve(paths.generated), folder)) throw new ProjectError('Outside the project');
+    await rm(folder, { recursive: true, force: true });
+
+    // The ledger's record of an asset that no longer exists anywhere. Left
+    // behind it is a take list pointing at files that are gone, which is what
+    // `orphaned` on a take means — a state nothing can ever resolve.
+    if (ledger.assets[stray.file]) {
+      delete ledger.assets[stray.file];
+      touched = true;
+    }
+
+    removed.push({
+      file: stray.file,
+      published: stray.published,
+      takes: stray.takes,
+      bytes: stray.bytes,
+    });
+  }
+
+  if (touched) await saveLedger(paths.ledger, ledger);
+
+  return {
+    removed,
+    bytes: removed.reduce((total, entry) => total + entry.bytes, 0),
+    skipped,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Hearing it
 // ---------------------------------------------------------------------------
@@ -1271,7 +1644,9 @@ export async function wireSprites(name: string): Promise<SpriteWork> {
   // keyed by the filename: the recipe row holding the prompt, the ledger entry
   // holding the takes, the published file the show opens. Rewriting only the
   // scenario would leave the row behind as an orphan and the prompt with it.
-  await carryRename(file, paths, report.moved);
+  // Sprites are images by definition — `wireSpritesInto` only ever re-points a
+  // character sheet — so the section is stated rather than looked up.
+  await carryRename(file, paths, report.moved.map((move) => ({ ...move, section: 'images' as const })));
 
   await writeAtomic(paths.scenario, wired);
   const seeded = await syncFromStoryboard(name);
@@ -1288,7 +1663,10 @@ export async function wireSprites(name: string): Promise<SpriteWork> {
 async function carryRename(
   projectFile: string,
   paths: ProjectPaths,
-  moves: { from: string; to: string }[],
+  // The section is here because the takes folder is nested under it. It used
+  // to be assumed to be `images`, which was true of the only caller and is not
+  // true of correcting a `.wav` named `.mp3`.
+  moves: { from: string; to: string; section: AssetSection }[],
 ): Promise<void> {
   if (moves.length === 0) return;
 
@@ -1307,11 +1685,11 @@ async function carryRename(
 
   // Unlike filing by media type, this one really does move takes: the folder is
   // named for the file, and the file's extension is what changed. The takes
-  // inside keep their own names — a flat portrait is exactly the work this is
-  // asking to be redone, and the recipe hash already says so.
+  // inside keep their own names — what they are called is the pipeline's own
+  // business, and the name that had to be true is the one the show opens.
   for (const move of moves) {
-    const fromDir = takesDir(paths, 'images', move.from);
-    const toDir = takesDir(paths, 'images', move.to);
+    const fromDir = takesDir(paths, move.section, move.from);
+    const toDir = takesDir(paths, move.section, move.to);
     if (fromDir === toDir) continue;
     if (!(await stat(fromDir).catch(() => null))?.isDirectory()) continue;
     if ((await stat(toDir).catch(() => null)) !== null) continue;
@@ -1505,18 +1883,17 @@ export async function saveStoryboardSource(name: string, source: string): Promis
  * is also the safer half of the trade: nothing here opens a location the user
  * typed, so there is no path from this route to a file they did not choose.
  *
- * It lands in the takes folder and nothing else changes. `scanTakes` already
- * picks up whatever is in there, marked `manual`, so an import is exactly the
- * drop-it-in-by-hand path with the hunting removed. The one exception is a
- * first take for an asset with nothing selected, which is selected for the same
- * reason generating does it: an asset with one take and no selection is a row
- * reporting work still to do that has already been done.
+ * It lands in the takes folder and is recorded there — see the note by the
+ * ledger write below, which is the half that was missing. A first take for an
+ * asset with nothing selected is also selected, for the same reason generating
+ * does it: an asset with one take and no selection is a row reporting work
+ * still to do that has already been done.
  */
 export async function importTake(
   name: string,
   request: { section: AssetSection; file: string; filename: string },
   body: Readable,
-): Promise<{ take: string; bytes: number; selected: boolean }> {
+): Promise<{ take: string; bytes: number; selected: boolean; tracked: boolean }> {
   if (!(ASSET_SECTIONS as readonly string[]).includes(request.section)) {
     throw new ProjectError('Unknown section');
   }
@@ -1560,15 +1937,34 @@ export async function importTake(
     throw err;
   }
 
+  // Recorded, not merely written. Dropping the bytes in and stopping is what
+  // left the whole Images section reporting `unmanaged` for ever: the take was
+  // on disk and selected, nothing in the ledger explained it, and the board's
+  // advice was to import it — which is what had just happened. A recipe hash
+  // here is the author saying this file answers this row, which is the claim
+  // they made by choosing it in the dialog.
+  //
+  // A scenario that will not parse yields no recipe, and the take stays
+  // untracked rather than the import failing after the file has landed. Adopt
+  // is then still there to record it once the scenario loads.
+  const hash = await currentHash(paths, project, request.section, request.file);
+
   const { ledger } = await loadLedger(paths.ledger);
   const entry = (ledger.assets[request.file] ??= { takes: [] });
   const selected = entry.selected === undefined;
-  if (selected) {
-    entry.selected = chosen;
-    await saveLedger(paths.ledger, ledger);
+  if (hash !== undefined) {
+    entry.takes.push({
+      id: chosen,
+      hash,
+      from: request.filename,
+      at: new Date().toISOString(),
+      params: {},
+    });
   }
+  if (selected) entry.selected = chosen;
+  if (hash !== undefined || selected) await saveLedger(paths.ledger, ledger);
 
-  return { take: chosen, bytes, selected };
+  return { take: chosen, bytes, selected, tracked: hash !== undefined };
 }
 
 /**

@@ -125,6 +125,56 @@ function startClock(endsAt: number): void {
   clockTimer = setInterval(tick, 250);
 }
 
+/** Megabytes at one decimal, the unit a person can hold in their head. */
+function mb(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+/**
+ * What the projector is doing, in as many words as there are facts.
+ *
+ * A show is a few hundred megabytes and a projector on venue wifi takes a
+ * minute or two over it. This used to read "loading…" for that entire minute,
+ * with nothing moving — which from the front of a room is indistinguishable
+ * from a console that has hung, and the only thing to do about it was wait and
+ * hope. Now every state it can be in says which one it is.
+ */
+function describeDisplay(snapshot: Snapshot): string {
+  if (snapshot.presence.displays === 0) return 'not connected';
+  if (snapshot.displayReady) {
+    const gone = snapshot.displayMissing;
+    // Ready is not the same as complete. A shot whose background 404'd opens
+    // black, and this line is the only warning anyone gets before it does.
+    return gone ? `ready · ${gone.failed} of ${gone.total} unavailable` : 'ready';
+  }
+
+  const at = snapshot.displayLoading;
+  // Connected and nothing said yet. It is fetching the scenario itself, which
+  // is a real step with a real wait behind it, and calling that "0 of 0" would
+  // be a stalled-looking number where there is simply not one yet.
+  if (!at || at.total === 0) return 'fetching the story…';
+
+  const size =
+    at.totalBytes !== undefined && at.totalBytes > 0
+      ? ` · ${mb(at.bytes ?? 0)} of ${mb(at.totalBytes)}`
+      : '';
+  return `loading ${at.done}/${at.total}${size}`;
+}
+
+/** The lobby warning, with the same numbers behind it. */
+function describeWait(snapshot: Snapshot): string {
+  const at = snapshot.displayLoading;
+  if (!at || at.total === 0) {
+    return 'The display is still fetching the story. Give it a moment before starting.';
+  }
+  const left = at.total - at.done;
+  const bad = at.failed > 0 ? ` ${at.failed} could not be fetched so far.` : '';
+  return (
+    `The display is still loading its artwork — ${left} of ${at.total} to go.` +
+    `${bad} Starting now would open on a blank background.`
+  );
+}
+
 function render(snapshot: Snapshot): void {
   latest = snapshot;
 
@@ -137,9 +187,9 @@ function render(snapshot: Snapshot): void {
 
   const display = el('stat-display');
   const displays = snapshot.presence.displays;
-  display.textContent =
-    displays === 0 ? 'not connected' : snapshot.displayReady ? 'ready' : 'loading…';
-  display.className = `stat-value ${displays === 0 ? 'warn' : snapshot.displayReady ? 'good' : 'warn'}`;
+  display.textContent = describeDisplay(snapshot);
+  const complete = snapshot.displayReady && !snapshot.displayMissing;
+  display.className = `stat-value ${complete ? 'good' : 'warn'}`;
 
   el('stat-players').textContent = String(snapshot.presence.players);
 
@@ -169,8 +219,13 @@ function render(snapshot: Snapshot): void {
   el<HTMLButtonElement>('btn-extend').disabled = !isPoll;
   el<HTMLButtonElement>('btn-close').disabled = !isPoll;
 
-  // Warn before starting into a display that has not loaded its artwork.
-  el('ready-warning').hidden = !(snapshot.phase === 'lobby' && displays > 0 && !snapshot.displayReady);
+  // Warn before starting into a display that has not loaded its artwork, and
+  // say how far off it is. "Not finished" with no number is the same sentence
+  // after four seconds and after four minutes, which is what made a projector
+  // quietly working through three hundred megabytes look like a hung one.
+  const warning = el('ready-warning');
+  warning.hidden = !(snapshot.phase === 'lobby' && displays > 0 && !snapshot.displayReady);
+  warning.textContent = describeWait(snapshot);
 }
 
 // ---------------------------------------------------------------------------

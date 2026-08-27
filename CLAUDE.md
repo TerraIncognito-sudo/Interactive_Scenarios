@@ -158,6 +158,52 @@ a takes folder looks exactly like a take. The one `<input type="file">` is creat
 out of the render tree — `render()` replaces the tree on every state change, and an input inside it
 is destroyed the moment the picker opens, taking its change event with it, silently.
 
+**A name is a promise about content, and the name follows the bytes.** The display asks for
+the name `scenario.yaml` declares and the server picks a content type out of its extension, so
+PNG bytes called `.jpg` go out labelled `image/jpeg`. Browsers sniff images and forgive it; a
+`.wav` served as `audio/mpeg` is a silent beat in front of a room with nothing in any log.
+`format.ts` reads the header only — no dependency, the same discipline `size.ts` and
+`duration.ts` keep — and video *is* handled there, unlike in `size.ts`, because a container is
+the first four bytes while dimensions are several atoms deep. Correcting one is a **rename**
+and never a conversion: owning an encoder is the thing all three of those modules exist by
+refusing to do, and re-encoding a PNG as a JPEG to satisfy a name somebody typed months ago
+throws away the transparency a portrait needs. Two rules keep the group worth reading —
+`undefined` from the sniffer must never produce a complaint, and a format with several true
+names (`.jpg`/`.jpeg`, the whole MP4/M4A/MOV family) is never nagged about, because being
+technically right there is how a list becomes one people skip. The rename goes through
+`renameReferences` and `carryRename`, the same two pieces filing by media type uses: a
+half-renamed asset is worse than a misnamed one, since the board reports it ready and one shot
+of the show is a gradient.
+
+**A take that came in from outside is recorded, not merely written.** `unmanaged` means a
+file is in place and nothing on record says which recipe it answers — and for a section with
+no generator that was every asset in it, permanently. `importTake` wrote the bytes and no
+ledger line, so the row stayed `unmanaged` with the file in its own takes folder, selected,
+while the command centre advised importing it: the thing that had just been done. There was no
+route out of the state at all. Both ends are now closed — an import records what it brought in,
+and `adoptTakes` records a file already sitting there. What gets written is the *current recipe
+hash*, which is not a claim that a model made it (`from` says where it came from, and there is
+no seed) but the author saying this file is their answer to this row. That is what makes the
+rest of the board work on hand-made art: edit the prompt afterwards and it goes stale, which is
+exactly the reminder somebody wants when the shot they drew no longer matches what the row asks
+for. Adopting takes the *selected* take only — a folder with nothing picked reads as
+`unselected`, a different question — and the one case that copies bytes, out of the publish
+folder into an empty takes folder, is also the only one allowed to claim `published`, because
+the copy is what just made them the same file.
+
+**A dropped asset leaves disk behind, and only the folder still says what it was.**
+The board is built from the scenario, which is what stops it drifting — cut a line and its row
+goes with it. What goes nowhere is the clip in `assets/` and the six takes in `generated/`:
+off the board, so nothing ever mentions them again. `findStrays` in `sections.ts` is the one
+walk that finds them, and `discardStrays` deletes the published file, every take and the ledger
+entry — never the recipe row, which is an afternoon of tuning and `pruneOrphans`' decision to
+make in front of its own list. A takes folder is found by its own path, since `generated/<section>/`
+carries the section; a published file is found only under a `<section>/` prefix, because once the
+scenario stops naming a file the folder it was filed into is the last record of what kind of thing
+it is — and the publish root also holds READMEs and notes the pipeline did not put there. The
+client sends names, never paths, and a name the board does not already call a stray is refused:
+that, not the containment check, is what makes the route safe.
+
 **A destructive route validates the name itself.** `deleteTake` takes a string that reaches
 `join()` on the way to an `rm`. `safeTake` rejects `.` and `..` — the dot is in the character
 class because a take has an extension, which is the same trap `safeAsset` had — and the result is
@@ -419,6 +465,23 @@ from the runtime the board measured and the gap the row declares. A client that 
 number itself is a client that can write a beat nothing on the board agrees with — and the
 arithmetic would then exist in two places, which is one more than it can be right in.
 
+
+**A wait that says nothing is indistinguishable from a hang.** A projector pulls a few
+hundred megabytes down before it reports ready, and for the minute or two that takes the host
+console said `loading…` — no number, nothing moving, for the same minute whether the download
+had ten seconds or four minutes left. Worse, it lied: every asset was started at once and
+raced against its own `PRELOAD_TIMEOUT_MS`, but a browser opens about six connections to a
+host, so the rest waited in a queue with their clocks already running. At twenty seconds the
+whole queue timed out together, the count jumped from about halfway straight to the end, and
+the display announced ready while it was still downloading. `pooled` in
+`src/client/shared/pool.ts` is the fix and the reason it is a fix: work starts when its turn
+comes, so a per-item deadline bounds a download rather than a wait for a turn. The rest is
+saying what is true — `displayProgress` carries the count and the bytes (`sizes` on the
+scenario endpoint is where the bytes come from, absent for art that does not exist yet), and
+`displayReady` carries what never arrived, because a missing decoration must never stop a show
+but `ready` over eleven assets that 404'd is the same lie in a different place. One counter,
+on the display, sent to the console: two counts over one download would eventually disagree and
+the one on the far end of a socket is the one nobody could check.
 
 **Anything the audience is looking at is a beat the server clocks.** The result of a poll used
 to be a `setTimeout` inside the display and nothing else knew about it, so the server started
