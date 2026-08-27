@@ -33,8 +33,10 @@ export const OUTSTANDING_GROUPS = [
   'unmanaged',
   'cast',
   'timing',
+  'misnamed',
   'quality',
   'orphan',
+  'discard',
 ] as const;
 
 export type OutstandingGroup = (typeof OUTSTANDING_GROUPS)[number];
@@ -48,8 +50,11 @@ export type OutstandingAction =
   | 'generate'
   | 'use-newest'
   | 'publish'
+  | 'adopt'
   | 'prune'
+  | 'discard'
   | 'retime'
+  | 'retype'
   | 'open';
 
 export type OutstandingItem = {
@@ -137,9 +142,13 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
   },
   unmanaged: {
     label: 'Not reproducible',
-    hint: 'A file is in place but no take on record explains where it came from, so it cannot be regenerated. Import it as a take to bring it into the pipeline.',
+    hint:
+      'A file is in place and nothing on record says which recipe it answers, so the board ' +
+      'cannot tell whether it still matches the prompt. Adopting records it against the ' +
+      'recipe as it stands — after that, editing the prompt marks it stale like anything ' +
+      'else. It is the normal ending for art made in another program.',
     level: 'todo',
-    action: 'open',
+    action: 'adopt',
   },
   cast: {
     label: 'Parts without a voice',
@@ -156,6 +165,17 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
     level: 'error',
     action: 'retime',
   },
+  misnamed: {
+    label: 'Named as the wrong kind of file',
+    hint:
+      'The extension claims one format and the bytes are another. The display asks for the ' +
+      'name the scenario declares and the server picks a content type out of it, so a PNG ' +
+      'called .jpg is served as image/jpeg — which browsers forgive and audio players do ' +
+      'not. Correcting one renames it everywhere: the scenario, the recipe, the takes ' +
+      'folder and the published file.',
+    level: 'warning',
+    action: 'retype',
+  },
   quality: {
     label: 'Made, but not right',
     hint: 'These play. They are the wrong shape, the wrong format, or timed off an estimate rather than the clip.',
@@ -168,7 +188,22 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
     level: 'todo',
     action: 'prune',
   },
+  discard: {
+    label: 'Files nothing plays any more',
+    hint:
+      'Cutting a line takes its row off the board and leaves its clip in assets/ and its ' +
+      'takes in generated/. Nothing mentions them again, so they stay for the life of the ' +
+      'project. Removing one deletes the published file and every take of it — the recipe ' +
+      'above is a separate thing and stays where it is.',
+    level: 'todo',
+    action: 'discard',
+  },
 };
+
+/** Size for a list, not for an audit — one decimal is as precise as it needs. */
+function megabytes(bytes: number): string {
+  return bytes < 100_000 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
 
 /** A row's per-asset quality complaints, phrased for a one-line list. */
 function qualityOf(asset: AssetView): string[] {
@@ -213,8 +248,10 @@ export function outstandingOf(overview: Overview): Outstanding {
     unmanaged: [],
     cast: [],
     timing: [],
+    misnamed: [],
     quality: [],
     orphan: [],
+    discard: [],
   };
 
   for (const view of overview.sections) {
@@ -273,6 +310,16 @@ export function outstandingOf(overview: Overview): Outstanding {
         });
       }
 
+      // Additive, like quality and timing: a picture can be made, chosen,
+      // published, the right shape, and still called something it is not.
+      if (asset.format?.rename) {
+        items.misnamed.push({
+          group: 'misnamed',
+          ...where,
+          detail: `is ${asset.format.actual} but named .${asset.format.declared} — rename to ${asset.format.rename}`,
+        });
+      }
+
       for (const detail of qualityOf(asset)) {
         items.quality.push({ group: 'quality', ...where, detail });
       }
@@ -300,6 +347,23 @@ export function outstandingOf(overview: Overview): Outstanding {
 
   for (const file of overview.orphans) {
     items.orphan.push({ group: 'orphan', file, label: file });
+  }
+
+  // Deliberately alongside `orphan` rather than folded into it. The same asset
+  // can be in both, in either one alone, or in neither: pruning a recipe leaves
+  // the files, and deleting the files leaves the prompt — which is the point of
+  // keeping them apart, because one of the two is recoverable work.
+  for (const stray of overview.strays) {
+    const parts = [];
+    if (stray.published) parts.push('the published file');
+    if (stray.takes > 0) parts.push(`${stray.takes} take${stray.takes === 1 ? '' : 's'}`);
+    items.discard.push({
+      group: 'discard',
+      section: stray.section,
+      file: stray.file,
+      label: stray.file,
+      detail: `${parts.join(' and ')} · ${megabytes(stray.bytes)}`,
+    });
   }
 
   const groups: OutstandingSection[] = [];

@@ -16,7 +16,7 @@
  */
 
 import { readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
 import {
   ASSET_SECTIONS,
   assetReferencesOf,
@@ -27,6 +27,7 @@ import type { Scenario } from '../../src/scenario/schema.ts';
 import { asksForBackground, composePrompt } from './prompt.ts';
 import { defaultSizeFor, formatSize, isPortrait, parseSize, readImageInfo } from './size.ts';
 import { readDuration } from './duration.ts';
+import { extensionOf, misnamed, readFormat, renamedTo } from './format.ts';
 import { DEFAULT_GAP, holdMatches, targetHoldFor } from './timing.ts';
 import {
   fromProject,
@@ -96,6 +97,25 @@ export type AssetView = {
     cutout?: boolean;
     /** True when a portrait's file is in a format with no alpha channel to have. */
     flat?: boolean;
+  };
+  /**
+   * What the file on disk really is, against what its name claims.
+   *
+   * A name is a promise the show relies on: the display asks for the name in
+   * `scenario.yaml` and the server picks a content type out of its extension,
+   * so PNG bytes called `.jpg` go out labelled `image/jpeg`. Browsers sniff
+   * images and get away with it; a `.wav` served as `audio/mpeg` is a silent
+   * beat in front of a room. Absent when the format could not be read, which
+   * must never produce a complaint — sending somebody to rename a file that was
+   * already right is worse than saying nothing.
+   */
+  format?: {
+    /** The format the bytes are, said the way a person would say it. */
+    actual: string;
+    /** The extension the name currently claims. */
+    declared: string;
+    /** The name it should have. Present only when the two disagree. */
+    rename?: string;
   };
   takes: TakeView[];
   selected?: string;
@@ -204,6 +224,33 @@ export type CastMember = {
 
 export type OverviewProblem = { level: 'error' | 'warning'; message: string };
 
+/**
+ * Disk belonging to an asset the scenario has stopped asking for.
+ *
+ * Removing a line of dialogue takes its row off the board, which is the whole
+ * point of a board built from the scenario — but it does not take the clip out
+ * of `assets/` or the six takes out of `generated/`. Those keep playing nothing
+ * for as long as the project exists: they are not on the board, so nothing ever
+ * mentions them again, and the only way to find them was to compare two folder
+ * listings by hand.
+ *
+ * Deliberately separate from an orphaned *recipe*. A recipe row is an afternoon
+ * of tuning and throwing it away is a real loss; this is bytes, and the two do
+ * not have to be dealt with at the same time — pruning the row leaves the files
+ * exactly here, which is the case that started this.
+ */
+export type Stray = {
+  section: AssetSection;
+  /** The published name it had, e.g. `voice/beau-d2-01.mp3`. */
+  file: string;
+  /** The shipped file is still sitting in the publish folder. */
+  published: boolean;
+  /** How many take files are still in its generated folder. */
+  takes: number;
+  /** What the two come to, so the list can say what removing them buys. */
+  bytes: number;
+};
+
 export type Overview = {
   sections: SectionView[];
   /** Who speaks, and what their voice is set to. Empty when nobody does. */
@@ -213,6 +260,14 @@ export type Overview = {
    * nothing plays is wasted GPU time, and a long list of it hides real gaps.
    */
   orphans: string[];
+  /**
+   * Files left behind by assets the story dropped. See `Stray`.
+   *
+   * On the overview rather than computed by the command centre, for the same
+   * reason everything else there is: one walk, one answer. A second opinion
+   * about what is rubbish would be a second opinion nobody could see.
+   */
+  strays: Stray[];
   counts: Record<AssetStatus, number>;
   problems: OverviewProblem[];
 };
@@ -430,6 +485,104 @@ async function buildCast(
   return cast;
 }
 
+/** Every file under a folder, as posix-ish paths relative to it. */
+async function listFiles(root: string): Promise<string[]> {
+  const found: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true, recursive: true });
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    found.push(relative(root, join(entry.parentPath, entry.name)).split(sep).join('/'));
+  }
+  return found;
+}
+
+/**
+ * What is on disk for assets nothing references any more.
+ *
+ * Two folders, and they are found two different ways because only one of them
+ * still knows what an asset was called. `generated/<section>/<name>/` carries
+ * the section in its own path, so a directory nothing claims is a stray and
+ * its section is where it is sitting. The publish folder carries the same
+ * thing in the *name* — but only for a project that has been filed by media
+ * type, and that is the whole rule here: a file directly in the publish root
+ * is left alone, because once the scenario stops naming a file the folder it
+ * was filed into is the last record of what kind of thing it is, and a root
+ * that also holds a README, a licence or somebody's notes is not a place to
+ * guess from.
+ *
+ * The names come back from the ledger and the recipe rows where either still
+ * remembers one, because `generated/voice/beau_d2_01.mp3/` is a mangled
+ * directory and `voice/beau-d2-01.mp3` is a line somebody can recognise.
+ */
+async function findStrays(
+  paths: ProjectPaths,
+  project: Project,
+  ledger: Ledger,
+  referenced: Set<string>,
+): Promise<Stray[]> {
+  const strays = new Map<string, Stray>();
+  const note = (section: AssetSection, file: string): Stray => {
+    const existing = strays.get(file);
+    if (existing) return existing;
+    const fresh: Stray = { section, file, published: false, takes: 0, bytes: 0 };
+    strays.set(file, fresh);
+    return fresh;
+  };
+
+  // Names the project still remembers, so a mangled takes directory can be
+  // reported as the asset it belonged to rather than as a path.
+  const known = [...new Set([...Object.keys(project.assets), ...Object.keys(ledger.assets)])];
+
+  for (const section of ASSET_SECTIONS) {
+    // What a live asset's takes folder is called, so everything else in there
+    // is not one. Built from the same `takesDir` the generator writes with —
+    // a second opinion about that name would delete takes that are in use.
+    const claimed = new Set(
+      [...referenced].map((file) => basename(takesDir(paths, section, file))),
+    );
+
+    let dirs: string[];
+    try {
+      dirs = (await readdir(join(paths.generated, section), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      dirs = [];
+    }
+
+    for (const dir of dirs) {
+      if (claimed.has(dir)) continue;
+      const name =
+        known.find((file) => basename(takesDir(paths, section, file)) === dir) ??
+        `${section}/${dir}`;
+      const entry = note(section, name);
+      for (const take of await listFiles(join(paths.generated, section, dir))) {
+        const info = await stat(join(paths.generated, section, dir, take)).catch(() => null);
+        entry.takes += 1;
+        entry.bytes += info?.size ?? 0;
+      }
+    }
+  }
+
+  const sections = new Set<string>(ASSET_SECTIONS);
+  for (const file of await listFiles(paths.publish)) {
+    if (referenced.has(file)) continue;
+    const [folder] = file.split('/');
+    if (!folder || !sections.has(folder)) continue;
+    const entry = note(folder as AssetSection, file);
+    entry.published = true;
+    const info = await stat(join(paths.publish, file)).catch(() => null);
+    entry.bytes += info?.size ?? 0;
+  }
+
+  return [...strays.values()].sort((a, b) => a.file.localeCompare(b.file));
+}
+
 export async function buildOverview(
   scenario: Scenario,
   project: Project,
@@ -493,12 +646,27 @@ export async function buildOverview(
       // Falls back to the published file for an asset that has no take, which
       // is the only thing a hand-dropped clip could be measured from.
       const audible = section === 'voice' || section === 'sfx' || section === 'ambience' || section === 'music';
-      const measurable = audible
-        ? selected
-          ? join(takesDir(paths, section, file), selected)
-          : join(paths.publish, file)
-        : undefined;
+      // The selected take where there is one, the published file otherwise —
+      // the same order the runtime and the size use, because selecting is the
+      // moment somebody decides a file is the one and that is when being told
+      // about it is worth most.
+      const onHand = selected ? join(takesDir(paths, section, file), selected) : join(paths.publish, file);
+      const measurable = audible ? onHand : undefined;
       const seconds = measurable ? await readDuration(measurable) : undefined;
+
+      // Judged against the *asset's* name, not the take's. The take's filename
+      // is the pipeline's own business; the asset's is what the show opens and
+      // what a content type is picked from, so it is the one that has to be
+      // true. A take called `photo.jpg` holding PNG bytes publishes to a name
+      // that is now correct, and renaming it would be churn nothing reads.
+      const real = await readFormat(onHand);
+      const format = real
+        ? {
+            actual: real.kind,
+            declared: extensionOf(file),
+            ...(misnamed(file, real) ? { rename: renamedTo(file, real) } : {}),
+          }
+        : undefined;
 
       const hold = holdOf(scenario, section, info.origins);
       const notes = notesFor(scenario, section, info.origins);
@@ -561,6 +729,7 @@ export async function buildOverview(
         origins: info.origins,
         ...(composed ? { composed } : {}),
         ...(size ? { size } : {}),
+        ...(format ? { format } : {}),
         takes,
         selected,
         published: onDisk,
@@ -659,6 +828,8 @@ export async function buildOverview(
     .filter((file) => !grouped.has(file))
     .sort();
 
+  const strays = await findStrays(paths, project, ledger, new Set(grouped.keys()));
+
   for (const file of orphans) {
     problems.push({
       level: 'warning',
@@ -666,5 +837,5 @@ export async function buildOverview(
     });
   }
 
-  return { sections, cast, orphans, counts: totals, problems };
+  return { sections, cast, orphans, strays, counts: totals, problems };
 }

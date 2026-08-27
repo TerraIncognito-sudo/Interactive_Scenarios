@@ -82,6 +82,10 @@
               and used by every line they have; a portrait is the face the display shows
               while they say it.
             </p>
+            <!-- Filled by renderCast. A show has a dozen parts and each sheet
+                 is a voice, a face and ninety lines, so they start folded and
+                 this is how you get at more than one of them at a time. -->
+            <div class="collapse-bar" id="cast-collapse" hidden></div>
             <div class="cast-sheets" id="cast-sheets"></div>
           </div>
 
@@ -169,6 +173,7 @@
                 Remove orphaned recipes
               </button>
             </div>
+            <div class="collapse-bar" id="assets-collapse" hidden></div>
             <div class="sections" id="sections"></div>
           </div>
 

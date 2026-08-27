@@ -129,8 +129,33 @@ export function sortIntoFolders(source: string, scenario: Scenario): FolderSort 
     moved.push({ from: file, to, section });
   }
 
+  return { source: renameReferences(source, scenario, decided), moved, kept, skipped };
+}
+
+/**
+ * Rewrites every reference to a renamed asset, wherever the scenario names it.
+ *
+ * Shared, because filing by media type is not the only reason a name changes —
+ * correcting an extension that lies about what the file is renames the same
+ * asset in the same places, and a second walk of the document would eventually
+ * disagree with this one about where an asset can be named. The one that
+ * disagreed would rename five of a scene's six references and leave the sixth
+ * pointing at a name nothing publishes to.
+ *
+ * Pure. The caller validates the result and moves the files to match; a
+ * scenario pointing at names nothing has moved to is a show of missing art.
+ */
+export function renameReferences(
+  source: string,
+  scenario: Scenario,
+  decided: Map<string, string>,
+): string {
+  if (decided.size === 0) return source;
+  const doc = parseDocument(source);
+  const nodeAt = nodeIndex(doc);
+
   const edits: Edit[] = [];
-  for (const ref of references) {
+  for (const ref of assetReferencesOf(scenario)) {
     const to = decided.get(ref.file);
     if (to === undefined) continue;
     const path = pathFor(ref.origin, nodeAt);
@@ -145,7 +170,7 @@ export function sortIntoFolders(source: string, scenario: Scenario): FolderSort 
     edits.push({ at: start, end, text: to });
   }
 
-  return { source: applyEdits(source, edits), moved, kept, skipped };
+  return applyEdits(source, edits);
 }
 
 /**

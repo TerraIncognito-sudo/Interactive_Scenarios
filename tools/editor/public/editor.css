@@ -875,6 +875,67 @@ textarea.prompt:focus {
   display: flex;
   align-items: flex-start;
   gap: 0.8rem;
+  cursor: pointer;
+}
+
+/*
+ * Folded is the resting state, so it gets the tighter box. A cast of six
+ * unfolded is a page you scroll to find the part you meant; folded it is a
+ * list you read.
+ */
+.sheet.folded {
+  padding: 0.55rem 0.9rem;
+}
+
+.sheet.folded .sheet-face {
+  width: 40px;
+  height: 60px;
+}
+
+.sheet-fold {
+  flex: none;
+  align-self: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 0.76rem;
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+}
+
+.sheet-fold:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* A name that lies about its file. Loud, because the show trusts the name. */
+
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.4rem 0 0;
+}
+
+.format-warn {
+  font-size: 0.76rem;
+  color: var(--accent-warm);
+}
+
+/* ------------------------------------------------------- collapse bars -- */
+
+.collapse-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.6rem;
+}
+
+.collapse-count {
+  font-size: 0.75rem;
+  color: var(--text-faint);
 }
 
 /*
@@ -1274,7 +1335,14 @@ textarea.prompt:focus {
 
 /* ------------------------------------------------------------ storyboard -- */
 
-#panel-story {
+/*
+ * `:not([hidden])` because an id beats `.tab-panel[hidden]` on specificity, and
+ * this rule quietly won that argument on every tab. The storyboard — its Seed
+ * and Save buttons and the whole document under them — rendered below the cast
+ * sheets, below the board, below the command centre, on all of them at once.
+ * Every other panel is a bare class and so never had the chance to.
+ */
+#panel-story:not([hidden]) {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1649,6 +1717,13 @@ button.small {
 
 .command-link:hover {
   text-decoration: underline;
+}
+
+/* No row to open — an orphan is exactly the thing with nowhere to be. */
+.command-gone {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-faint);
 }
 
 .command-detail {

@@ -54,6 +54,15 @@ const state = {
   expanded: new Set(),
   /** Which half of a character's sheet is showing: their voice or their face. */
   sub: new Map(),
+  /**
+   * Character sheets the author has opened.
+   *
+   * Open rather than closed, so the default is folded. A sheet is a voice, a
+   * face and every line the part has — six of them unfolded is a page you
+   * scroll through to find the one you wanted, which is what made working
+   * through a cast painful. Folded, the whole cast is one screen.
+   */
+  sheetOpen: new Set(),
   /** Command-centre groups the author has unfolded past the first few. */
   commandOpen: new Set(),
   /**
@@ -204,7 +213,13 @@ async function runOnScenario(action, body) {
   // Awaited, because refreshing the pane re-analyses the scenario and the
   // analysis writes the status line. Reporting what the action did before that
   // settles means the caller's message is the one that gets overwritten.
-  await state.onScenario(state.data.scenarioSource, state.name, state.data.paths.scenario);
+  //
+  // `null` is "leave me where I am". These used to land on the Assets tab
+  // because that is where the buttons were; the command centre has its own
+  // now, and being thrown onto another tab by a button you pressed reads as
+  // the button having failed — which is how a Set all that worked would still
+  // have looked broken.
+  await state.onScenario(state.data.scenarioSource, state.name, state.data.paths.scenario, null);
   render();
   return result;
 }
@@ -230,6 +245,66 @@ export async function wireSprites() {
  */
 export async function sortFolders() {
   return runOnScenario('folders');
+}
+
+/**
+ * Records a file nothing generated against the recipe it answers.
+ *
+ * The way out of `unmanaged`, which until now had none: importing a take wrote
+ * the bytes and no record, so the row stayed unmanaged with the file sitting in
+ * its own takes folder, and the board's advice was to import it again.
+ */
+export async function adoptTakes(files) {
+  if (!state.name) return null;
+  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/adopt`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ files }),
+  });
+  state.data = result.project;
+  render();
+
+  const n = result.adopted?.length ?? 0;
+  const copied = (result.adopted ?? []).filter((entry) => entry.copied).length;
+  const parts = [];
+  if (n > 0) parts.push(`adopted ${n} file${n === 1 ? '' : 's'}`);
+  if (copied > 0) {
+    parts.push(`${copied} copied out of the publish folder into its takes folder`);
+  }
+  // A skip is always a decision somebody has to make, never a failure to
+  // report quietly — several unchosen files in one folder is the common one.
+  for (const entry of result.skipped ?? []) parts.push(`${entry.file}: ${entry.why}`);
+  state.onStatus(
+    result.skipped?.length ? 'warn' : n > 0 ? 'ok' : 'warn',
+    parts.length > 0 ? parts.join(' · ') : 'nothing waiting to be adopted',
+  );
+  return result;
+}
+
+/**
+ * Deletes the disk left behind by assets the scenario stopped referencing.
+ *
+ * Filenames, never paths. The server recomputes the stray list and refuses a
+ * name that is not on it, so this cannot ask for anything the board is not
+ * already showing as rubbish.
+ */
+export async function discardStrays(files) {
+  if (!state.name) return null;
+  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/discard`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ files }),
+  });
+  state.data = result.project;
+  render();
+
+  const n = result.removed?.length ?? 0;
+  const freed = result.bytes ? ` · ${(result.bytes / 1_000_000).toFixed(1)} MB freed` : '';
+  state.onStatus(
+    n > 0 ? 'ok' : 'warn',
+    n > 0 ? `deleted the files for ${n} asset${n === 1 ? '' : 's'}${freed}` : 'nothing to delete',
+  );
+  return result;
 }
 
 /** Drops recipes for files the scenario no longer references. */
@@ -439,7 +514,11 @@ async function onImport(asset, file) {
       `${asset.file}: imported ${result.take} (${Math.round(result.bytes / 1024)} KB)` +
         // Said out loud, because it is the one thing an import changes beyond
         // adding a file — and only ever when there was nothing to overrule.
-        (result.selected ? ' · selected, nothing else was' : ' · not selected'),
+        (result.selected ? ' · selected, nothing else was' : ' · not selected') +
+        // The half that used to be missing entirely. Without it the row stayed
+        // "not reproducible" after an import, which read as the import having
+        // failed.
+        (result.tracked ? ' · recorded against the current recipe' : ''),
     );
   } catch (err) {
     state.onStatus('bad', said(asset.file, err.message));
@@ -881,11 +960,19 @@ function takesStrip(asset) {
               ? 'Recorded in the ledger but no longer on disk'
               : take.untracked
                 ? 'Found in the folder, not made by the pipeline'
-                : `${take.hash}${take.at ? ` · ${take.at}` : ''}`,
+                : `${take.hash}${take.at ? ` · ${take.at}` : ''}` +
+                  (take.from ? ` · brought in from ${take.from}` : ''),
             onclick: () => void selectTake(asset.file, chosen ? null : take.id),
           },
           take.id,
-          take.untracked ? h('span', { class: 'take-tag' }, 'manual') : null,
+          // Recorded but not generated. Said on the row, because the hash
+          // beside it is a claim about which recipe this answers and not a
+          // claim that a model produced it — and there is no seed to re-roll.
+          take.untracked
+            ? h('span', { class: 'take-tag' }, 'manual')
+            : take.from
+              ? h('span', { class: 'take-tag' }, 'by hand')
+              : null,
         ),
         // Re-rolling is free, so a folder fills up with readings rejected on
         // the first listen — and finding the good one among nine becomes the
@@ -1044,6 +1131,26 @@ function assetActions(asset, generable) {
     );
   }
 
+  // The way out of `unmanaged`, on the row it is about. The command centre has
+  // the same button over the whole group; this is the one you reach by looking
+  // at the picture and deciding it is the one.
+  if (asset.status === 'unmanaged') {
+    actions.push(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost small',
+          title:
+            'Record this file against the recipe as it stands. It stops being ' +
+            '"not reproducible", and editing the prompt afterwards marks it stale.',
+          onclick: () => void adoptTakes([asset.file]),
+        },
+        'Adopt',
+      ),
+    );
+  }
+
   // A file made somewhere else, brought in as a take. On every row: there is
   // no asset for which "I already have this one" is the wrong answer, and a
   // recorded line is as real a take as a generated one.
@@ -1064,6 +1171,11 @@ function assetActions(asset, generable) {
   // The folder, for dropping several in at once — which a file dialog is worse
   // at than a paste into an explorer window. Only where nothing generates,
   // because that is where this is the workflow rather than the fallback.
+  //
+  // Named for what lands on the clipboard rather than for the gesture. "Copy
+  // folder" read as though it copied the folder somewhere, and the status line
+  // it produced counted characters, which is a fact about a path nobody wanted
+  // — so neither end of it said what it was for.
   if (!generable) {
     actions.push(
       h(
@@ -1071,10 +1183,16 @@ function assetActions(asset, generable) {
         {
           type: 'button',
           class: 'ghost small',
-          title: 'Copy the folder to drop finished files into',
-          onclick: () => void copyText(takesFolder(asset), 'takes folder'),
+          title:
+            `Copy this asset's takes folder — ${takesFolder(asset)} — so you can paste it ` +
+            `into Explorer and drop finished files in. Anything in there shows up as a take.`,
+          onclick: () =>
+            void copyText(
+              takesFolder(asset),
+              'takes folder path copied — paste it into Explorer and drop finished files in',
+            ),
         },
-        'Copy folder',
+        'Copy takes path',
       ),
     );
   }
@@ -1145,6 +1263,40 @@ function gapField(asset) {
         ),
   );
 }
+/**
+ * What the file is, when that is not what its name says.
+ *
+ * Silent otherwise. A row that announced "this .mp3 is an MP3" on all ninety
+ * clips would be ninety lines of nothing, and the one line that mattered would
+ * be indistinguishable from them.
+ */
+function formatField(asset) {
+  const format = asset.format;
+  if (!format?.rename) return null;
+  return h(
+    'div',
+    { class: 'format-row' },
+    h(
+      'span',
+      { class: 'format-warn' },
+      `This is ${format.actual}, not .${format.declared}. The show asks for the name in ` +
+        `scenario.yaml and the server labels it from the extension.`,
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        title:
+          'Rename it everywhere — the scenario, the recipe, the takes folder and the ' +
+          'published file. Nothing is re-encoded.',
+        onclick: () => void onRetype([asset.file]),
+      },
+      `Rename to ${format.rename.split('/').pop()}`,
+    ),
+  );
+}
+
 function sizeField(asset) {
   const size = asset.size;
   if (!size) return null;
@@ -1290,7 +1442,7 @@ function promptPreview(asset) {
               // characters by hand is the difference between a tool and a demo.
               onclick: (event) => {
                 event.stopPropagation();
-                void copyText(composed.positive, 'prompt');
+                void copyText(composed.positive, `prompt copied — ${composed.positive.length} characters`);
               },
             },
             'Copy prompt',
@@ -1303,7 +1455,7 @@ function promptPreview(asset) {
                   class: 'ghost small',
                   onclick: (event) => {
                     event.stopPropagation();
-                    void copyText(composed.negative, 'negative');
+                    void copyText(composed.negative, `negative copied — ${composed.negative.length} characters`);
                   },
                 },
                 'Copy negative',
@@ -1314,10 +1466,18 @@ function promptPreview(asset) {
   );
 }
 
+/**
+ * Puts something on the clipboard and says what to do with it.
+ *
+ * `what` is the whole message, not a noun. It used to be a noun with
+ * "copied — 121 characters" after it, which is the one fact about a path that
+ * helps nobody: the question a person has at that moment is what they are
+ * supposed to paste it into.
+ */
 async function copyText(text, what) {
   try {
     await navigator.clipboard.writeText(text);
-    state.onStatus('ok', `${what} copied — ${text.length} characters`);
+    state.onStatus('ok', what);
   } catch {
     state.onStatus('bad', 'the browser would not let the page write to the clipboard');
   }
@@ -1416,6 +1576,7 @@ function assetRow(asset, generable = false) {
     box,
     gapField(asset),
     sizeField(asset),
+    formatField(asset),
     promptPreview(asset),
     takesStrip(asset),
     assetActions(asset, generable),
@@ -1812,6 +1973,55 @@ export function renderCast() {
       characterSheet(group, { clones, palette, chosen, generable, section }),
     ),
   );
+
+  collapseBar($('cast-collapse'), {
+    open: groups.filter((group) => state.sheetOpen.has(group.id)).length,
+    total: groups.length,
+    what: 'sheet',
+    expandAll: () => {
+      for (const group of groups) state.sheetOpen.add(group.id);
+    },
+    collapseAll: () => state.sheetOpen.clear(),
+  });
+}
+
+/**
+ * Expand all / Collapse all, over whatever is foldable on a tab.
+ *
+ * One function for the cast and for the board because the two are the same
+ * control over two different sets, and the count is what makes it a control
+ * rather than a pair of guesses — "3 of 7 open" is the answer to the question
+ * you are pressing it to find out.
+ */
+function collapseBar(host, { open, total, what, expandAll, collapseAll }) {
+  if (!host) return;
+  if (total === 0) return void (host.hidden = true);
+  host.hidden = false;
+
+  const button = (label, disabled, run) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        disabled: disabled ? true : undefined,
+        onclick: () => {
+          run();
+          render();
+        },
+      },
+      label,
+    );
+
+  host.replaceChildren(
+    button('Expand all', open === total, expandAll),
+    button('Collapse all', open === 0, collapseAll),
+    h(
+      'span',
+      { class: 'collapse-count' },
+      `${open} of ${total} ${what}${total === 1 ? '' : 's'} open`,
+    ),
+  );
 }
 
 /**
@@ -1847,12 +2057,23 @@ function characterSheet(group, context) {
       note ? h('span', { class: 'subtab-note' }, note) : null,
     );
 
+  // Folded unless somebody opened it. What the head says is chosen for the
+  // folded case, because that is the one it is read in most: how many lines,
+  // how many are done, and whether the face exists — enough to decide whether
+  // this is the part you came for without opening it.
+  const open = state.sheetOpen.has(group.id);
+  const fold = () => {
+    if (open) state.sheetOpen.delete(group.id);
+    else state.sheetOpen.add(group.id);
+    render();
+  };
+
   return h(
     'section',
-    { class: 'sheet', id: sheetId(group.id) },
+    { class: `sheet${open ? '' : ' folded'}`, id: sheetId(group.id) },
     h(
       'header',
-      { class: 'sheet-head' },
+      { class: 'sheet-head', onclick: fold },
       h(
         'div',
         { class: `sheet-face${url ? '' : ' empty'}` },
@@ -1861,8 +2082,12 @@ function characterSheet(group, context) {
               src: url,
               alt: `${group.name}'s portrait`,
               // The board's own answer to "did that come out right" — clicking
-              // it opens the same viewer every other picture uses.
-              onclick: () => openViewer(portrait, url, portrait.file),
+              // it opens the same viewer every other picture uses. Stopped
+              // here so looking at a face is not also a fold.
+              onclick: (event) => {
+                event.stopPropagation();
+                openViewer(portrait, url, portrait.file);
+              },
             })
           : h('span', { class: 'sheet-noface' }, portrait ? '—' : ''),
       ),
@@ -1878,16 +2103,35 @@ function characterSheet(group, context) {
           portrait ? ` · portrait ${portrait.status}` : ' · no portrait',
         ),
       ),
+      h('span', { class: 'spacer' }),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'sheet-fold',
+          'aria-expanded': String(open),
+          title: open ? 'Fold this part away' : 'Open this part',
+          onclick: (event) => {
+            event.stopPropagation();
+            fold();
+          },
+        },
+        open ? '▾ Close' : '▸ Open',
+      ),
     ),
-    h(
-      'div',
-      { class: 'subtabs', role: 'tablist' },
-      tab('voice', 'Voice', `${ready}/${group.assets.length}`),
-      tab('portrait', 'Portrait', portrait ? portrait.status : 'none'),
-    ),
-    which === 'voice'
-      ? voiceSheet(group, context)
-      : portraitSheet(group, portrait, context),
+    open
+      ? h(
+          'div',
+          { class: 'subtabs', role: 'tablist' },
+          tab('voice', 'Voice', `${ready}/${group.assets.length}`),
+          tab('portrait', 'Portrait', portrait ? portrait.status : 'none'),
+        )
+      : null,
+    open
+      ? which === 'voice'
+        ? voiceSheet(group, context)
+        : portraitSheet(group, portrait, context)
+      : null,
   );
 }
 
@@ -2234,6 +2478,9 @@ function homeOf(asset) {
 function jumpTo(item) {
   if (item.character && !item.file) {
     state.onTab('cast');
+    // Sheets are folded by default, so scrolling to one without opening it
+    // lands on a header — which reads as the part having no work in it.
+    state.sheetOpen.add(item.character);
     render();
     scrollToId(sheetId(item.character));
     return;
@@ -2248,6 +2495,7 @@ function jumpTo(item) {
     // A sheet shows one half at a time, and the row is on the other one often
     // enough that not switching is the same bug in a smaller place.
     if (home.character) state.sub.set(home.character, home.sub);
+    if (home.character) state.sheetOpen.add(home.character);
     render();
     scrollToId(rowId(item.file), home.character ? sheetId(home.character) : undefined);
     return;
@@ -2370,12 +2618,53 @@ async function onCommandPrune(items) {
   await pruneOrphans();
 }
 
+/**
+ * Takes responsibility for a file nothing generated.
+ *
+ * No confirm. It writes a ledger line and touches no bytes except in the one
+ * case where there is nothing in the takes folder to record, and that is a
+ * copy rather than a move — nothing is lost either way, and a dialog in front
+ * of twelve of them is a dialog nobody reads by the fourth.
+ */
+async function onCommandAdopt(items) {
+  await adoptTakes(items.map((item) => item.file));
+}
+
+/**
+ * Deletes the files an asset the story dropped left behind.
+ *
+ * Named for what it does rather than for what it tidies. The confirm spells
+ * out both halves — the shipped clip and every take of it — because a take
+ * folder can hold six readings somebody chose between, and the fact that the
+ * scenario no longer plays any of them is not the same as nobody wanting them.
+ * There is no undo: the files go.
+ */
+async function onCommandDiscard(items) {
+  const files = items.map((item) => item.file);
+  const shown = files.slice(0, 8);
+  const rest = files.length - shown.length;
+  const named = shown.join('\n') + (rest > 0 ? `\n…and ${rest} more` : '');
+  if (
+    !confirm(
+      `Delete the files for ${files.length} asset${files.length === 1 ? '' : 's'} the ` +
+        `scenario no longer references?\n\n${named}\n\n` +
+        `This removes the published file and every take. It cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+  await discardStrays(files);
+}
+
 const COMMAND_RUNNERS = {
   retime: onRetime,
   generate: onCommandGenerate,
   'use-newest': onCommandUseNewest,
   publish: onCommandPublish,
   prune: onCommandPrune,
+  discard: onCommandDiscard,
+  adopt: onCommandAdopt,
+  retype: onRetype,
 };
 
 const ACTION_LABELS = {
@@ -2384,6 +2673,9 @@ const ACTION_LABELS = {
   'use-newest': 'Use newest',
   publish: 'Publish',
   prune: 'Remove',
+  discard: 'Delete',
+  adopt: 'Adopt',
+  retype: 'Rename',
 };
 
 /** The button on a group heading, when the group is something a machine can do. */
@@ -2405,21 +2697,36 @@ function commandGroupButton(group) {
   );
 }
 
+/**
+ * True when there is somewhere to send somebody.
+ *
+ * A recipe the story dropped and a file the story dropped have no row on any
+ * tab — that is what makes them orphans. Linking them anyway opens a tab that
+ * does not contain them, which reads as the row having been deleted already,
+ * which is worse than not linking at all.
+ */
+function reachable(item) {
+  if (item.character && !item.file) return true;
+  return Boolean(item.file) && assetsByFile().has(item.file);
+}
+
 function commandItem(group, item) {
   const run = COMMAND_RUNNERS[group.action];
   return h(
     'li',
     { class: 'command-item' },
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'command-link',
-        title: 'Show me',
-        onclick: () => jumpTo(item),
-      },
-      item.label,
-    ),
+    reachable(item)
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'command-link',
+            title: 'Show me',
+            onclick: () => jumpTo(item),
+          },
+          item.label,
+        )
+      : h('code', { class: 'command-gone' }, item.label),
     item.detail ? h('span', { class: 'command-detail' }, item.detail) : null,
     h('span', { class: 'spacer' }),
     run
@@ -2456,8 +2763,14 @@ function commandItem(group, item) {
  * measured and the gap the row declares, so the board and the file cannot end
  * up disagreeing about arithmetic done in two places.
  */
-async function onRetime(files) {
+async function onRetime(items) {
   if (!state.name) return;
+  // Two callers hand over two shapes, and they used to be taken as one. A row
+  // sends its own filename; a group heading sends the group's *items*, which
+  // are objects. The objects went to a route that matches on filename, matched
+  // nothing, wrote nothing and reported nothing — a Set all button that
+  // prompted, navigated away and left every beat exactly as it was.
+  const files = items?.map((entry) => (typeof entry === 'string' ? entry : entry.file));
   const many = !files || files.length > 1;
   const count = files ? files.length : (timingGroup()?.items.length ?? 0);
   if (count === 0) return;
@@ -2486,6 +2799,62 @@ async function onRetime(files) {
       );
     }
     state.onStatus(result.comments?.length ? 'warn' : 'ok', parts.join(' · '));
+  } catch (err) {
+    state.onStatus('bad', err.message);
+  }
+}
+
+/**
+ * Makes a name say what the file is.
+ *
+ * `runOnScenario`, because it rewrites `scenario.yaml` — the asset is renamed
+ * in every place the story names it, and the recipe, the takes folder and the
+ * published file follow. Confirmed for the same reason filing by media type is:
+ * the filenames an author has been reading for weeks are about to change.
+ */
+async function onRetype(items) {
+  if (!state.name) return;
+  const files = items?.map((entry) => (typeof entry === 'string' ? entry : entry.file));
+  const count = files?.length ?? 0;
+  if (count === 0) return;
+  if (
+    count > 1 &&
+    !confirm(
+      `Rename ${count} asset${count === 1 ? '' : 's'} so the extension matches the file?\n\n` +
+        `This changes the name in scenario.yaml, in the recipe, on the takes folder and on ` +
+        `the published file. Nothing is re-encoded — the name follows the bytes.`,
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const result = await runOnScenario('extensions', { files });
+    if (!result) return;
+    const n = result.renamed?.length ?? 0;
+    const parts = [];
+    if (n > 0) {
+      parts.push(
+        `renamed ${n} asset${n === 1 ? '' : 's'} — ` +
+          result.renamed
+            .slice(0, 4)
+            .map((move) => `${move.from} → .${move.to.split('.').pop()}`)
+            .join(', ') +
+          (n > 4 ? `, and ${n - 4} more` : ''),
+      );
+    }
+    for (const entry of result.skipped ?? []) parts.push(`${entry.file}: ${entry.why}`);
+    if (result.comments?.length) {
+      // The house rule: report the prose, never rewrite it.
+      parts.push(
+        `comments mentioning a renamed file at line${result.comments.length === 1 ? '' : 's'} ` +
+          `${result.comments.join(', ')} may now be wrong`,
+      );
+    }
+    state.onStatus(
+      result.skipped?.length || result.comments?.length ? 'warn' : n > 0 ? 'ok' : 'warn',
+      parts.length > 0 ? parts.join(' · ') : 'every extension already matches its file',
+    );
   } catch (err) {
     state.onStatus('bad', err.message);
   }
@@ -2772,6 +3141,17 @@ function render() {
       : []),
     ...overview.sections.map(sectionBlock),
   );
+
+  const sections = overview.sections.map((view) => view.section);
+  collapseBar($('assets-collapse'), {
+    open: sections.filter((name) => !state.collapsed.has(name)).length,
+    total: sections.length,
+    what: 'section',
+    expandAll: () => state.collapsed.clear(),
+    collapseAll: () => {
+      for (const name of sections) state.collapsed.add(name);
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
