@@ -466,6 +466,23 @@ number itself is a client that can write a beat nothing on the board agrees with
 arithmetic would then exist in two places, which is one more than it can be right in.
 
 
+**A wait that says nothing is indistinguishable from a hang.** A projector pulls a few
+hundred megabytes down before it reports ready, and for the minute or two that takes the host
+console said `loading…` — no number, nothing moving, for the same minute whether the download
+had ten seconds or four minutes left. Worse, it lied: every asset was started at once and
+raced against its own `PRELOAD_TIMEOUT_MS`, but a browser opens about six connections to a
+host, so the rest waited in a queue with their clocks already running. At twenty seconds the
+whole queue timed out together, the count jumped from about halfway straight to the end, and
+the display announced ready while it was still downloading. `pooled` in
+`src/client/shared/pool.ts` is the fix and the reason it is a fix: work starts when its turn
+comes, so a per-item deadline bounds a download rather than a wait for a turn. The rest is
+saying what is true — `displayProgress` carries the count and the bytes (`sizes` on the
+scenario endpoint is where the bytes come from, absent for art that does not exist yet), and
+`displayReady` carries what never arrived, because a missing decoration must never stop a show
+but `ready` over eleven assets that 404'd is the same lie in a different place. One counter,
+on the display, sent to the console: two counts over one download would eventually disagree and
+the one on the far end of a socket is the one nobody could check.
+
 **Anything the audience is looking at is a beat the server clocks.** The result of a poll used
 to be a `setTimeout` inside the display and nothing else knew about it, so the server started
 the next line's `hold` the instant the poll closed — while the projector was still showing the

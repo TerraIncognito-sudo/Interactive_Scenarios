@@ -368,6 +368,180 @@ describe('room access control', () => {
   });
 });
 
+/**
+ * Saying what is happening during the minute before a show can start.
+ *
+ * A projector on venue wifi spends a minute or two pulling a few hundred
+ * megabytes down, and for that whole minute the host console said "loading…"
+ * and nothing else — no number, nothing moving, which from the front of a room
+ * is indistinguishable from a console that has hung. Every one of these is
+ * about a state being distinguishable from the next one.
+ */
+describe('what the projector is doing while it loads', () => {
+  test('the scenario endpoint says what each asset weighs', async () => {
+    // So the display can report megabytes. Eighty-six is a number nobody can
+    // turn into a guess about how much longer; "18 of 31 MB" is.
+    const room = await createRoom('media');
+    const response = await fetch(
+      `${baseUrl}/api/rooms/${room.code}/scenario?token=${room.displayToken}`,
+    );
+    const body = (await response.json()) as { assets: string[]; sizes: Record<string, number> };
+
+    assert.ok(body.sizes['voice/open-1.mp3']! > 0, 'a file that is there has a size');
+    assert.ok(body.sizes['images/narrator.png']! > 0);
+    assert.equal(
+      body.sizes['images/harbour.jpg'],
+      undefined,
+      'and art that has not been made yet simply has none, rather than a zero the ' +
+        'progress bar would creep towards forever',
+    );
+    for (const file of Object.keys(body.sizes)) {
+      assert.ok(body.assets.includes(file), `${file} is on the prefetch list`);
+    }
+  });
+
+  test('progress from the display reaches the host console', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+
+    const display = await connect();
+    display.send({ type: 'hello', role: 'display', room: room.code, token: room.displayToken });
+    await display.next(isSnapshot);
+
+    display.send({
+      type: 'displayProgress',
+      done: 3,
+      total: 5,
+      failed: 1,
+      bytes: 1_500_000,
+      totalBytes: 4_000_000,
+    });
+
+    const seen = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.displayLoading?.done === 3,
+    );
+    assert.deepEqual(seen.displayLoading, {
+      done: 3,
+      total: 5,
+      failed: 1,
+      bytes: 1_500_000,
+      totalBytes: 4_000_000,
+    });
+    assert.equal(seen.displayReady, false, 'progress is not readiness');
+
+    display.close();
+    host.close();
+  });
+
+  test('ready clears it, so the console never shows both answers at once', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+
+    const display = await connect();
+    display.send({ type: 'hello', role: 'display', room: room.code, token: room.displayToken });
+    await display.next(isSnapshot);
+
+    display.send({ type: 'displayProgress', done: 4, total: 5, failed: 0 });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.displayLoading?.done === 4);
+
+    display.send({ type: 'displayReady' });
+    const ready = await host.next<Snapshot>((m) => isSnapshot(m) && m.displayReady === true);
+    assert.equal(ready.displayLoading, undefined);
+
+    // A report that was already in flight when it finished must not put the
+    // console back to loading — the last thing said would be the wrong thing.
+    display.send({ type: 'displayProgress', done: 4, total: 5, failed: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const latest = [...host.messages].reverse().find(isSnapshot) as Snapshot;
+    assert.equal(latest.displayReady, true);
+    assert.equal(latest.displayLoading, undefined);
+
+    display.close();
+    host.close();
+  });
+
+  test('ready is not the same as complete, and the console is told which', async () => {
+    // A missing decoration must never stop a show — but "ready" over three
+    // assets that 404'd is the same lie as "ready" halfway through, and this
+    // line is the only warning before a shot opens black.
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+
+    const display = await connect();
+    display.send({ type: 'hello', role: 'display', room: room.code, token: room.displayToken });
+    await display.next(isSnapshot);
+
+    display.send({ type: 'displayReady', failed: 3, total: 5 });
+    const seen = await host.next<Snapshot>((m) => isSnapshot(m) && m.displayReady === true);
+    assert.deepEqual(seen.displayMissing, { failed: 3, total: 5 });
+
+    display.close();
+    host.close();
+  });
+
+  test('a display that fetched everything says so by saying nothing', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+
+    const display = await connect();
+    display.send({ type: 'hello', role: 'display', room: room.code, token: room.displayToken });
+    await display.next(isSnapshot);
+
+    display.send({ type: 'displayReady', failed: 0, total: 5 });
+    const seen = await host.next<Snapshot>((m) => isSnapshot(m) && m.displayReady === true);
+    assert.equal(seen.displayMissing, undefined, 'no warning where there is nothing to warn about');
+
+    display.close();
+    host.close();
+  });
+
+  test('a projector that goes away takes its number with it', async () => {
+    // Otherwise the console counts up for a display that is not there.
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+
+    const display = await connect();
+    display.send({ type: 'hello', role: 'display', room: room.code, token: room.displayToken });
+    await display.next(isSnapshot);
+    display.send({ type: 'displayProgress', done: 2, total: 5, failed: 0 });
+    await host.next<Snapshot>((m) => isSnapshot(m) && m.displayLoading?.done === 2);
+
+    display.close();
+    const gone = await host.next<Snapshot>(
+      (m) => isSnapshot(m) && m.presence.displays === 0,
+    );
+    assert.equal(gone.displayLoading, undefined);
+    assert.equal(gone.displayMissing, undefined);
+    assert.equal(gone.displayReady, false);
+
+    host.close();
+  });
+
+  test('only the display may report progress', async () => {
+    const room = await createRoom('media');
+    const host = await joinHost(room.code, room.hostToken);
+
+    host.send({ type: 'displayProgress', done: 1, total: 5, failed: 0 });
+    const error = await host.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+
+    host.close();
+  });
+
+  test('a nonsense report is rejected rather than shown', async () => {
+    const room = await createRoom('media');
+    const display = await connect();
+    display.send({ type: 'hello', role: 'display', room: room.code, token: room.displayToken });
+    await display.next(isSnapshot);
+
+    display.send({ type: 'displayProgress', done: -1, total: 5, failed: 0 });
+    const error = await display.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badMessage');
+
+    display.close();
+  });
+});
+
 describe('media reaches the projector', () => {
   test('the prefetch list includes voice clips and scene video', async () => {
     const room = await createRoom('media');

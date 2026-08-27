@@ -18,7 +18,13 @@ import {
 } from '../engine/engine.ts';
 import { BallotBox, resolvePoll, type PollResult } from '../engine/votes.ts';
 import type { LoadedScenario } from '../scenario/load.ts';
-import type { HostCommand, Snapshot, SnapshotBeat, PlayerState } from '../shared/protocol.ts';
+import type {
+  DisplayLoading,
+  HostCommand,
+  Snapshot,
+  SnapshotBeat,
+  PlayerState,
+} from '../shared/protocol.ts';
 import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from '../shared/protocol.ts';
 import type { Store } from './db.ts';
 
@@ -53,6 +59,22 @@ export class Room {
 
   state: RunState;
   displayReady = false;
+  /**
+   * What the display last said about its prefetch.
+   *
+   * Kept so the host console can show a number moving rather than a static
+   * "loading…", which for the minute or two a show's artwork takes to reach a
+   * projector is the difference between waiting and assuming it has hung.
+   */
+  displayLoading: DisplayLoading | undefined;
+  /**
+   * What the display said it could not fetch when it reported ready.
+   *
+   * Kept past readiness, unlike the progress, because it is the one fact that
+   * is still true afterwards — and it is the operator's only warning that a
+   * shot is going to open black.
+   */
+  displayMissing: { failed: number; total: number } | undefined;
   lastActivityAt: number;
   closed = false;
 
@@ -152,7 +174,13 @@ export class Room {
 
   unsubscribe(sub: Subscriber): void {
     if (this.subscribers.delete(sub)) {
-      if (sub.role === 'display' && this.displayCount === 0) this.displayReady = false;
+      if (sub.role === 'display' && this.displayCount === 0) {
+        this.displayReady = false;
+        // Whatever it had reached went with it. Leaving the last number up
+        // would show a console counting up for a projector that is gone.
+        this.displayLoading = undefined;
+        this.displayMissing = undefined;
+      }
       this.broadcast();
     }
   }
@@ -230,6 +258,8 @@ export class Room {
       serverNow: Date.now(),
       presence: { displays: this.displayCount, players: this.playerCount },
       displayReady: this.displayReady,
+      ...(this.displayLoading ? { displayLoading: this.displayLoading } : {}),
+      ...(this.displayMissing ? { displayMissing: this.displayMissing } : {}),
     };
   }
 
@@ -535,10 +565,33 @@ export class Room {
     }
   }
 
-  markDisplayReady(): void {
-    if (this.displayReady) return;
+  markDisplayReady(missing?: { failed: number; total: number }): void {
+    // The count is taken even on a repeat, since a display that reconnects
+    // re-announces and the number is the freshest thing it knows.
+    this.displayMissing = missing && missing.failed > 0 ? missing : undefined;
+    if (this.displayReady) {
+      this.broadcast();
+      return;
+    }
     this.displayReady = true;
+    // Ready and a progress bar at once is two answers to one question.
+    this.displayLoading = undefined;
     this.touch();
+    this.broadcast();
+  }
+
+  /**
+   * Notes how far the display has got.
+   *
+   * Deliberately not a `touch()`: a room whose projector is still downloading
+   * is not a room somebody is using, and letting a progress report hold a
+   * session open would keep an abandoned one alive for as long as its assets
+   * take. Ignored once ready, because a late report arriving after the last
+   * one would put the console back to loading.
+   */
+  noteDisplayProgress(progress: DisplayLoading): void {
+    if (this.displayReady) return;
+    this.displayLoading = progress;
     this.broadcast();
   }
 

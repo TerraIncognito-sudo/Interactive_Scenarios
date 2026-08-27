@@ -49,6 +49,37 @@ export const CastVoteSchema = z.object({
 /** Display reports that every asset for the scenario has loaded. */
 export const DisplayReadySchema = z.object({
   type: z.literal('displayReady'),
+  /**
+   * How many never arrived, and out of how many.
+   *
+   * A missing decoration must never stop a show, so the display goes ready
+   * regardless — but "ready" over eleven assets that 404'd is the same lie as
+   * "ready" halfway through the download. This is the operator's one chance to
+   * hear about it before the black background is on the wall.
+   */
+  failed: z.number().int().nonnegative().max(100_000).optional(),
+  total: z.number().int().nonnegative().max(100_000).optional(),
+});
+
+/**
+ * Display reports how far it has got fetching artwork.
+ *
+ * A show is a few hundred megabytes and a projector on venue wifi takes a
+ * minute or two over it. For that minute the host console said "loading…" and
+ * nothing else — no number, nothing moving — which is indistinguishable from
+ * broken. The only cure is to say what is happening, so the display says it.
+ *
+ * Bytes are optional because they are only known where the server could stat
+ * the file; the count is always real.
+ */
+export const DisplayProgressSchema = z.object({
+  type: z.literal('displayProgress'),
+  done: z.number().int().nonnegative().max(100_000),
+  total: z.number().int().nonnegative().max(100_000),
+  /** Assets that errored or ran out of time. The show can still open. */
+  failed: z.number().int().nonnegative().max(100_000),
+  bytes: z.number().nonnegative().optional(),
+  totalBytes: z.number().nonnegative().optional(),
 });
 
 export const HostCommandSchema = z.object({
@@ -73,6 +104,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   HelloSchema,
   CastVoteSchema,
   DisplayReadySchema,
+  DisplayProgressSchema,
   HostCommandSchema,
   PingSchema,
 ]);
@@ -181,6 +213,22 @@ export type Snapshot = {
   presence: { displays: number; players: number };
   /** Whether the display has finished prefetching assets. */
   displayReady: boolean;
+  /**
+   * How far it has got, while it has not. Absent once it is ready, and absent
+   * before the first report — which is itself worth showing as "connected,
+   * nothing said yet" rather than as a stalled zero.
+   */
+  displayLoading?: DisplayLoading;
+  /** Assets the display could not fetch, out of how many. Absent when none. */
+  displayMissing?: { failed: number; total: number };
+};
+
+export type DisplayLoading = {
+  done: number;
+  total: number;
+  failed: number;
+  bytes?: number;
+  totalBytes?: number;
 };
 
 /** Sent to a player so their phone can restore its own selection. */
@@ -248,6 +296,8 @@ export type LiveSession = {
   nodeId: string;
   beat: number;
   displayReady: boolean;
+  /** How far its prefetch has got, while it has one. See `DisplayLoading`. */
+  displayLoading?: DisplayLoading;
   presence: { displays: number; players: number };
   /** Voting deadline in ms since epoch, when a poll is open. */
   pollEndsAt?: number;
