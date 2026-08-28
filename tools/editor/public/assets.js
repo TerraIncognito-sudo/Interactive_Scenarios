@@ -564,7 +564,10 @@ function describeOrigin(origin) {
     case 'voice':
       return `${origin.node} line ${origin.line + 1}`;
     case 'sfx':
-      return `sfx on ${origin.node} line ${origin.line + 1}`;
+      // A pause's one-shot has no line, because a pause has no lines.
+      return origin.line === undefined
+        ? `sfx on ${origin.node}`
+        : `sfx on ${origin.node} line ${origin.line + 1}`;
     default:
       return origin.kind;
   }

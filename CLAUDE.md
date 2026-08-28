@@ -466,6 +466,30 @@ number itself is a client that can write a beat nothing on the board agrees with
 arithmetic would then exist in two places, which is one more than it can be right in.
 
 
+**Everything the scenario can declare has to reach the room.** `music`, `ambience` and `sfx`
+were in the schema from the beginning: the checker validated them, the board tracked them, the
+projector prefetched them — and nothing ever opened one. A scenario could declare a harbour bed,
+the board could report it finished and green, and the audience heard silence with nothing
+anywhere saying why. Voice was the only audio that ever played. A field is cheap to add to a
+schema and the half that consumes it lives in another program, so `tests/playback.test.ts` reads
+the display as text and insists every `ASSET_SECTIONS` entry is named there — crude on purpose,
+since a check that needs a browser is a check nobody runs. The split in playback follows the one
+the scenario already makes: a **bed** hangs off the scene and is keyed on its own file, so a
+second camera setup in one room does not restart the sea; a **one-shot** hangs off the line that
+fires it and is deliberately *not* cut by the next beat, because two voices at once is worse than
+a clipped one but an effect ringing on under the following line is ordinary sound design. A scene
+change does stop it — a crack should not follow the picture into another room. Levels are named
+constants and every bed is mixed under the voice, which is the thing an audience has to follow.
+
+`sfx:` is on a **line**, and also on a **pause node** — the one node type that has no line to
+hang it on. That is not a convenience: a pause is a beat whose entire content can be a sound,
+and those are the beats where one matters most. Arctic Sentinel's F.3 is four wordless seconds
+of a gun firing, written in the storyboard as `SFX` with `VO — none`, and until the schema
+carried it the only way to give that beat any audio was to make it dialogue — which draws the
+box the pause exists to leave off. So `AssetOrigin` has an sfx shape with no `line`, and
+anything matching on it (`pathFor` most of all, since it decides which key a rename rewrites)
+tests the *shape* rather than the kind alone.
+
 **A wait that says nothing is indistinguishable from a hang.** A projector pulls a few
 hundred megabytes down before it reports ready, and for the minute or two that takes the host
 console said `loading…` — no number, nothing moving, for the same minute whether the download

@@ -176,7 +176,9 @@ export type AssetOrigin =
   | { kind: 'background' | 'video' | 'music' | 'ambience'; scene: string }
   /** A node's own still or clip, overriding the scene's while it plays. */
   | { kind: 'background' | 'video'; node: string }
-  | { kind: 'voice' | 'sfx'; node: string; line: number };
+  | { kind: 'voice' | 'sfx'; node: string; line: number }
+  /** A pause's own one-shot. A wordless beat has no line to hang it on. */
+  | { kind: 'sfx'; node: string };
 
 export type AssetReference = {
   file: string;
@@ -242,6 +244,10 @@ export function assetReferencesOf(scenario: Scenario): AssetReference[] {
     }
     if (node.video) {
       refs.push({ file: node.video, section: 'video', origin: { kind: 'video', node: node.id } });
+    }
+
+    if (node.type === 'pause' && node.sfx) {
+      refs.push({ file: node.sfx, section: 'sfx', origin: { kind: 'sfx', node: node.id } });
     }
 
     if (node.type !== 'dialogue') continue;

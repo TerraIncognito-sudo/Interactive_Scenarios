@@ -84,6 +84,8 @@ let renderedLocally = false;
 let lastSceneId: string | undefined;
 /** What is on the projector right now, as a media key rather than a scene id. */
 let paintedKey: string | undefined;
+/** The scene the beds belong to, which is not the same as the shot painted. */
+let bedScene: string | undefined;
 let typeTimer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -319,6 +321,18 @@ function applyScene(sceneId: string | undefined, nodeId?: string): void {
   const video = node?.video ?? definition?.video;
 
   lastSceneId = sceneId;
+
+  // The beds are keyed on the scene's own files rather than on the painted
+  // key: `background` and `video` may be overridden per node, and a second
+  // camera setup in one room must not restart the room's ambience. `Bed.play`
+  // ignores a file it is already playing, so this is safe to call every beat.
+  const changed = sceneId !== bedScene;
+  bedScene = sceneId;
+  ambience.play(definition?.ambience);
+  music.play(definition?.music);
+  // A crack should not follow the picture into another room.
+  if (changed) stopSfx();
+
   const key = `${sceneId ?? ''}|${background ?? ''}|${video ?? ''}`;
   if (key === paintedKey) return;
   paintedKey = key;
@@ -388,10 +402,145 @@ function playVoice(file: string | undefined): void {
 
 audioGate.addEventListener('click', () => {
   audioGate.hidden = true;
+  // Every element, not just the voice. One gesture lifts the policy for the
+  // page, but a bed that was refused before the click stays paused until
+  // something asks it to play again — and nothing would.
   void voiceEl.play().catch(() => {
     audioGate.hidden = false;
   });
+  ambience.resume();
+  music.resume();
 });
+
+// ---------------------------------------------------------------------------
+// Scene beds and one-shots
+// ---------------------------------------------------------------------------
+
+/**
+ * The other three quarters of the sound.
+ *
+ * `music`, `ambience` and `sfx` have been in the schema, validated by the
+ * checker and prefetched by this file since the beginning, and nothing ever
+ * opened one. A scenario could declare a harbour bed, the board could report it
+ * finished, the projector could download it — and the room heard silence, with
+ * nothing anywhere saying why. Voice was the only audio that ever played.
+ *
+ * The split follows the one the scenario already makes. A bed belongs to a
+ * scene and persists across every node played there, so it is keyed on the file
+ * and only touched when that changes — restarting the sea on every line would
+ * be a stutter every few seconds. A one-shot belongs to a line and fires with
+ * it.
+ */
+
+/** Under the voice, which is the thing an audience has to follow. */
+const AMBIENCE_VOLUME = 0.35;
+const MUSIC_VOLUME = 0.4;
+const SFX_VOLUME = 0.8;
+/** Long enough not to be a cut, short enough not to smear two locations. */
+const FADE_MS = 600;
+
+/**
+ * One looping bed, faded in and out.
+ *
+ * A class rather than two copies of the same six functions: music and ambience
+ * differ only in their level, and the second copy is where the two would start
+ * disagreeing about what a scene change does.
+ */
+class Bed {
+  private readonly el = new Audio();
+  private readonly volume: number;
+  private file: string | undefined;
+  private fade: ReturnType<typeof setInterval> | undefined;
+
+  constructor(volume: number) {
+    this.volume = volume;
+    this.el.loop = true;
+    this.el.preload = 'auto';
+    this.el.volume = 0;
+  }
+
+  /** Swaps to a new bed, or fades the current one out when given nothing. */
+  play(file: string | undefined): void {
+    if (file === this.file) return;
+    this.file = file;
+
+    if (!file) {
+      this.to(0, () => {
+        this.el.pause();
+        this.el.removeAttribute('src');
+      });
+      return;
+    }
+
+    // A hard swap under a crossfade would be audible as a click, so the
+    // outgoing bed is faded down first and the incoming one starts silent.
+    this.to(0, () => {
+      this.el.src = assetBase + file;
+      this.el.currentTime = 0;
+      void this.el
+        .play()
+        .then(() => this.to(this.volume))
+        .catch(() => {
+          // Autoplay policy. The gate is already the answer to this, and the
+          // voice raises it too — a bed alone must not, since a scene with a
+          // bed and no line yet would show it before there is anything to hear.
+          this.el.volume = this.volume;
+        });
+    });
+  }
+
+  /** Called when a gesture has lifted the autoplay policy. */
+  resume(): void {
+    if (!this.file || !this.el.src) return;
+    void this.el.play().catch(() => undefined);
+  }
+
+  private to(target: number, then?: () => void): void {
+    clearInterval(this.fade);
+    const from = this.el.volume;
+    const steps = Math.max(1, Math.round(FADE_MS / 40));
+    let step = 0;
+    this.fade = setInterval(() => {
+      step += 1;
+      this.el.volume = Math.min(1, Math.max(0, from + ((target - from) * step) / steps));
+      if (step < steps) return;
+      clearInterval(this.fade);
+      then?.();
+    }, 40);
+  }
+}
+
+const ambience = new Bed(AMBIENCE_VOLUME);
+const music = new Bed(MUSIC_VOLUME);
+
+/**
+ * A one-shot, fired by the line that declares it.
+ *
+ * Deliberately not cut by the next beat, unlike the voice: two voices at once
+ * is worse than a clipped one, but an effect ringing on under the following
+ * line is ordinary sound design — the storyboard asks for exactly that in
+ * places ("one hard crack, then a long ringing decay"). A scene change does
+ * stop it, because a crack should not follow the picture into another room.
+ */
+const sfxEl = new Audio();
+sfxEl.preload = 'auto';
+sfxEl.volume = SFX_VOLUME;
+
+function playSfx(file: string | undefined): void {
+  if (!file) return;
+  sfxEl.pause();
+  sfxEl.src = assetBase + file;
+  sfxEl.currentTime = 0;
+  // Silent failure on purpose. The gate belongs to the voice, which is the
+  // audio an audience has to hear; raising it for a missing door slam would
+  // put a button over the show for something nobody would miss.
+  void sfxEl.play().catch(() => undefined);
+}
+
+function stopSfx(): void {
+  sfxEl.pause();
+  sfxEl.removeAttribute('src');
+}
 
 function typeLine(target: HTMLElement, text: string, charsPerSecond: number): void {
   clearInterval(typeTimer);
@@ -448,6 +597,7 @@ function renderDialogue(beat: Extract<SnapshotBeat, { kind: 'dialogue' }>): void
 
   typeLine(el('line'), beat.text, scenario?.settings.charsPerSecond ?? 45);
   playVoice(beat.voice);
+  playSfx(beat.sfx);
 }
 
 function renderPoll(
@@ -569,6 +719,10 @@ function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
       applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       show('pause');
       el('pause-text').textContent = beat.text ?? '';
+      // Often the whole reason the beat exists — four wordless seconds of a
+      // gun firing. `applyScene` has already stopped anything ringing from
+      // another room, so this is the only sound on it.
+      playSfx(beat.sfx);
       return;
     case 'poll':
       applyScene(beat.scene ?? lastSceneId, beat.nodeId);
