@@ -466,6 +466,30 @@ number itself is a client that can write a beat nothing on the board agrees with
 arithmetic would then exist in two places, which is one more than it can be right in.
 
 
+**Everything the scenario can declare has to reach the room.** `music`, `ambience` and `sfx`
+were in the schema from the beginning: the checker validated them, the board tracked them, the
+projector prefetched them — and nothing ever opened one. A scenario could declare a harbour bed,
+the board could report it finished and green, and the audience heard silence with nothing
+anywhere saying why. Voice was the only audio that ever played. A field is cheap to add to a
+schema and the half that consumes it lives in another program, so `tests/playback.test.ts` reads
+the display as text and insists every `ASSET_SECTIONS` entry is named there — crude on purpose,
+since a check that needs a browser is a check nobody runs. The split in playback follows the one
+the scenario already makes: a **bed** hangs off the scene and is keyed on its own file, so a
+second camera setup in one room does not restart the sea; a **one-shot** hangs off the line that
+fires it and is deliberately *not* cut by the next beat, because two voices at once is worse than
+a clipped one but an effect ringing on under the following line is ordinary sound design. A scene
+change does stop it — a crack should not follow the picture into another room. Levels are named
+constants and every bed is mixed under the voice, which is the thing an audience has to follow.
+
+`sfx:` is on a **line**, and also on a **pause node** — the one node type that has no line to
+hang it on. That is not a convenience: a pause is a beat whose entire content can be a sound,
+and those are the beats where one matters most. Arctic Sentinel's F.3 is four wordless seconds
+of a gun firing, written in the storyboard as `SFX` with `VO — none`, and until the schema
+carried it the only way to give that beat any audio was to make it dialogue — which draws the
+box the pause exists to leave off. So `AssetOrigin` has an sfx shape with no `line`, and
+anything matching on it (`pathFor` most of all, since it decides which key a rename rewrites)
+tests the *shape* rather than the kind alone.
+
 **A wait that says nothing is indistinguishable from a hang.** A projector pulls a few
 hundred megabytes down before it reports ready, and for the minute or two that takes the host
 console said `loading…` — no number, nothing moving, for the same minute whether the download
@@ -541,11 +565,22 @@ unreachable nodes, unknown characters and scenes, poll defaults that are not opt
 unknown `$placeholder`s. Run `npm run validate` after touching a scenario.
 
 The editor is a separate process by design — authoring happens at a desk over weeks, the
-game server runs in front of an audience. **The editor cannot reach `scenarios/` at all**:
-it serves no route into that folder and writes only inside the author's chosen workspace.
-Deploying is a person copying a finished project folder across when the show is ready, and
-a test asserts the capability stays absent. An editor able to write into the folder a live
-show is served from will eventually do it by accident. Its simulator
+game server runs in front of an audience. **The editor has no path of its own into
+`scenarios/`**: it serves no route into that folder, holds no constant naming it, and writes
+only inside the workspace the author picked. A test asserts that capability stays absent, and
+it must stay absent — an editor that could reach the live folder without being asked would
+eventually do it by accident.
+
+What the author points that workspace *at* is theirs to decide, and it is now `scenarios/`
+itself: a folder picker made the second copy pure overhead, and keeping two meant every change
+was made twice or copied across and diverged. `.gitignore` already keeps the editor's half —
+`project.yaml`, `.ledger.json`, `generated/`, `voices/` and the storyboard — out of the repo,
+so the folder is the show to git and the whole project to the editor. The rule that survives
+the move is the one that was doing the work: **do not author into a folder a show is being
+served from right now.** The server reads its library at boot and `/api/reload` is deliberate,
+so a scenario edit cannot reach a running room — but assets are served off disk as they are
+asked for, and renaming one mid-show is a 404 on the next projector to reconnect. Its
+simulator
 calls the production `reduce`, so **never give it its own copy of the engine**: a
 simulation that could drift from the real thing is worse than none. `parseScenarioSource`
 in `src/scenario/load.ts` is the shared validation path — the editor and the server must

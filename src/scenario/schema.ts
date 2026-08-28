@@ -165,6 +165,19 @@ export const PauseNodeSchema = z.strictObject({
   type: z.literal('pause'),
   duration: z.number().positive().max(3600),
   text: z.string().min(1).optional(),
+  /**
+   * A one-shot for a beat with no words in it.
+   *
+   * Only here, and deliberately. Everywhere else an effect hangs off the line
+   * that fires it, because everywhere else there is a line — but a pause is a
+   * beat whose entire content can be a sound, and those are the beats where
+   * one matters most: a weapon firing, a hull impact, four seconds of a room
+   * reacting to something nobody says out loud. Without this such a beat had
+   * nowhere to carry audio at all, and the only way to give it any was to turn
+   * it into dialogue, which puts a box on screen that the pause exists to
+   * leave off.
+   */
+  sfx: AssetPathSchema.optional(),
   next: NodeIdSchema,
 });
 

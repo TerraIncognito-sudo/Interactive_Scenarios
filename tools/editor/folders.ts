@@ -54,6 +54,10 @@ function pathFor(origin: AssetOrigin, nodeAt: Map<string, number>): (string | nu
 
   const index = nodeAt.get(origin.node);
   if (index === undefined) return undefined;
+  // A pause's one-shot hangs off the node itself; everything else spoken or
+  // fired hangs off a line. Getting this wrong renames the wrong key, so the
+  // shape of the origin decides rather than its kind alone.
+  if (origin.kind === 'sfx' && !('line' in origin)) return ['nodes', index, 'sfx'];
   if (origin.kind === 'voice' || origin.kind === 'sfx') {
     return ['nodes', index, 'lines', origin.line, origin.kind];
   }

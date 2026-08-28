@@ -142,7 +142,7 @@ export type SnapshotBeat =
       voice?: string;
       sfx?: string;
     }
-  | { kind: 'pause'; nodeId: string; text?: string; scene?: string; durationMs: number }
+  | { kind: 'pause'; nodeId: string; text?: string; scene?: string; sfx?: string; durationMs: number }
   | {
       kind: 'poll';
       nodeId: string;

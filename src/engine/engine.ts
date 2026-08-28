@@ -77,7 +77,7 @@ export type Beat =
       scene?: string;
       durationMs: number;
     }
-  | { kind: 'pause'; nodeId: string; text?: string; scene?: string; durationMs: number }
+  | { kind: 'pause'; nodeId: string; text?: string; scene?: string; sfx?: string; durationMs: number }
   | {
       kind: 'poll';
       nodeId: string;
@@ -321,6 +321,7 @@ export function beatOf(scenario: Scenario, state: RunState): Beat {
         nodeId: node.id,
         text: node.text,
         scene: node.scene,
+        sfx: node.sfx,
         durationMs: Math.round(node.duration * 1000),
       };
     case 'poll':
