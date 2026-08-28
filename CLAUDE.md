@@ -541,11 +541,22 @@ unreachable nodes, unknown characters and scenes, poll defaults that are not opt
 unknown `$placeholder`s. Run `npm run validate` after touching a scenario.
 
 The editor is a separate process by design — authoring happens at a desk over weeks, the
-game server runs in front of an audience. **The editor cannot reach `scenarios/` at all**:
-it serves no route into that folder and writes only inside the author's chosen workspace.
-Deploying is a person copying a finished project folder across when the show is ready, and
-a test asserts the capability stays absent. An editor able to write into the folder a live
-show is served from will eventually do it by accident. Its simulator
+game server runs in front of an audience. **The editor has no path of its own into
+`scenarios/`**: it serves no route into that folder, holds no constant naming it, and writes
+only inside the workspace the author picked. A test asserts that capability stays absent, and
+it must stay absent — an editor that could reach the live folder without being asked would
+eventually do it by accident.
+
+What the author points that workspace *at* is theirs to decide, and it is now `scenarios/`
+itself: a folder picker made the second copy pure overhead, and keeping two meant every change
+was made twice or copied across and diverged. `.gitignore` already keeps the editor's half —
+`project.yaml`, `.ledger.json`, `generated/`, `voices/` and the storyboard — out of the repo,
+so the folder is the show to git and the whole project to the editor. The rule that survives
+the move is the one that was doing the work: **do not author into a folder a show is being
+served from right now.** The server reads its library at boot and `/api/reload` is deliberate,
+so a scenario edit cannot reach a running room — but assets are served off disk as they are
+asked for, and renaming one mid-show is a 404 on the next projector to reconnect. Its
+simulator
 calls the production `reduce`, so **never give it its own copy of the engine**: a
 simulation that could drift from the real thing is worse than none. `parseScenarioSource`
 in `src/scenario/load.ts` is the shared validation path — the editor and the server must

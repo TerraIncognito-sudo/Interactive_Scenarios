@@ -144,10 +144,13 @@ uses on the night. Validation happens as you type, and it is the same check the 
 applies at load time, so the editor cannot bless a scenario the server would reject.
 
 It binds to loopback only, and it **works only on projects in a workspace folder you
-choose** — never on `scenarios/`. A project is any folder with a `scenario.yaml`; the
-editor reads and writes nothing outside the workspace, so building a scenario cannot
-disturb a server that may be mid-show. When a scenario is ready, copy its folder into
-`scenarios/` yourself.
+choose**. A project is any folder with a `scenario.yaml`; the editor reads and writes
+nothing outside the workspace and has no path of its own into the repo. Point the workspace
+at `scenarios/` and you author the shows this server serves, in place — `.gitignore` keeps
+the editor's own files (`project.yaml`, `.ledger.json`, `generated/`, `voices/`) out of
+version control, so the folder is the show to git and the whole project to the editor. Point
+it somewhere else and nothing you build can disturb a server that may be mid-show, which is
+the safer arrangement while one is actually running.
 
 ```yaml
 - id: vote_approach
