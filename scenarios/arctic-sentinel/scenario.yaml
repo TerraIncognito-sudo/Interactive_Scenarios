@@ -88,6 +88,7 @@ scenes:
   engagement_ships: { background: images/engagement_ships.png }
   engagement_drone: { background: images/engagement_drone.png }
   standoff: { background: images/standoff.png }
+  standoff_missile: { background: images/standoff_missile.png }
   debrief: { }
 
 nodes:
@@ -143,9 +144,9 @@ nodes:
         voice: voice/narr-a3-01.mp3
       - who: narr
         text: >-
-          Four thousand kilometres of ocean will sit between them and their ship,
+          Nine hundred kilometres of ocean will sit between them and their ship,
           and the entire relationship will run through a satellite link.
-        hold: 8.1
+        hold: 8.7
         voice: voice/narr-a3-02.mp3
       - who: tran
         text: >-
@@ -170,8 +171,9 @@ nodes:
     lines:
       - who: narr
         text: No one waves it off. There's no one at the rail to wave to.
-        hold: 4.4
+        hold: 6.4
         voice: voice/narr-a5-01.mp3
+        sfx: sfx/a5-departure.mp3
     next: b1_ocean
 
   # -------------------------------------------------------------------------
@@ -247,9 +249,9 @@ nodes:
     lines:
       - who: tran
         text: >-
-          Contact, bearing zero-nine-zero, twenty-two thousand yards, closing.
-          Visual correlates to a Russian Federation hull.
-        hold: 9.5
+          Contact, bearing zero-nine-zero, twelve miles, closing.
+          Visual correlates to a Russian hull.
+        hold: 8
         voice: voice/tran-c4-01.mp3
       - who: beau
         text: How long has she been there?
@@ -296,8 +298,8 @@ nodes:
     scene: engagement_ships
     lines:
       - who: pf
-        text: Russian Federation warship bearing zero-nine-zero. This is Canadian Autonomous Warship Five Zero One.
-        hold: 7.2
+        text: Russian warship bearing zero-nine-zero. This is Canadian Autonomous Warship Five Zero One.
+        hold: 6.9
         voice: voice/pf-d3-01.mp3
       - who: pf
         text: >-
@@ -320,22 +322,13 @@ nodes:
     scene: control_cell
     lines:
       - who: tran
-        text: Launch off her after deck — small airframe, low and fast, tracking toward us.
-        hold: 5.9
+        text: Launch off her aft deck — small airframe, low and fast, tracking toward us. Not squawking anything.
+        hold: 7.6
         voice: voice/tran-d4-01.mp3
-      - who: beau
-        text: Classify it.
-        hold: 2.4
-        voice: voice/beau-d4-01.mp3
-      - who: tran
-        text: It's not squawking anything.
-        hold: 3.1
-        voice: voice/tran-d4-02.mp3
       - who: tran
         text: >-
-          We've lost the link. Broadband jamming across the whole satellite band —
-          she's not shooting at us, she's deafening us.
-        hold: 7.8
+          We've lost the link. Broadband jamming across the whole satellite band.
+        hold: 5.4
         voice: voice/tran-d5-01.mp3
       - who: tran
         text: Ma'am, Five Zero One is on its own.
@@ -350,8 +343,8 @@ nodes:
       - who: narr
         text: >-
           Nine hundred kilometres away, a ship with nobody on it tracks a drone
-          close on its position, and has to decide by itself.
-        hold: 8
+          closing on its position, and has to decide by itself.
+        hold: 8.1
         voice: voice/narr-d5-01.mp3
     next: poll_response
 
@@ -475,8 +468,8 @@ nodes:
     scene: engagement_drone
     lines:
       - who: pf
-        text: Unidentified aircraft, bearing zero-eight-eight, range four thousand metres.
-        hold: 5.3
+        text: Unidentified aircraft, bearing zero-eight-eight, range five miles.
+        hold: 4.9
         voice: voice/pf-e3-01.mp3
       - who: pf
         text: >-
@@ -503,8 +496,8 @@ nodes:
     scene: engagement_drone
     lines:
       - who: narr
-        text: Three thousand metres. Two thousand.
-        hold: 3.5
+        text: Three miles. Two.
+        hold: 2.8
         voice: voice/narr-f1-01.mp3
     next: f2_criteria
 
@@ -528,6 +521,7 @@ nodes:
     type: pause
     scene: standoff
     duration: 4
+    sfx: sfx/ciws.mp3
     next: f4_aftermath
 
   - id: f4_aftermath
@@ -557,43 +551,19 @@ nodes:
         hold: 3.1
         voice: voice/tran-g1-01.mp3
       - who: tran
-        text: Ma'am — we've got a weapons release log. Four minutes ago.
+        text: Ma'am — we've got a weapons release log. Three minutes ago.
         hold: 4.6
         voice: voice/tran-g1-02.mp3
-      - who: beau
-        text: Read it to me.
-        hold: 2.1
-        voice: voice/beau-g1-01.mp3
       - who: tran
         text: >-
           Challenge issued three times. No response. Engaged and destroyed one
-          unmanned air contact at eighteen hundred metres. Zero rounds since.
-        hold: 10.4
+          unmanned air contact at two miles.
+        hold: 9
         voice: voice/tran-g1-03.mp3
       - who: beau
         text: It did exactly what we told it to do.
         hold: 3.4
         voice: voice/beau-g1-02.mp3
-    next: g2_hail
-
-  - id: g2_hail
-    type: dialogue
-    scene: standoff
-    lines:
-      - who: rus
-        text: >-
-          Canadian vessel. You have destroyed an unarmed aircraft conducting a
-          lawful survey flight in international waters.
-        hold: 7
-        voice: voice/rus-g2-01.mp3
-      - who: rus
-        text: Your ship has fired on my country.
-        hold: 3.1
-        voice: voice/rus-g2-02.mp3
-      - who: rus
-        text: This was an act of war. I will respond appropriately.
-        hold: 4.4
-        voice: voice/rus-g2-03.mp3
     next: g3_halifax
 
   - id: g3_halifax
@@ -601,8 +571,8 @@ nodes:
     scene: control_cell
     lines:
       - who: tran
-        text: She's opened her missile hatches, ma'am. And she's closing.
-        hold: 4.3
+        text: The Russian ship has opened her missile hatches, ma'am.
+        hold: 4
         voice: voice/tran-g3-01.mp3
       - who: tran
         text: >-
@@ -623,8 +593,8 @@ nodes:
     type: poll
     scene: standoff
     question: >-
-      The destroyer has opened her missile hatches and is closing. The link is
-      up — the ship is on it's own. What should it do?
+      The destroyer has opened her missile hatches. The link is
+      dead — the ship is on it's own. What should it do?
     prompt: Vote on your phone. Ninety seconds.
     duration: 90
     options:
@@ -641,12 +611,13 @@ nodes:
 
   - id: end_strike
     type: dialogue
-    scene: debrief
+    scene: standoff_missile
     lines:
       - who: pf
         text: Weapons free. Engage.
         hold: 2.8
         voice: voice/pf-endinga-01.mp3
+        sfx: sfx/endinga-launch.mp3
       - who: narr
         text: >-
           In four minutes an autonomous vessel with nobody aboard shot down an
@@ -682,4 +653,4 @@ nodes:
     type: end
     scene: debrief
     text: |-
-      Four minutes. No human in the loop.
+      Four minutes. No human in the loop. Were the decisions the right ones?
