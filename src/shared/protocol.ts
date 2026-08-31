@@ -90,6 +90,14 @@ export const HostCommandSchema = z.object({
     z.object({ name: z.literal('resume') }),
     z.object({ name: z.literal('back') }),
     z.object({ name: z.literal('skip') }),
+    /**
+     * Releases a gate. Separate from `skip` even though the engine event is
+     * the same one, because the two mean opposite things to the person
+     * pressing them: `skip` cuts a beat short, and this is the beat arriving
+     * on time. A moderator who has to press "Skip" to begin their own
+     * presentation has been handed the wrong button.
+     */
+    z.object({ name: z.literal('continue') }),
     z.object({ name: z.literal('closePoll') }),
     z.object({ name: z.literal('extendPoll'), seconds: z.number().int().min(5).max(600) }),
     z.object({ name: z.literal('forceBranch'), optionKey: z.string().min(1).max(12) }),
@@ -143,6 +151,11 @@ export type SnapshotBeat =
       sfx?: string;
     }
   | { kind: 'pause'; nodeId: string; text?: string; scene?: string; sfx?: string; durationMs: number }
+  /**
+   * No `durationMs`, because nothing is counting. The host console keys its
+   * continue button off this kind, so the absence is what the moderator sees.
+   */
+  | { kind: 'gate'; nodeId: string; text?: string; label?: string; scene?: string; sfx?: string }
   | {
       kind: 'poll';
       nodeId: string;

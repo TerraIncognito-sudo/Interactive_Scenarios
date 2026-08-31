@@ -72,6 +72,18 @@ import { wireVoiceInto, type WiredLine } from './wire.ts';
 import { portraitFilesOf, wireSpritesInto, type SpriteWiring } from './sprites.ts';
 import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
 import { retimeInto, type Retimed } from './timing.ts';
+import {
+  addListItem,
+  addNode,
+  moveListItem,
+  moveNode,
+  removeListItem,
+  removeNode,
+  renameNode,
+  retypeNode,
+  setNodeField,
+  type SpineWarning,
+} from './nodes.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
 
 /**
@@ -740,6 +752,138 @@ export async function saveScenarioSource(
   // The whole point of the tighter join: the recipes follow the story on the
   // same trip, so the board is never a save behind what the show says.
   return reconcileProject(name);
+}
+
+// ---------------------------------------------------------------------------
+// The Nodes tab
+// ---------------------------------------------------------------------------
+
+export type NodeWork = {
+  /** Handed back so the source tab can be refreshed without a second read. */
+  source: string;
+  rewired: { nodeId: string; from: string; to: string }[];
+  warnings: SpineWarning[];
+  /** What the edit did that no pointer records — see `NodeEdit.notes`. */
+  notes: string[];
+  reconciled: ReconcilePlan;
+};
+
+/**
+ * Runs one structural edit over `scenario.yaml` and writes it — but only if
+ * the result still loads.
+ *
+ * The check is the point. These edits are driven by dragging and by text
+ * boxes, so the cost of getting one wrong is a file the show cannot open,
+ * discovered by whoever next presses play. Refusing to write and saying why
+ * keeps a bad edit on the author's screen instead of on disk.
+ */
+async function editNodesIn(
+  name: string,
+  what: string,
+  edit: (source: string) => {
+    source: string;
+    rewired?: NodeWork['rewired'];
+    warnings?: SpineWarning[];
+    notes?: string[];
+  },
+): Promise<NodeWork> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to edit');
+  });
+
+  let result;
+  try {
+    result = edit(source);
+  } catch (error) {
+    throw new ProjectError(error instanceof Error ? error.message : String(error));
+  }
+
+  const check = parseScenarioSource(result.source);
+  if (!check.ok) throw new ProjectError(`${what} would have broken the scenario`, check.problems);
+
+  await writeAtomic(paths.scenario, result.source);
+  return {
+    source: result.source,
+    rewired: result.rewired ?? [],
+    warnings: result.warnings ?? [],
+    notes: result.notes ?? [],
+    reconciled: await reconcileProject(name),
+  };
+}
+
+export function moveScenarioNode(name: string, id: string, toIndex: number): Promise<NodeWork> {
+  return editNodesIn(name, 'Moving that node', (source) => moveNode(source, id, toIndex));
+}
+
+export function addScenarioNode(
+  name: string,
+  spec: { id: string; type: string; fields?: Record<string, string | number> },
+  afterId?: string,
+): Promise<NodeWork> {
+  return editNodesIn(name, 'Adding that node', (source) => addNode(source, spec, afterId));
+}
+
+export function removeScenarioNode(name: string, id: string): Promise<NodeWork> {
+  return editNodesIn(name, 'Removing that node', (source) => removeNode(source, id));
+}
+
+export function renameScenarioNode(name: string, from: string, to: string): Promise<NodeWork> {
+  return editNodesIn(name, 'Renaming that node', (source) => renameNode(source, from, to));
+}
+
+export function retypeScenarioNode(name: string, id: string, to: string): Promise<NodeWork> {
+  return editNodesIn(name, 'Changing that node type', (source) => retypeNode(source, id, to));
+}
+
+export function moveScenarioListItem(
+  name: string,
+  id: string,
+  path: (string | number)[],
+  fromIndex: number,
+  toIndex: number,
+): Promise<NodeWork> {
+  return editNodesIn(name, 'Moving that entry', (source) => ({
+    source: moveListItem(source, id, path, fromIndex, toIndex),
+  }));
+}
+
+export function setScenarioNodeField(
+  name: string,
+  id: string,
+  path: (string | number)[],
+  value: string | number | boolean | null,
+  after?: string,
+): Promise<NodeWork> {
+  return editNodesIn(name, 'That edit', (source) => ({
+    source: setNodeField(source, id, path, value, after),
+  }));
+}
+
+export function addScenarioListItem(
+  name: string,
+  id: string,
+  path: (string | number)[],
+  fields: Record<string, string | number>,
+): Promise<NodeWork> {
+  return editNodesIn(name, 'Adding that entry', (source) => ({
+    source: addListItem(source, id, path, fields),
+  }));
+}
+
+export function removeScenarioListItem(
+  name: string,
+  id: string,
+  path: (string | number)[],
+  index: number,
+): Promise<NodeWork> {
+  return editNodesIn(name, 'Removing that entry', (source) => ({
+    source: removeListItem(source, id, path, index),
+  }));
 }
 
 /**

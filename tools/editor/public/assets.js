@@ -126,6 +126,29 @@ export async function openProject(name) {
   }
 }
 
+/**
+ * Files sitting in `assets/<section>/` that the scenario does not ask for.
+ *
+ * The board calls these strays and offers to delete them. The Nodes tab offers
+ * them to point a shot at, which is the other way out of the same state: a
+ * picture somebody rendered and never wired up is not rubbish until they say it
+ * is, and reading its name off a folder listing and typing it back in is how a
+ * show ends up with a `background:` that is one character from a real file.
+ *
+ * Read off the overview the board already built rather than by asking disk a
+ * second time — `findStrays` is the one walk, and a picker that disagreed with
+ * it about what is lying around would disagree silently.
+ */
+export function spareAssets() {
+  const found = {};
+  for (const stray of state.data?.overview?.strays ?? []) {
+    if (!stray.published) continue;
+    (found[stray.section] ??= []).push(stray.file);
+  }
+  for (const list of Object.values(found)) list.sort();
+  return found;
+}
+
 /** Re-reads the board without touching the source pane. */
 export async function refreshAssets() {
   if (!state.name) return;

@@ -485,6 +485,33 @@ async function buildCast(
   return cast;
 }
 
+/**
+ * Every asset name the scenario already asks for, by section.
+ *
+ * What the Nodes tab offers when somebody clicks into a `background:` box. It
+ * is the same `assetReferencesOf` walk the board is built from and not a
+ * second one, which is the point: an editor that offered a name the board did
+ * not know about would be offering a file nothing will ever generate, and the
+ * author would find out in front of a projector.
+ *
+ * Reuse is the common case and the reason this exists at all — a scene is a
+ * place with several shots in it, so the second shot wants the still the first
+ * one used, exactly, character for character. Typing it again is how a show
+ * ends up with `images/jetty-wide.png` and `images/jetty_wide.png`, one of them
+ * on the board and one of them a 404.
+ */
+export function declaredAssets(scenario: Scenario): Record<AssetSection, string[]> {
+  const found = new Map<AssetSection, Set<string>>();
+  for (const ref of assetReferencesOf(scenario)) {
+    let names = found.get(ref.section);
+    if (!names) found.set(ref.section, (names = new Set()));
+    names.add(ref.file);
+  }
+  return Object.fromEntries(
+    ASSET_SECTIONS.map((section) => [section, [...(found.get(section) ?? [])].sort()]),
+  ) as Record<AssetSection, string[]>;
+}
+
 /** Every file under a folder, as posix-ish paths relative to it. */
 async function listFiles(root: string): Promise<string[]> {
   const found: string[] = [];

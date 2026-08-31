@@ -9,7 +9,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeScenario, simulate } from '../tools/editor/analysis.ts';
-import { parseScenarioSource } from '../src/scenario/load.ts';
+import { ASSET_SECTIONS, parseScenarioSource } from '../src/scenario/load.ts';
+import { declaredAssets } from '../tools/editor/sections.ts';
 
 const SOURCE = `
 id: memory
@@ -216,5 +217,96 @@ nodes:
 `);
     const result = simulate(cyclic, {});
     assert.match(result.error ?? '', /cycle/i);
+  });
+});
+
+/**
+ * What an asset box offers when somebody clicks into it.
+ *
+ * The rule this protects is the one the whole pipeline rests on: the editor
+ * and the player must agree on filenames. Reuse is the common case — a scene
+ * is a place and a place gets several shots, so the second shot wants the
+ * first one's still, character for character — and typing it again is how a
+ * show ends up with `images/jetty-wide.png` on the board and
+ * `images/jetty_wide.png` in the file the projector opens.
+ */
+describe('declaredAssets', () => {
+  const scenario = (() => {
+    const result = parseScenarioSource(`
+id: picker
+title: Picker
+start: a
+
+characters:
+  narr: { name: Narration }
+
+scenes:
+  dock:
+    background: images/jetty.png
+    music: music/cold-open.mp3
+
+nodes:
+  - id: a
+    type: dialogue
+    scene: dock
+    background: images/jetty-close.png
+    video: video/water.mp4
+    lines:
+      - { who: narr, text: One, voice: voice/narr-01.mp3, sfx: sfx/gull.mp3 }
+      - { who: narr, text: Two, voice: voice/narr-02.mp3 }
+    next: b
+
+  - id: b
+    type: pause
+    duration: 2
+    background: images/jetty.png
+    sfx: sfx/gull.mp3
+    next: done
+
+  - id: done
+    type: end
+    text: Done.
+`);
+    if (!result.ok) throw new Error(result.message);
+    return result.scenario;
+  })();
+
+  test('groups every declared name under the section that asked for it', () => {
+    const assets = declaredAssets(scenario);
+    assert.deepEqual(assets.images, ['images/jetty-close.png', 'images/jetty.png']);
+    assert.deepEqual(assets.video, ['video/water.mp4']);
+    assert.deepEqual(assets.voice, ['voice/narr-01.mp3', 'voice/narr-02.mp3']);
+    assert.deepEqual(assets.sfx, ['sfx/gull.mp3']);
+    assert.deepEqual(assets.music, ['music/cold-open.mp3']);
+  });
+
+  test('offers a reused name once, which is what makes it a picker', () => {
+    // `images/jetty.png` is the scene's still and node b's override, and
+    // `sfx/gull.mp3` fires on both a line and a pause. A list that repeated
+    // them would be a list nobody scrolls to the bottom of.
+    const assets = declaredAssets(scenario);
+    assert.equal(assets.images.filter((f) => f === 'images/jetty.png').length, 1);
+    assert.equal(assets.sfx.length, 1);
+  });
+
+  test('names every section, so a picker never has to guard against a hole', () => {
+    const assets = declaredAssets(scenario);
+    for (const section of ASSET_SECTIONS) {
+      assert.ok(Array.isArray(assets[section]), `${section} is missing`);
+    }
+  });
+
+  test('a section nothing asks for is empty rather than absent', () => {
+    const bare = parseScenarioSource(`
+id: bare
+title: Bare
+start: a
+nodes:
+  - id: a
+    type: end
+    text: Done.
+`);
+    if (!bare.ok) throw new Error(bare.message);
+    assert.deepEqual(declaredAssets(bare.scenario).ambience, []);
   });
 });

@@ -29,25 +29,16 @@
       <button id="save" type="button" class="primary">Save</button>
     </header>
 
-    <main class="split">
-      <!-- Source ------------------------------------------------------- -->
-      <section class="pane source-pane">
-        <div class="pane-head">
-          <h2>scenario.yaml</h2>
-          <span class="hint" id="source-path"></span>
-        </div>
-        <textarea
-          id="source"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="off"
-          wrap="off"
-          aria-label="Scenario source"
-        ></textarea>
-      </section>
-
-      <!-- Analysis ----------------------------------------------------- -->
-      <section class="pane">
+    <!--
+      One pane, every surface a tab.
+      The source used to own a fixed left half of the window, which cost every
+      other tab half the screen for a file that most sessions no longer touch —
+      and left the Nodes tab, which is where the story is edited now, as the
+      smaller of the two things in front of the author. It is still here, last
+      before the command centre, because a text editor over the raw file is the
+      escape hatch when a structured form cannot express something.
+    -->
+    <main class="pane">
         <div class="tabs" role="tablist">
           <!--
             First, because a show is people. Everything a part needs — the
@@ -61,6 +52,7 @@
           <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
           <button class="tab" data-tab="assets" role="tab" aria-selected="false">Assets</button>
           <button class="tab" data-tab="story" role="tab" aria-selected="false">Storyboard</button>
+          <button class="tab" data-tab="source" role="tab" aria-selected="false">scenario.yaml</button>
           <!--
             Last, and pushed to the far edge, because it is not a stage of the
             work — it is the answer to "am I done", which is a question you ask
@@ -91,6 +83,24 @@
 
           <div class="tab-panel" id="panel-nodes" hidden>
             <p class="overview" id="overview"></p>
+            <!--
+              The story is edited here now. Dragging a node moves its block in
+              scenario.yaml and splices the chain around it; a poll option or a
+              branch condition is a deliberate jump and is never rewritten by a
+              drag, only reported.
+            -->
+            <div class="nodes-bar" id="nodes-bar" hidden>
+              <span class="hint">
+                Drag a node by its grip to reorder — the chain follows. Every change is
+                written to <code>scenario.yaml</code> as you make it.
+              </span>
+              <span class="spacer"></span>
+              <label class="inline">
+                New
+                <select id="new-node-type" aria-label="Type of node to add"></select>
+              </label>
+              <button id="add-node" type="button" class="ghost">Add at end</button>
+            </div>
             <ul class="nodes" id="nodes"></ul>
           </div>
 
@@ -207,8 +217,22 @@
               aria-label="Storyboard"
             ></textarea>
           </div>
+
+          <div class="tab-panel fills" id="panel-source" hidden>
+            <div class="pane-head">
+              <h2>scenario.yaml</h2>
+              <span class="hint" id="source-path"></span>
+            </div>
+            <textarea
+              id="source"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              wrap="off"
+              aria-label="Scenario source"
+            ></textarea>
+          </div>
         </div>
-      </section>
     </main>
 
     <!-- The folder picker. Served by the editor process rather than the browser:

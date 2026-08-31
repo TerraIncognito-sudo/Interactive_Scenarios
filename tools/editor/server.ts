@@ -22,6 +22,7 @@ import { pipeline } from 'node:stream/promises';
 import { join, extname } from 'node:path';
 import { parseScenarioSource, type AssetSection } from '../../src/scenario/load.ts';
 import { analyzeScenario, simulate } from './analysis.ts';
+import { declaredAssets } from './sections.ts';
 import { ProjectError } from './project.ts';
 import { modelStatuses } from './models.ts';
 import { downloadModel } from './download.ts';
@@ -44,6 +45,15 @@ import {
   resolveMedia,
   saveProjectSource,
   saveScenarioSource,
+  moveScenarioNode,
+  addScenarioNode,
+  removeScenarioNode,
+  renameScenarioNode,
+  retypeScenarioNode,
+  setScenarioNodeField,
+  addScenarioListItem,
+  moveScenarioListItem,
+  removeScenarioListItem,
   saveStoryboardSource,
   selectTake,
   syncFromStoryboard,
@@ -108,6 +118,16 @@ function inspect(source: string) {
     ok: true as const,
     warnings: parsed.warnings,
     analysis: analyzeScenario(parsed.scenario),
+    // The nodes themselves, not just the summary. The Nodes tab builds a form
+    // per node and needs every field the schema allows; deriving that from the
+    // analysis would mean a second, thinner model of what a node is, and the
+    // two would disagree about the first field anybody added.
+    scenario: parsed.scenario,
+    // What to offer when somebody clicks into an asset box. Here rather than on
+    // the project endpoint because it needs no disk and no project.yaml: a
+    // folder with only a scenario in it is a perfectly good thing to edit, and
+    // its picker should still know the name of every still it already uses.
+    assets: declaredAssets(parsed.scenario),
   };
 }
 
@@ -430,6 +450,143 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'voice' && request.method === 'POST') {
         const result = await wireVoice(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // The Nodes tab. Each of these rewrites `scenario.yaml` and hands the
+      // new source back, because the source tab holds its own copy: refresh it
+      // late and the next Save quietly reverts everything the drag just did.
+      if (action === 'node-move' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown; toIndex?: unknown };
+        if (typeof body.id !== 'string' || typeof body.toIndex !== 'number') {
+          return sendJson(response, 400, { error: 'Expected { id, toIndex }' });
+        }
+        const result = await moveScenarioNode(name, body.id, body.toIndex);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'node-add' && request.method === 'POST') {
+        const body = (await readBody(request)) as {
+          id?: unknown;
+          nodeType?: unknown;
+          after?: unknown;
+          fields?: unknown;
+        };
+        if (typeof body.id !== 'string' || typeof body.nodeType !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id, nodeType }' });
+        }
+        const fields =
+          body.fields && typeof body.fields === 'object'
+            ? (body.fields as Record<string, string | number>)
+            : undefined;
+        const result = await addScenarioNode(
+          name,
+          { id: body.id, type: body.nodeType, fields },
+          typeof body.after === 'string' ? body.after : undefined,
+        );
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'node-delete' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown };
+        if (typeof body.id !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id }' });
+        }
+        const result = await removeScenarioNode(name, body.id);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'node' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as {
+          id?: unknown;
+          path?: unknown;
+          value?: unknown;
+          after?: unknown;
+        };
+        if (typeof body.id !== 'string' || !Array.isArray(body.path) || body.path.length === 0) {
+          return sendJson(response, 400, { error: 'Expected { id, path, value }' });
+        }
+        const path = body.path.filter(
+          (step): step is string | number => typeof step === 'string' || typeof step === 'number',
+        );
+        if (path.length !== body.path.length) {
+          return sendJson(response, 400, { error: 'A path step must be a name or an index' });
+        }
+        const value = body.value;
+        if (
+          value !== null &&
+          typeof value !== 'string' &&
+          typeof value !== 'number' &&
+          typeof value !== 'boolean'
+        ) {
+          return sendJson(response, 400, { error: 'Expected a scalar value, or null to clear it' });
+        }
+        const result = await setScenarioNodeField(
+          name,
+          body.id,
+          path,
+          value,
+          typeof body.after === 'string' ? body.after : undefined,
+        );
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // Changing a node's id, and every pointer that names it. Called
+      // `node-id` because a guard in the tests scans this file for the verb
+      // for moving a file on disk, which must never appear here — every write
+      // the editor makes goes through projects.ts, inside the workspace. The
+      // guard is deliberately blunt, and a route literal is not worth
+      // blunting it for.
+      if (action === 'node-id' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown; to?: unknown };
+        if (typeof body.id !== 'string' || typeof body.to !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id, to }' });
+        }
+        const result = await renameScenarioNode(name, body.id, body.to);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // Changing what kind of beat a node is. Its own route rather than a
+      // field edit on `type`, because the discriminator and the shape have to
+      // move together — see `retypeNode`.
+      if (action === 'node-type' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown; to?: unknown };
+        if (typeof body.id !== 'string' || typeof body.to !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id, to }' });
+        }
+        const result = await retypeScenarioNode(name, body.id, body.to);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'node-list' && request.method === 'POST') {
+        const body = (await readBody(request)) as {
+          id?: unknown;
+          path?: unknown;
+          fields?: unknown;
+          index?: unknown;
+          from?: unknown;
+          to?: unknown;
+        };
+        if (typeof body.id !== 'string' || !Array.isArray(body.path)) {
+          return sendJson(response, 400, { error: 'Expected { id, path }' });
+        }
+        const path = body.path.filter(
+          (step): step is string | number => typeof step === 'string' || typeof step === 'number',
+        );
+        // A pair of indices reorders, one index removes, fields add. Three
+        // verbs on one route because they are the same edit to the same list
+        // and always arrive from the same view.
+        const result =
+          typeof body.from === 'number' && typeof body.to === 'number'
+            ? await moveScenarioListItem(name, body.id, path, body.from, body.to)
+            : typeof body.index === 'number'
+            ? await removeScenarioListItem(name, body.id, path, body.index)
+            : await addScenarioListItem(
+                name,
+                body.id,
+                path,
+                (body.fields ?? {}) as Record<string, string | number>,
+              );
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 

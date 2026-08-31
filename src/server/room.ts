@@ -224,6 +224,7 @@ export class Room {
           ...beat.result,
         };
       case 'pause':
+      case 'gate':
       case 'poll':
       case 'end':
       case 'idle':
@@ -332,13 +333,25 @@ export class Room {
       return;
     }
 
-    if (this.state.phase !== 'playing' && this.state.phase !== 'revealing') return;
+    // Infinity rather than a stale number on every path that sets no timer.
+    // `pause` reads this to work out how much of the beat was left, so a
+    // deadline left over from the previous beat is not merely wrong but
+    // dangerous: pausing on a gate and resuming would hand `setTimeout` the
+    // remainder of some earlier line and release the gate on its own, which is
+    // the one thing a gate exists to make impossible.
+    if (this.state.phase !== 'playing' && this.state.phase !== 'revealing') {
+      this.beatDeadline = Infinity;
+      return;
+    }
 
     const beat = beatOf(this.scenario, this.state);
     // The reveal is here rather than special-cased above because it is an
     // ordinary timed beat: it ends, and the story goes on. Leaving it out is
     // what made the next line's hold run behind the bar chart.
-    if (beat.kind !== 'dialogue' && beat.kind !== 'pause' && beat.kind !== 'result') return;
+    if (beat.kind !== 'dialogue' && beat.kind !== 'pause' && beat.kind !== 'result') {
+      this.beatDeadline = Infinity;
+      return;
+    }
 
     this.beatDeadline = now + beat.durationMs;
     this.timer = setTimeout(() => this.guard(() => this.onBeatElapsed()), beat.durationMs);
@@ -495,6 +508,15 @@ export class Room {
         // Resume the remainder of the interrupted beat rather than restarting it.
         this.clearTimer();
         const remaining = this.pausedRemaining;
+        if (!Number.isFinite(remaining)) {
+          // Nothing was counting when the pause came in — a gate, most often.
+          // Hand it back to schedule() rather than inventing a deadline:
+          // setTimeout(Infinity) does not wait forever, it fires on the next
+          // tick, which would release a gate the moment anyone un-paused.
+          this.schedule();
+          this.broadcast();
+          return;
+        }
         this.beatDeadline = Date.now() + remaining;
         this.timer = setTimeout(() => this.onBeatElapsed(), remaining);
         this.broadcast();
@@ -509,6 +531,16 @@ export class Room {
         // Skipping an open poll closes it on the votes cast so far.
         if (this.state.phase === 'polling') this.closePoll();
         else this.apply({ type: 'advance' });
+        return;
+      }
+
+      case 'continue': {
+        // Only ever releases a gate. Guarded rather than aliased to `skip`
+        // because a stale console — one whose operator clicked as the beat
+        // changed under them — would otherwise cut a line off, and the whole
+        // point of a gate is that nothing moves until somebody means it to.
+        if (beatOf(this.scenario, this.state).kind !== 'gate') return;
+        this.apply({ type: 'advance' });
         return;
       }
 

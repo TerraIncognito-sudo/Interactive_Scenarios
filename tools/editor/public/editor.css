@@ -137,31 +137,17 @@ select {
   display: none;
 }
 
-/* ----------------------------------------------------------------- split -- */
+/* ------------------------------------------------------------------ pane -- */
 
-.split {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-@media (max-width: 60rem) {
-  .split {
-    grid-template-columns: 1fr;
-    grid-template-rows: 50% 50%;
-  }
-}
+/* One pane fills the window. There is no second column any more: the source
+   is a tab like everything else. */
 
 .pane {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.source-pane {
-  border-right: 1px solid var(--line);
 }
 
 .pane-head {
@@ -193,10 +179,11 @@ select {
   min-height: 0;
   width: 100%;
   resize: none;
-  border: none;
   outline: none;
-  padding: 1rem;
-  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg-sunken);
   color: var(--text);
   font-family: var(--mono);
   font-size: 13px;
@@ -204,6 +191,14 @@ select {
   tab-size: 2;
   white-space: pre;
   overflow: auto;
+}
+
+#source:focus {
+  border-color: var(--accent);
+}
+
+#panel-source .pane-head {
+  padding: 0 0 0.5rem;
 }
 
 /* ------------------------------------------------------------------ tabs -- */
@@ -238,8 +233,239 @@ select {
   padding: 1rem;
 }
 
-.tab-panel[hidden] {
+/* A panel that wants the height instead of flowing. The source textarea is
+   the case: one that grows with its file puts the end of the document in a
+   different place in every project, and the scrollbar on the wrong element.
+   The percentage resolves because `.tab-body` is a flex item with a settled
+   height. */
+.tab-panel.fills {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* After `.fills`, and repeated for it: the two selectors have equal weight,
+   so whichever is written last is the one that decides whether a hidden
+   panel is actually hidden. */
+.tab-panel[hidden],
+.tab-panel.fills[hidden] {
   display: none;
+}
+
+/* ------------------------------------------------------------ node edit -- */
+
+.nodes-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.nodes-bar[hidden] {
+  display: none;
+}
+
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+button.small {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: rgba(239, 90, 90, 0.5);
+  color: var(--bad);
+}
+
+/* The grip is the whole affordance for reordering, so it says so on hover
+   rather than relying on the row happening to look draggable. */
+.grip {
+  cursor: grab;
+  color: var(--text-faint);
+  letter-spacing: -2px;
+  user-select: none;
+}
+
+.node:active .grip {
+  cursor: grabbing;
+}
+
+.grip.small {
+  font-size: 0.75rem;
+}
+
+/* A line rather than a filled slot: the gap between two cards is where the
+   node is going, and colouring the card itself reads as "replace this one".
+   The same mark serves an entry inside a node, because it means the same
+   thing one level down. */
+.node.drop-above,
+.entry.drop-above {
+  box-shadow: 0 -3px 0 -1px var(--accent);
+}
+
+.node.drop-below,
+.entry.drop-below {
+  box-shadow: 0 3px 0 -1px var(--accent);
+}
+
+.node.open {
+  border-color: rgba(79, 195, 247, 0.35);
+}
+
+.node-fields,
+.node-list {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.node-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.nf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.nf.wide {
+  grid-column: 1 / -1;
+}
+
+.nf > span {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.nf input,
+.nf textarea,
+.nf select {
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  min-width: 0;
+}
+
+.nf textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.nf input:focus,
+.nf textarea:focus,
+.nf select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* A box backed by a datalist looks exactly like a free-text one, so nothing
+   says the names are there to be picked from — and an author who does not know
+   types the filename by hand, which is the mistake the list exists to prevent.
+   The chevron is the only thing that says "there is a list here". Drawn inline
+   rather than fetched: the editor serves three static files and a page that
+   went looking for a fourth would be a broken icon on somebody's machine. */
+.nf input.listed {
+  padding-right: 1.3rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.45rem center;
+  background-size: 0.55rem;
+}
+
+/* Chrome draws its own arrow for a datalist input on hover. Two arrows read as
+   a rendering fault, so ours gives way to the one the browser is about to
+   paint over it. */
+.nf input.listed::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+
+.nf input.listed:hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}
+
+.nf input.listed:hover {
+  background-image: none;
+}
+
+.node-list-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.node-list-head h4,
+.node-sets h4 {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+/* Each entry is a card inside a card. Sunken rather than raised, so a line
+   reads as living inside its node rather than as a sibling of it. */
+.entry {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.4rem 0.7rem;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+
+/* Only while the grip is held — see `entryProps`. An entry that was draggable
+   at rest would swallow text selection in its own boxes. */
+.entry[draggable='true'] {
+  cursor: grabbing;
+}
+
+.entry-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.entry-n {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.node-sets {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--line);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.4rem 0.7rem;
+}
+
+.node-sets h4,
+.node-sets .hint {
+  grid-column: 1 / -1;
 }
 
 /* -------------------------------------------------------------- problems -- */
