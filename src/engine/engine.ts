@@ -78,6 +78,12 @@ export type Beat =
       durationMs: number;
     }
   | { kind: 'pause'; nodeId: string; text?: string; scene?: string; sfx?: string; durationMs: number }
+  /**
+   * Carries no `durationMs`, and that absence is the whole design: the server
+   * schedules a beat by its duration, so a beat without one is a beat no clock
+   * ends. It leaves on an `advance` that only a person can send.
+   */
+  | { kind: 'gate'; nodeId: string; text?: string; label?: string; scene?: string; sfx?: string }
   | {
       kind: 'poll';
       nodeId: string;
@@ -173,6 +179,7 @@ function enterNode(scenario: Scenario, state: RunState, nodeId: string): RunStat
     switch (node.type) {
       case 'dialogue':
       case 'pause':
+      case 'gate':
         return { ...base, phase: 'playing', poll: undefined };
       case 'poll':
         return {
@@ -209,7 +216,10 @@ export function reduce(scenario: Scenario, state: RunState, event: EngineEvent):
       if (node.type === 'dialogue' && state.lineIndex < node.lines.length - 1) {
         return { ...state, lineIndex: state.lineIndex + 1, beat: state.beat + 1 };
       }
-      if (node.type === 'dialogue' || node.type === 'pause') {
+      // A gate leaves the same way a pause does. The difference is entirely in
+      // who sends the `advance`: nothing schedules one for a gate, so it can
+      // only ever arrive from the moderator's console.
+      if (node.type === 'dialogue' || node.type === 'pause' || node.type === 'gate') {
         return enterNode(scenario, state, node.next);
       }
       return state;
@@ -323,6 +333,15 @@ export function beatOf(scenario: Scenario, state: RunState): Beat {
         scene: node.scene,
         sfx: node.sfx,
         durationMs: Math.round(node.duration * 1000),
+      };
+    case 'gate':
+      return {
+        kind: 'gate',
+        nodeId: node.id,
+        text: node.text,
+        label: node.label,
+        scene: node.scene,
+        sfx: node.sfx,
       };
     case 'poll':
       return {

@@ -78,6 +78,8 @@ function previewOf(node: ScenarioNode): string {
       return node.when.map((w) => w.if).join('  ·  ');
     case 'pause':
       return node.text ?? `${node.duration}s hold`;
+    case 'gate':
+      return node.text ?? `waits for ${node.label ?? 'the moderator'}`;
     case 'end':
       return node.text ?? '';
   }
@@ -94,6 +96,13 @@ function secondsOf(node: ScenarioNode, scenario: Scenario): number {
     case 'branch':
     case 'end':
       return 0;
+    // A gate lasts exactly as long as the moderator lets it, which is not a
+    // number this can know. Zero rather than a guess: the running total is
+    // billed as "every node laid end to end", and padding it with an invented
+    // hold would make the one honest thing about it — that it is a lower
+    // bound — quietly false.
+    case 'gate':
+      return 0;
   }
 }
 
@@ -102,6 +111,8 @@ function exitsWithLabels(node: ScenarioNode): Exit[] {
     case 'dialogue':
     case 'pause':
       return [{ to: node.next, label: 'then' }];
+    case 'gate':
+      return [{ to: node.next, label: 'on continue' }];
     case 'poll':
       return node.options.map((option) => ({
         to: option.next,

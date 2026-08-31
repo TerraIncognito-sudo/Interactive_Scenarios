@@ -57,6 +57,13 @@
 
       <section class="controls">
         <button id="btn-start" class="primary wide">Start the show</button>
+        <!--
+          Only on screen while a gate is holding the show. It is the one
+          control that is not an override — every other button here changes
+          what the show was going to do anyway, and this one is the show doing
+          exactly what it was authored to do, at the moment the moderator says.
+        -->
+        <button id="btn-continue" class="primary wide gate" hidden>Continue</button>
         <div class="control-row">
           <button id="btn-back">Back</button>
           <button id="btn-pause">Pause</button>

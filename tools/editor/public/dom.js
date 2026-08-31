@@ -24,3 +24,19 @@ export function h(tag, props = {}, ...children) {
   }
   return node;
 }
+
+/**
+ * A labelled row: `in  → a, b`.
+ *
+ * Here rather than in either view because the Nodes tab and the simulator both
+ * draw one, and two copies of a three-line helper is how two views start
+ * disagreeing about their own gutter width.
+ */
+export function flowRow(key, ...content) {
+  return h(
+    'div',
+    { class: 'flow' },
+    h('span', { class: 'flow-key' }, key),
+    h('span', { class: 'flow-val' }, ...content),
+  );
+}

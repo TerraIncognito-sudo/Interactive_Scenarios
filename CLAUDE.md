@@ -440,6 +440,100 @@ hashed: two readings of one line landing on the same byte count is a coincidence
 ninety published files on every board build to rule it out is a cost paid every time.
 
 
+**A gate is a beat with no duration, and that absence is the whole design.**
+`schedule()` sets a timer from a beat's `durationMs`, so a beat that reports none is a beat
+no clock can end — it leaves on an `advance` that only the moderator's console sends. That
+is what makes a presentation possible: the room asks a question, somebody arrives late, and
+the title card stays up until a person says otherwise. Deliberately its own node type rather
+than a `pause` with the number left out, because an omitted number reads as a mistake and
+the failure it causes is a show sitting still in front of an audience while nobody knows a
+button is waiting. Two traps are pinned by tests. `beatDeadline` is `Infinity` on every path
+that schedules nothing — left stale, `pause` would compute a remainder from the *previous*
+beat and `resume` would release the gate on its own, which is the one thing a gate exists to
+prevent. And `continue` is a separate command from `skip` even though both reduce to
+`advance`: `skip` cuts a beat short, this is the beat arriving on time, and a moderator who
+has to press "Skip" to begin their own presentation has been handed the wrong button.
+
+**A node is a block of source, and a block moves whole.** `nodeBlocks` in
+`tools/editor/nodes.ts` carves the `nodes:` sequence into contiguous, non-overlapping spans —
+one per node, each running from its own leading comments to just before the next node's.
+Reordering is a permutation of those spans concatenated back together, so every byte inside a
+block survives: the comment above a beat, the hand-wrapped folded scalar, the blank line
+somebody left for breathing room. Nothing ever looks inside. A sequence entry's `range`
+cannot be used for this and neither can `doc.toString()` — the first runs past the entry into
+whatever follows (which deleted the dash off the next line and turned a list into a mapping),
+and the second reflows the entire file on the first click.
+
+**The spine is spliced, never recomputed.** Dragging a node rewrites at most three `next`
+pointers, and only where a pointer still names the node that followed it in the order it is
+being moved out of. A poll option, a branch condition, and a `next` that already skips ahead
+are all somebody deliberately jumping; recomputing every exit from list position would flatten
+a branching story the first time anyone dragged anything. What is left alone is *reported*
+rather than silently kept, because a drag that reroutes nothing and says nothing is
+indistinguishable from one that did not work. Renaming an id is never a field edit for the
+same reason: an id is the only value other lines depend on by name, so `renameNode` moves the
+id, every pointer at it and `start:` together or not at all.
+
+**A structural edit is refused unless the result still loads.** `editNodesIn` parses what it
+is about to write and throws with the problems instead of saving. These edits come from
+dragging and from text boxes, so the cost of one being wrong is a file the show cannot open,
+found by whoever next presses play. For the same reason a new node is born valid: the
+template in `addNode` supplies the structure each type's schema insists on — a dialogue's
+line, a poll's two options and default, a branch's condition and else — rather than trusting
+the caller, and a node added at the very bottom points at the show's ending rather than at
+itself, because self-reference also loads and is a beat that repeats forever in front of a
+room.
+
+**A node's type and its shape move together.** `type:` is the schema's discriminator, so
+writing it alone leaves a node carrying keys its new type rejects and a file that will not
+load — which is why retyping is `retypeNode` and not a field edit on a `type` box. Realising
+a beat should have been a gate rather than a one-line dialogue is ordinary authoring, and it
+used to mean rewriting the block by hand. Two rules make it survivable. Whatever the new type
+cannot hold is dropped and **reported**: an edit that quietly deletes a paragraph and says
+"saved" is the one people stop trusting an editor over, so the cost arrives in the status line
+and the client asks first when the cost is the node's content. And whatever the new type
+insists on is supplied, so the node is valid the moment it lands — a dropdown that answers
+four of its six choices with an error message is a dropdown nobody uses. What is never
+invented is a destination: a node that gains a `next` inherits its own old pointer first, then
+the beat below it, and a last ending with none of either is a refusal rather than a guess,
+because a self-reference also loads and is a beat that repeats forever in front of a room.
+`OWN_FIELDS` is the one list of what each type may hold, and a test compares it against the
+Zod schemas — a field added to one and not the other is caught there rather than by an author.
+The single case where words survive is a *single* line, both directions: five lines have no
+one sentence to become, and picking the first would discard four while looking like it worked.
+
+**A dropped field is a block, and indentation is what says how big.** `spanOfPair` used to
+end a removal at the newline after the pair's own range, which is right for a scalar and
+wrong for everything else: a block sequence's range runs past its last entry into whatever
+follows, so dropping a dialogue's `lines:` took the top of `next:` with it and left the story
+pointing nowhere. The same over-extension `itemSpans` exists to work around. Indentation is
+what actually delimits a block value in YAML, so the span is walked down from the key's own
+line — with a blank line belonging to nobody, so it neither ends the value nor is swallowed
+by it, and a dash written in the key's own column counted as part of the key, because that
+spelling is legal and reads that way.
+
+**A list entry moves whole, like a node one level up.** `moveListItem` is `reorderBlocks`
+against `itemSpans`, for the same reason: a line's `hold`, `voice` and `sfx` have to travel
+with its words. Reordering by retyping two boxes moves the text and leaves the timing and the
+clip behind on the wrong line — a re-record and a beat that cuts off mid-word, from an edit
+that looked like nothing. The spine is not involved at all, which is what makes this cheap:
+lines play in the order they are written, so nothing outside the node can notice. Poll options
+and branch conditions get it too, and there it is not cosmetic — options are the order phones
+show them in, and `when` is evaluation precedence, so dragging one above another is a real
+edit to how the story routes.
+
+**An asset box offers what the scenario already names.** Reuse is the common case, because a
+scene is a place and a place gets several shots — so the second shot wants the first one's
+still, character for character. Typed again it becomes `images/jetty-wide.png` on the board
+and `images/jetty_wide.png` in the file the projector opens, which is the rule about the
+editor and the player agreeing on filenames, failing quietly. `declaredAssets` is the same
+`assetReferencesOf` walk the board is built from and not a second one; what is on disk and
+unclaimed comes from the `strays` the overview already found, appended after, since a picture
+somebody rendered and never wired up is not rubbish until they say so and the board otherwise
+only offers to delete it. Offered as a **datalist**, never a `<select>`: an asset is routinely
+declared before it is made — that is what puts it on the board to be made — so a control that
+refused a new name would break the pipeline's own order of work.
+
 **A beat is the clip plus a gap, and the editor writes it.** Nothing on the server opens an
 audio file, so the two numbers only agree if somebody puts them in agreement — which meant
 reading a runtime off the board, doing the addition and typing it into `scenario.yaml`, eighty
@@ -553,6 +647,7 @@ the file the first time anyone touches a text box. A test guards this.
 | `tools/editor/workspace.ts` | Which folder holds the projects, and the server-side folder picker |
 | `tools/editor/project.ts` | Asset projects: `project.yaml` (author-owned) + `.ledger.json` (machine-owned) |
 | `tools/editor/sections.ts` | The status board — scenario, recipes, ledger and disk reconciled |
+| `tools/editor/nodes.ts` | Nodes as structure: reorder, add, remove, rename, retype, edit any field |
 | `tools/editor/reconcile.ts` | What the scenario owns on a recipe row, re-derived on every save |
 | `tools/editor/outstanding.ts` | The command centre — the board projected into one list of what is left |
 | `tools/editor/duration.ts` | How long a clip runs, from its header — the other half of the `hold` check |

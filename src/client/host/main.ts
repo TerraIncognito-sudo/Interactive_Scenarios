@@ -38,6 +38,11 @@ function describeBeat(snapshot: Snapshot): { text: string; meta: string } {
       };
     case 'pause':
       return { text: beat.text ?? 'A held beat.', meta: beat.nodeId };
+    case 'gate':
+      return {
+        text: beat.text ?? 'Held — waiting for you.',
+        meta: `${beat.nodeId} · nothing is counting down`,
+      };
     case 'poll':
       return { text: beat.question, meta: `${beat.nodeId} · voting open` };
     case 'result':
@@ -213,7 +218,15 @@ function render(snapshot: Snapshot): void {
         : 'Running';
   startButton.disabled = snapshot.phase === 'running' || snapshot.phase === 'finished';
 
-  el<HTMLButtonElement>('btn-pause').disabled = snapshot.phase !== 'running' || isPoll;
+  // The gate's own button, carrying the word the author chose for it. Shown
+  // rather than merely enabled: a moderator glancing down mid-sentence needs
+  // to find the one thing that moves the show on, not pick it out of a row.
+  const gate = snapshot.beatInfo.kind === 'gate' ? snapshot.beatInfo : undefined;
+  const continueButton = el<HTMLButtonElement>('btn-continue');
+  continueButton.hidden = !gate;
+  continueButton.textContent = gate?.label ?? 'Continue';
+
+  el<HTMLButtonElement>('btn-pause').disabled = snapshot.phase !== 'running' || isPoll || !!gate;
   el<HTMLButtonElement>('btn-back').disabled = !started;
   el<HTMLButtonElement>('btn-skip').disabled = !started || snapshot.phase === 'finished';
   el<HTMLButtonElement>('btn-extend').disabled = !isPoll;
@@ -257,6 +270,7 @@ const connection = new Connection({
 el('btn-start').addEventListener('click', () => {
   send({ name: latest?.phase === 'paused' ? 'resume' : 'start' });
 });
+el('btn-continue').addEventListener('click', () => send({ name: 'continue' }));
 el('btn-pause').addEventListener('click', () => send({ name: 'pause' }));
 el('btn-back').addEventListener('click', () => send({ name: 'back' }));
 el('btn-skip').addEventListener('click', () => send({ name: 'skip' }));
@@ -276,6 +290,13 @@ document.addEventListener('keydown', (event) => {
   switch (event.key) {
     case ' ':
       event.preventDefault();
+      // At a gate, space is what it is in every other presenter tool: the
+      // thing that moves you on. Pausing a beat that is already held would be
+      // a no-op the moderator has to think about mid-sentence.
+      if (latest?.beatInfo.kind === 'gate') {
+        send({ name: 'continue' });
+        break;
+      }
       send({ name: latest?.phase === 'paused' ? 'resume' : 'pause' });
       break;
     case 'ArrowRight':

@@ -7,12 +7,13 @@
  * here can drift from what the game server will do with the same file.
  */
 
-import { $, h } from './dom.js';
+import { $, h, flowRow } from './dom.js';
 import {
   initAssets,
   openProject,
   refreshAssets,
   setAnalysis,
+  spareAssets,
   setProjects,
   seedFromStoryboard,
   wireVoice,
@@ -24,6 +25,7 @@ import {
   stopModels,
 } from './assets.js';
 import { initPicker, openPicker } from './picker.js';
+import { initNodes, initNodesBar, renderNodes, describeWork } from './nodes.js';
 
 const state = {
   /** The open project. Null means nothing is open and Save has no target. */
@@ -230,7 +232,7 @@ function apply(result) {
     })),
   });
 
-  renderNodes(result.analysis);
+  renderNodes(result.analysis, result.scenario, result.assets);
   renderVars(result.analysis);
   renderChoices(result.analysis);
 }
@@ -248,79 +250,6 @@ function jumpTo(id) {
   // Re-trigger the animation on a repeat jump to the same node.
   void target.offsetWidth;
   target.classList.add('flash');
-}
-
-function flowRow(key, ...content) {
-  return h('div', { class: 'flow' }, h('span', { class: 'flow-key' }, key), h('span', { class: 'flow-val' }, ...content));
-}
-
-function renderNodes(analysis) {
-  const minutes = analysis.nodes.reduce((total, n) => total + n.seconds, 0) / 60;
-  $('overview').textContent =
-    `${analysis.counts.nodes} nodes · ${analysis.counts.polls} polls · ` +
-    `${analysis.counts.endings} endings · every node laid end to end ≈ ${Math.round(minutes)} min` +
-    (analysis.counts.unreachable > 0 ? ` · ${analysis.counts.unreachable} unreachable` : '');
-
-  $('nodes').replaceChildren(
-    ...analysis.nodes.map((node) => {
-      const classes = ['node'];
-      if (!node.reachable) classes.push('unreachable');
-      if (node.id === analysis.start) classes.push('start');
-
-      const flows = [];
-
-      if (node.enteredFrom.length > 0) {
-        flows.push(
-          flowRow(
-            'in',
-            node.enteredFrom.map((from, i) => [
-              i > 0 ? ', ' : '',
-              h('button', { class: 'jump', type: 'button', onclick: () => jumpTo(from) }, from),
-            ]),
-          ),
-        );
-      }
-
-      if (node.reads.length > 0) {
-        flows.push(flowRow('reads', node.reads.map((name) => h('code', {}, ` ${name} `))));
-      }
-
-      if (node.writes.length > 0) {
-        flows.push(
-          flowRow(
-            'writes',
-            node.writes.map((w) => h('code', {}, ` ${w.name} = ${w.value} `)),
-          ),
-        );
-      }
-
-      for (const exit of node.exits) {
-        flows.push(
-          flowRow(
-            'out',
-            `${exit.label} → `,
-            h('button', { class: 'jump', type: 'button', onclick: () => jumpTo(exit.to) }, exit.to),
-          ),
-        );
-      }
-
-      return h(
-        'li',
-        { class: classes.join(' '), 'data-node': node.id },
-        h(
-          'div',
-          { class: 'node-head' },
-          h('span', { class: 'node-id' }, node.id),
-          h('span', { class: `type type-${node.type}` }, node.type),
-          node.id === analysis.start && h('span', { class: 'type' }, 'start'),
-          !node.reachable && h('span', { class: 'type' }, 'unreachable'),
-          node.seconds > 0 && h('span', { class: 'node-secs' }, `${node.seconds}s`),
-        ),
-        node.preview && h('p', { class: 'node-preview' }, node.preview),
-        flows.length > 0 && h('div', { class: 'flows' }, ...flows),
-      );
-    }),
-  );
 }
 
 function renderVars(analysis) {
@@ -753,7 +682,52 @@ $('models-stop').addEventListener('click', () => {
   })();
 });
 
+/**
+ * What has to happen after the Nodes tab rewrites the file.
+ *
+ * The source pane holds its own copy, so it is refreshed *before* anything is
+ * reported: refresh it late and the re-analysis overwrites the status line,
+ * and skipping it entirely means the next Save writes the stale copy back and
+ * silently undoes the edit.
+ */
+async function afterNodeEdit(data) {
+  $('source').value = data.source;
+  state.saved = data.source;
+  markClean();
+  await analyze();
+  await refreshAssets();
+
+  // The recipes first, because a re-derived clip is the consequence somebody
+  // most needs to hear about; the rewiring is appended so one edit reads as
+  // one sentence rather than two competing status lines.
+  reportReconcile(data.reconciled);
+  const moved = describeWork(data);
+  if (moved.length > 0) {
+    const warned = (data.warnings ?? []).length > 0;
+    setStatus(warned ? 'warn' : 'ok', moved.join(' · '));
+  }
+}
+
 async function boot() {
+  initNodes({
+    projectName: () => state.projectName,
+    analysis: () => state.analysis,
+    setStatus,
+    showProblems: (message, problems) => {
+      const box = $('problems');
+      box.hidden = false;
+      box.className = 'problems';
+      box.replaceChildren(h('strong', {}, message), h('ul', {}, problems.map((p) => h('li', {}, p))));
+    },
+    jumpTo,
+    // What is on disk but unclaimed, so an asset box can offer a picture
+    // somebody made and never wired up. Read from the board rather than walked
+    // again here — see `spareAssets`.
+    spareAssets,
+    afterEdit: afterNodeEdit,
+  });
+  initNodesBar();
+
   initAssets({
     onStatus: (kind, text) => setStatus(kind, text),
     // So a section that has given its rows away can hand somebody to where

@@ -181,6 +181,39 @@ export const PauseNodeSchema = z.strictObject({
   next: NodeIdSchema,
 });
 
+/**
+ * A beat that ends when a person says so, rather than when a clock does.
+ *
+ * Every other node has a duration the server can work out in advance, and that
+ * is what lets forty phones and a projector stay on the same beat with nobody
+ * holding a stopwatch. A presentation is the case that breaks the assumption:
+ * the room asks a question, somebody arrives late, the moderator wants the
+ * title card up until they have finished talking over it. The only honest
+ * duration for that beat is "until told", so the server never clocks one —
+ * `schedule()` finds no deadline to set and the show waits.
+ *
+ * Deliberately its own type rather than a `pause` with the duration left out.
+ * An omitted number reads as a mistake at a glance, and the failure it would
+ * cause is the worst kind this codebase has: a show sitting still in front of
+ * an audience while nobody in the room knows a button is waiting to be pressed.
+ * Asking for a gate is a thing an author does on purpose.
+ */
+export const GateNodeSchema = z.strictObject({
+  ...BaseNode,
+  type: z.literal('gate'),
+  /** Held on the projector while it waits. */
+  text: z.string().min(1).optional(),
+  /**
+   * What the moderator's button says. "Continue" is right for a beat in the
+   * middle and wrong for the one at the top, where the whole point is that
+   * nothing has started yet and the word is "Start".
+   */
+  label: z.string().min(1).max(40).optional(),
+  /** Same reasoning as a pause's: a held beat may be a sound and nothing else. */
+  sfx: AssetPathSchema.optional(),
+  next: NodeIdSchema,
+});
+
 export const EndNodeSchema = z.strictObject({
   ...BaseNode,
   type: z.literal('end'),
@@ -192,6 +225,7 @@ export const ScenarioNodeSchema = z.discriminatedUnion('type', [
   PollNodeSchema,
   BranchNodeSchema,
   PauseNodeSchema,
+  GateNodeSchema,
   EndNodeSchema,
 ]);
 
@@ -223,16 +257,17 @@ export type PollOption = z.infer<typeof PollOptionSchema>;
 export type PollNode = z.infer<typeof PollNodeSchema>;
 export type BranchNode = z.infer<typeof BranchNodeSchema>;
 export type PauseNode = z.infer<typeof PauseNodeSchema>;
+export type GateNode = z.infer<typeof GateNodeSchema>;
 export type EndNode = z.infer<typeof EndNodeSchema>;
 export type ScenarioNode = z.infer<typeof ScenarioNodeSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type Scenario = z.infer<typeof ScenarioSchema>;
 
 /** Nodes the engine can leave by following a single `next` pointer. */
-export type LinearNode = DialogueNode | PauseNode;
+export type LinearNode = DialogueNode | PauseNode | GateNode;
 
 export function isLinear(node: ScenarioNode): node is LinearNode {
-  return node.type === 'dialogue' || node.type === 'pause';
+  return node.type === 'dialogue' || node.type === 'pause' || node.type === 'gate';
 }
 
 /**

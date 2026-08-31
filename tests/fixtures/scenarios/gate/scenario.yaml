@@ -1,0 +1,40 @@
+# A show that stops dead in the middle and waits for a person.
+#
+# Everything around the gate is deliberately fast — hundredths of a second —
+# so that "nothing happened" in these tests means the gate held rather than
+# that the test did not wait long enough.
+id: gate
+title: Gate
+start: open
+
+settings:
+  minLineSeconds: 0.05
+  maxLineSeconds: 0.2
+  wordsPerMinute: 600
+
+scenes:
+  room: {}
+
+nodes:
+  - id: open
+    type: dialogue
+    scene: room
+    lines:
+      - { text: Before, hold: 0.05 }
+    next: held
+
+  - id: held
+    type: gate
+    text: Waiting for the moderator.
+    label: Start
+    next: after
+
+  - id: after
+    type: dialogue
+    lines:
+      - { text: After, hold: 0.05 }
+    next: done
+
+  - id: done
+    type: end
+    text: Done.

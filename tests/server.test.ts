@@ -1150,3 +1150,85 @@ describe('the result of a poll is a beat, not an animation', () => {
     host.close();
   });
 });
+
+describe('a gate holds the show until a person releases it', () => {
+  /**
+   * Starts the gate fixture and parks on the held beat, handing back the beat
+   * number it stopped on.
+   *
+   * The number is the point. `next` scans messages already received, so
+   * "no snapshot on another kind of beat" would match the dialogue snapshot
+   * from *before* the gate and pass whatever the server did. `beat` is
+   * monotonic, so a later one is the only honest evidence the show moved.
+   */
+  async function runToGate() {
+    const room = await createRoom('gate');
+    const host = await joinHost(room.code, room.hostToken);
+    host.send({ type: 'command', command: { name: 'start' } });
+    const held = await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo?.kind === 'gate');
+    return { host, beat: held.beat };
+  }
+
+  test('no clock releases it', async () => {
+    const { host, beat } = await runToGate();
+
+    // Every hold in the fixture is 0.05s, so 600ms is a dozen beats' worth of
+    // opportunity for something to schedule its way past the gate. The
+    // assertion is that the wait *times out*: a later beat number means the
+    // show moved with nobody having asked it to.
+    await assert.rejects(() =>
+      host.next<Snapshot>((m) => isSnapshot(m) && m.beat > beat, 600),
+    );
+
+    host.close();
+  });
+
+  test('pausing and resuming does not release it', async () => {
+    const { host, beat } = await runToGate();
+
+    host.send({ type: 'command', command: { name: 'pause' } });
+    host.send({ type: 'command', command: { name: 'resume' } });
+
+    // The bug this pins: `resume` restored the previous beat's leftover
+    // deadline, so un-pausing at a gate handed setTimeout a stale number and
+    // released it on its own — the one thing a gate exists to prevent.
+    // Neither pause nor resume bumps the beat, so any later one is the show
+    // having walked forward on its own.
+    await assert.rejects(() =>
+      host.next<Snapshot>((m) => isSnapshot(m) && m.beat > beat, 600),
+    );
+
+    host.close();
+  });
+
+  test('continue releases it, and carries the show to the next beat', async () => {
+    const { host, beat } = await runToGate();
+
+    host.send({ type: 'command', command: { name: 'continue' } });
+
+    const next = await host.next<Snapshot>((m) => isSnapshot(m) && m.beat > beat, 4000);
+    assert.notEqual(next.beatInfo.kind, 'gate', 'continue is what moves a gate on');
+
+    host.close();
+  });
+
+  test('continue does nothing when no gate is holding', async () => {
+    const room = await createRoom('gate');
+    const host = await joinHost(room.code, room.hostToken);
+
+    // In the lobby: nothing is held, so there is nothing to release. A
+    // `continue` that could start a show would be a second start button with
+    // none of its confirmation.
+    host.send({ type: 'command', command: { name: 'continue' } });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const sessions = await fetch(`${baseUrl}/api/rooms`, {
+      headers: { 'x-admin-password': TEST_PASSWORD },
+    });
+    const body = (await sessions.json()) as SessionListResponse;
+    const session = body.sessions.find((s) => s.code === room.code);
+    assert.equal(session?.phase, 'lobby', 'continue must not be able to start a show');
+
+    host.close();
+  });
+});

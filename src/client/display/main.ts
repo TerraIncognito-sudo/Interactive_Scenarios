@@ -715,7 +715,12 @@ function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
       applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       renderDialogue(beat);
       return;
+    // A gate looks exactly like a pause from the front of the room, and that
+    // is deliberate: the audience is not supposed to know whether a held beat
+    // is waiting on a clock or on a person. Everything that differs about it
+    // — the button, the absent countdown — belongs on the moderator's console.
     case 'pause':
+    case 'gate':
       applyScene(beat.scene ?? lastSceneId, beat.nodeId);
       show('pause');
       el('pause-text').textContent = beat.text ?? '';

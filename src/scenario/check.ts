@@ -27,6 +27,7 @@ export function exitsOf(node: ScenarioNode): string[] {
   switch (node.type) {
     case 'dialogue':
     case 'pause':
+    case 'gate':
       return [node.next];
     case 'poll':
       return node.options.map((o) => o.next);
