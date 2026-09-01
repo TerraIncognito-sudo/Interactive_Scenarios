@@ -69,7 +69,12 @@ import {
   type ReferenceClip,
 } from './generate.ts';
 import { wireVoiceInto, type WiredLine } from './wire.ts';
-import { portraitFilesOf, wireSpritesInto, type SpriteWiring } from './sprites.ts';
+import {
+  portraitFilesOf,
+  removeSpriteFrom,
+  wireSpritesInto,
+  type SpriteWiring,
+} from './sprites.ts';
 import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
 import { retimeInto, type Retimed } from './timing.ts';
 import {
@@ -1795,6 +1800,64 @@ export async function wireSprites(name: string): Promise<SpriteWork> {
   await writeAtomic(paths.scenario, wired);
   const seeded = await syncFromStoryboard(name);
   return { ...report, seeded, reconciled: await reconcileProject(name) };
+}
+
+export type PortraitRemoval = {
+  character: string;
+  /** The file the scenario has stopped asking for. */
+  file: string;
+  /** Characters still showing it, so nothing claims the bytes are now spare. */
+  sharedWith: string[];
+  reconciled: ReconcilePlan;
+};
+
+/**
+ * Takes a character's face out of the show.
+ *
+ * `scenario.yaml`, like wiring one in: the scenario is the manifest, and a
+ * portrait is in the show exactly as long as a `sprite:` names it. Doing this
+ * by hand is what the editor exists to make unnecessary — and the hand edit has
+ * a real trap in it, since a `sprite:` inside a flow map is a different
+ * deletion from one on its own line.
+ *
+ * What it deliberately does *not* do is touch the picture. The published PNG
+ * and every take stay where they are and become strays, which the board already
+ * finds, prices and offers to discard; the recipe row holding the prompt
+ * becomes an orphan, which `pruneOrphans` already offers to remove. Both are
+ * separate decisions made in front of their own list, because a remove button
+ * that also deleted an afternoon of rendering is one nobody dares press.
+ */
+export async function removePortrait(name: string, character: string): Promise<PortraitRemoval> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+
+  const source = await readFile(paths.scenario, 'utf8').catch(() => {
+    throw new ProjectError('This project has no scenario.yaml to edit');
+  });
+  const parsed = parseScenarioSource(source);
+  if (!parsed.ok) throw new ProjectError(parsed.message, parsed.problems);
+
+  let removal;
+  try {
+    removal = removeSpriteFrom(source, parsed.scenario, character);
+  } catch (error) {
+    throw new ProjectError(error instanceof Error ? error.message : String(error));
+  }
+
+  const check = parseScenarioSource(removal.source);
+  if (!check.ok) {
+    throw new ProjectError('Removing that portrait would have broken the scenario', check.problems);
+  }
+
+  await writeAtomic(paths.scenario, removal.source);
+  return {
+    character,
+    file: removal.file,
+    sharedWith: removal.sharedWith,
+    reconciled: await reconcileProject(name),
+  };
 }
 
 /**

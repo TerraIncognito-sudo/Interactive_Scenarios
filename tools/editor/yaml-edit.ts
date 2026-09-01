@@ -12,7 +12,7 @@
  * they do not touch does not move.
  */
 
-import { isMap, isScalar, type Pair, type YAMLMap } from 'yaml';
+import { isScalar, type Pair, type YAMLMap } from 'yaml';
 
 /** A slice of the source to replace. Omit `end` for a pure insertion. */
 export type Edit = { at: number; end?: number; text: string };
@@ -95,13 +95,76 @@ export function insertionAfter(
   return { at: newline === -1 ? source.length : newline, flow: false };
 }
 
-/** The whole line or lines a map entry occupies, newline included. */
-export function spanOfEntry(source: string, pair: Pair): Edit | undefined {
-  const start = (isScalar(pair.key) || isMap(pair.key) ? pair.key.range?.[0] : undefined) ?? -1;
-  const valueEnd = (pair.value as { range?: [number, number, number] } | null)?.range?.[1];
-  if (start < 0 || valueEnd === undefined) return undefined;
+/**
+ * The source a map entry occupies, for removal.
+ *
+ * The one home for this measurement. Both spellings a real scenario uses have a
+ * way of going wrong, and both went wrong before this was one function.
+ *
+ * A **flow** map needs the comma eaten as well, or `{ a: 1, b: 2 }` with `b`
+ * removed becomes `{ a: 1, }` — legal YAML, and a diff that looks like damage.
+ *
+ * A **block** entry whose value spans lines cannot be measured by its own
+ * range: a block sequence's range runs past its last item and into whatever
+ * follows, so slicing by it deletes the top of the next key. That is the same
+ * over-extension `itemSpans` exists to work around, and it is why removing a
+ * dialogue's `lines:` would have taken `next:` with it and left the story
+ * pointing nowhere. Indentation is what actually delimits a block value in
+ * YAML, so that is what this measures, walking down from the key's own line.
+ */
+export function spanOfEntry(source: string, parent: YAMLMap, pair: Pair): Edit | undefined {
+  const key = pair.key as { range?: [number, number, number] } | undefined;
+  const value = pair.value as { range?: [number, number, number] } | undefined;
+  const from = key?.range?.[0];
+  const to = value?.range?.[1] ?? key?.range?.[1];
+  if (from === undefined || to === undefined) return undefined;
 
-  const at = source.lastIndexOf('\n', start - 1) + 1;
-  const newline = source.indexOf('\n', valueEnd);
-  return { at, end: newline === -1 ? source.length : newline + 1, text: '' };
+  if (parent.flow) {
+    let at = from;
+    let end = to;
+    // Prefer eating a preceding comma; fall back to a following one for the
+    // first entry, which has none before it.
+    const before = source.lastIndexOf(',', from);
+    if (before > (parent.range?.[0] ?? 0)) at = before;
+    else {
+      const next = source.indexOf(',', to);
+      const brace = source.indexOf('}', to);
+      if (next !== -1 && (brace === -1 || next < brace)) end = next + 1;
+    }
+    return { at, end, text: '' };
+  }
+
+  const lineStart = source.lastIndexOf('\n', from - 1) + 1;
+  const column = from - lineStart;
+  const firstEnd = source.indexOf('\n', from);
+  let end = firstEnd === -1 ? source.length : firstEnd + 1;
+  const columnOf = (at: number) => /^[ \t]*/.exec(source.slice(at))![0].length;
+
+  // A block sequence may write its dashes in the key's own column — legal YAML,
+  // and it reads as belonging to the key rather than following it. Everything
+  // else has to be indented past the key to be part of its value.
+  let floor = column;
+  for (let probe = end; probe < source.length; ) {
+    const lineEnd = source.indexOf('\n', probe);
+    const line = source.slice(probe, lineEnd === -1 ? source.length : lineEnd);
+    if (line.trim() !== '') {
+      if (columnOf(probe) === column && /^-(\s|$)/.test(line.trimStart())) floor = column - 1;
+      break;
+    }
+    probe = lineEnd === -1 ? source.length : lineEnd + 1;
+  }
+
+  for (let cursor = end; cursor < source.length; ) {
+    const lineEnd = source.indexOf('\n', cursor);
+    const stop = lineEnd === -1 ? source.length : lineEnd + 1;
+    const line = source.slice(cursor, lineEnd === -1 ? source.length : lineEnd);
+    // A blank line belongs to nobody: it neither ends the value nor gets
+    // swallowed by it, so only a line proved to be inside moves the end.
+    if (line.trim() !== '') {
+      if (columnOf(cursor) <= floor) break;
+      end = stop;
+    }
+    cursor = stop;
+  }
+  return { at: lineStart, end, text: '' };
 }

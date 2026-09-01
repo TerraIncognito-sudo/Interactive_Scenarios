@@ -32,9 +32,12 @@
 import { isMap, isScalar, parseDocument } from 'yaml';
 import { assetReferencesOf } from '../../src/scenario/load.ts';
 import type { Scenario } from '../../src/scenario/schema.ts';
-import { applyEdits, indentOf, insertionAfter, pairFor, type Edit } from './yaml-edit.ts';
+import { applyEdits, indentOf, insertionAfter, pairFor, spanOfEntry, type Edit } from './yaml-edit.ts';
 import { filed } from './storyboard.ts';
 import { isPortrait } from './size.ts';
+
+/** Something the author asked for that the file cannot answer. */
+export class SpriteError extends Error {}
 
 export type WiredSprite = { character: string; sheet: string; file: string };
 
@@ -206,4 +209,72 @@ function repointed(current: string, character: string): string | undefined {
   if (base !== `${character}-sheet`) return undefined;
   if (!FLAT_FORMATS.has(extension!.toLowerCase())) return undefined;
   return `${dir}${base}.png`;
+}
+
+export type SpriteRemoval = {
+  source: string;
+  /** The file they were showing, which the scenario no longer asks anyone for. */
+  file: string;
+  /**
+   * Other characters still pointing at the same file.
+   *
+   * Two parts can share a portrait — an understudy, a character who appears
+   * under two ids — and then removing one leaves the picture in the show. The
+   * difference matters to the only question worth asking afterwards, which is
+   * whether the bytes on disk are now spare, so it is answered here rather than
+   * guessed at by whoever reports it.
+   */
+  sharedWith: string[];
+};
+
+/**
+ * Takes a character's face out of the show.
+ *
+ * The inverse of `wireSpritesInto`, and it exists for the same reason that one
+ * does: the scenario is the manifest, so a portrait is in the show exactly as
+ * long as a `sprite:` names it. Removing the key is the whole edit — and doing
+ * it by hand is the thing this editor is supposed to make unnecessary, because
+ * a `sprite:` written across a flow map (`{ name: Rook, sprite: … }`) is a
+ * different deletion from one on its own line, and getting that wrong is a
+ * scenario that will not load.
+ *
+ * **It never touches the file.** Dropping the declaration leaves the published
+ * PNG and every take exactly where they are, which is deliberate: they become
+ * strays, `findStrays` reports them with what they cost, and discarding them is
+ * a second decision made in front of that list. A remove button that also
+ * deleted an afternoon of rendering would be one nobody dares press.
+ *
+ * Pure, so the caller can check the result loads before writing over the
+ * author's file.
+ */
+export function removeSpriteFrom(
+  source: string,
+  scenario: Scenario,
+  character: string,
+): SpriteRemoval {
+  const file = scenario.characters[character]?.sprite;
+  if (!scenario.characters[character]) {
+    throw new SpriteError(`there is no character called "${character}"`);
+  }
+  if (!file) {
+    throw new SpriteError(`"${character}" has no portrait declared to remove`);
+  }
+
+  const doc = parseDocument(source);
+  const characters = doc.get('characters');
+  const entry = isMap(characters) ? characters.get(character, true) : undefined;
+  const pair = isMap(entry) ? pairFor(entry, 'sprite') : undefined;
+  if (!isMap(entry) || !pair) {
+    throw new SpriteError(`cannot find "${character}"'s sprite: in the file to remove it`);
+  }
+
+  const span = spanOfEntry(source, entry, pair);
+  if (!span) throw new SpriteError(`cannot tell where "${character}"'s sprite: ends`);
+
+  const sharedWith = Object.entries(scenario.characters)
+    .filter(([id, other]) => id !== character && other.sprite === file)
+    .map(([id]) => id)
+    .sort();
+
+  return { source: applyEdits(source, [span]), file, sharedWith };
 }

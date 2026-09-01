@@ -259,6 +259,36 @@ export async function wireSprites() {
 }
 
 /**
+ * Takes a character's face out of the show.
+ *
+ * The inverse of the button above, and `scenario.yaml` for the same reason: a
+ * portrait is in the show exactly as long as a `sprite:` names it.
+ *
+ * It leaves the picture on disk on purpose, so what it reports is where that
+ * picture went — off the board and into the stray list, priced, with a button
+ * of its own. Saying only "removed" would leave somebody hunting for a file
+ * the board had stopped mentioning.
+ */
+export async function removePortrait(character) {
+  const result = await runOnScenario('portrait-remove', { character });
+  if (!result) return null;
+
+  const shared = result.sharedWith ?? [];
+  const stray = (result.project?.overview?.strays ?? []).find((s) => s.file === result.file);
+  const parts = [`${result.character} shows no face now`];
+  if (shared.length > 0) {
+    parts.push(`${result.file} is still ${shared.join(' and ')}'s portrait`);
+  } else if (stray) {
+    const mb = stray.bytes ? ` (${(stray.bytes / 1_000_000).toFixed(1)} MB)` : '';
+    parts.push(`${result.file}${mb} is now a stray — Assets can discard it`);
+  } else {
+    parts.push(`${result.file} is no longer referenced`);
+  }
+  state.onStatus('ok', parts.join(' · '));
+  return result;
+}
+
+/**
  * Files every asset under a folder named for its media type.
  *
  * Writes to `scenario.yaml` like the other two, because the folder is part of
@@ -2228,7 +2258,46 @@ function portraitSheet(group, portrait, context) {
     );
   }
 
-  return h('div', { class: 'sheet-body' }, assetRow(portrait, false));
+  return h(
+    'div',
+    { class: 'sheet-body' },
+    assetRow(portrait, false),
+    h(
+      'div',
+      { class: 'sheet-actions' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ghost danger',
+          // Confirmed because it is a change to what the room sees, not to the
+          // board: the face stops sliding in when this person speaks, and the
+          // row it is being pressed on disappears with it.
+          onclick: () => {
+            const ok = confirm(
+              `Stop showing a face for ${group.name}?
+
+` +
+                `${portrait.file} stays on disk — it becomes a stray the Assets tab ` +
+                `can discard, and its prompt becomes an orphan you can prune. ` +
+                `Neither happens here.`,
+            );
+            if (ok) void removePortrait(group.id);
+          },
+        },
+        'Remove portrait',
+      ),
+      h(
+        'p',
+        { class: 'hint' },
+        'Takes the sprite: out of the scenario. The file and its takes stay where they ',
+        'are — but ',
+        h('strong', {}, 'Give speakers a portrait'),
+        ' would declare it again, because that button reads the storyboard rather than ',
+        'remembering this.',
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------

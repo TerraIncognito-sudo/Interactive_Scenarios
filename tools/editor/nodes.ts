@@ -27,8 +27,16 @@
  * is reported instead — see `SpineWarning`.
  */
 
-import { parseDocument, isMap, isSeq, isScalar, stringify, type YAMLMap } from 'yaml';
-import { applyEdits, indentOf, insertionAfter, insertionFor, pairFor, type Edit } from './yaml-edit.ts';
+import { parseDocument, isMap, isSeq, isScalar, stringify, type Pair, type YAMLMap } from 'yaml';
+import {
+  applyEdits,
+  indentOf,
+  insertionAfter,
+  insertionFor,
+  pairFor,
+  spanOfEntry,
+  type Edit,
+} from './yaml-edit.ts';
 
 /** Node types the engine leaves by a single `next`. Mirrors `isLinear`. */
 const LINEAR = new Set(['dialogue', 'pause', 'gate']);
@@ -328,75 +336,16 @@ export function setNodeField(
 }
 
 /**
- * The source a pair occupies, for removal.
+ * The source a pair occupies, or a thrown error naming what could not be found.
  *
- * A flow map needs the comma eaten as well, or `{ a: 1, b: 2 }` with `b`
- * removed becomes `{ a: 1, }` — legal YAML, and a diff that looks like damage.
+ * The measuring lives in `yaml-edit.ts` with the rest of the offset arithmetic —
+ * a second copy would eventually disagree with the first about where a key ends,
+ * and the disagreement would be a half-deleted field.
  */
 function spanOfPair(source: string, parent: YAMLMap, pair: { key?: unknown; value?: unknown }): Edit {
-  const key = pair.key as { range?: [number, number, number] } | undefined;
-  const value = pair.value as { range?: [number, number, number] } | undefined;
-  const from = key?.range?.[0];
-  const to = value?.range?.[1] ?? key?.range?.[1];
-  if (from === undefined || to === undefined) {
-    throw new NodeEditError('cannot locate that field in the source');
-  }
-
-  if (parent.flow) {
-    let at = from;
-    let end = to;
-    // Prefer eating a preceding comma; fall back to a following one for the
-    // first entry, which has none before it.
-    const before = source.lastIndexOf(',', from);
-    if (before > (parent.range?.[0] ?? 0)) at = before;
-    else {
-      const next = source.indexOf(',', to);
-      const brace = source.indexOf('}', to);
-      if (next !== -1 && (brace === -1 || next < brace)) end = next + 1;
-    }
-    return { at, end, text: '' };
-  }
-
-  // A key whose value is a block — a `lines:` list, a `set:` map, a folded
-  // scalar — occupies many lines, and the pair's own range cannot be trusted to
-  // say how many: a block sequence's range runs past its last entry and into
-  // whatever follows, the same over-extension `itemSpans` exists to work
-  // around. Slicing by it would delete the top of the next field. Indentation
-  // is what actually delimits a block value in YAML, so that is what this
-  // measures, walking down from the key's own line.
-  const lineStart = source.lastIndexOf('\n', from - 1) + 1;
-  const column = from - lineStart;
-  const firstEnd = source.indexOf('\n', from);
-  let end = firstEnd === -1 ? source.length : firstEnd + 1;
-  const columnOf = (at: number) => /^[ \t]*/.exec(source.slice(at))![0].length;
-
-  // A block sequence may write its dashes in the key's own column — legal YAML,
-  // and it reads as belonging to the key rather than following it. Everything
-  // else has to be indented past the key to be part of its value.
-  let floor = column;
-  for (let probe = end; probe < source.length; ) {
-    const lineEnd = source.indexOf('\n', probe);
-    const line = source.slice(probe, lineEnd === -1 ? source.length : lineEnd);
-    if (line.trim() !== '') {
-      if (columnOf(probe) === column && /^-(\s|$)/.test(line.trimStart())) floor = column - 1;
-      break;
-    }
-    probe = lineEnd === -1 ? source.length : lineEnd + 1;
-  }
-
-  for (let cursor = end; cursor < source.length; ) {
-    const lineEnd = source.indexOf('\n', cursor);
-    const stop = lineEnd === -1 ? source.length : lineEnd + 1;
-    const line = source.slice(cursor, lineEnd === -1 ? source.length : lineEnd);
-    // A blank line belongs to nobody: it neither ends the value nor gets
-    // swallowed by it, so only a line proved to be inside moves the end.
-    if (line.trim() !== '') {
-      if (columnOf(cursor) <= floor) break;
-      end = stop;
-    }
-    cursor = stop;
-  }
-  return { at: lineStart, end, text: '' };
+  const span = spanOfEntry(source, parent, pair as Pair);
+  if (!span) throw new NodeEditError('cannot locate that field in the source');
+  return span;
 }
 
 // ---------------------------------------------------------------------------

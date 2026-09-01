@@ -1257,6 +1257,13 @@ textarea.prompt:focus {
   margin: 0.6rem 0;
 }
 
+/* A note about what a button will and will not do belongs under it, not
+   beside it competing with the next button for the same row. */
+.sheet-actions .hint {
+  flex: 1 0 100%;
+  margin: 0.1rem 0 0;
+}
+
 /* Where a section's rows went, said in the section they left. */
 .section-moved {
   margin: 0.4rem 0 0.2rem;

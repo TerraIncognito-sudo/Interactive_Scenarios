@@ -41,6 +41,7 @@ import {
   recordReference,
   sortAssets,
   wireSprites,
+  removePortrait,
   openProject,
   resolveMedia,
   saveProjectSource,
@@ -445,6 +446,19 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'sprites' && request.method === 'POST') {
         const result = await wireSprites(name);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // The inverse of `sprites`, and a route of its own rather than a field
+      // edit: a `sprite:` written inside a flow map is a different deletion
+      // from one on its own line, and the author should not have to know which
+      // theirs is.
+      if (action === 'portrait-remove' && request.method === 'POST') {
+        const body = (await readBody(request)) as { character?: unknown };
+        if (typeof body.character !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { character }' });
+        }
+        const result = await removePortrait(name, body.character);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
       }
 

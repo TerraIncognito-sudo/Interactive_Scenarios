@@ -502,15 +502,33 @@ Zod schemas — a field added to one and not the other is caught there rather th
 The single case where words survive is a *single* line, both directions: five lines have no
 one sentence to become, and picking the first would discard four while looking like it worked.
 
-**A dropped field is a block, and indentation is what says how big.** `spanOfPair` used to
-end a removal at the newline after the pair's own range, which is right for a scalar and
-wrong for everything else: a block sequence's range runs past its last entry into whatever
-follows, so dropping a dialogue's `lines:` took the top of `next:` with it and left the story
-pointing nowhere. The same over-extension `itemSpans` exists to work around. Indentation is
-what actually delimits a block value in YAML, so the span is walked down from the key's own
-line — with a blank line belonging to nobody, so it neither ends the value nor is swallowed
-by it, and a dash written in the key's own column counted as part of the key, because that
-spelling is legal and reads that way.
+**A dropped field is a block, and indentation is what says how big.** Removal used to end at
+the newline after the pair's own range, which is right for a scalar and wrong for everything
+else: a block sequence's range runs past its last entry into whatever follows, so dropping a
+dialogue's `lines:` took the top of `next:` with it and left the story pointing nowhere. The
+same over-extension `itemSpans` exists to work around. Indentation is what actually delimits
+a block value in YAML, so the span is walked down from the key's own line — with a blank line
+belonging to nobody, so it neither ends the value nor is swallowed by it, and a dash written
+in the key's own column counted as part of the key, because that spelling is legal and reads
+that way. `spanOfEntry` in `yaml-edit.ts` is the one home for it, and it takes the parent map
+because the *other* spelling has its own trap: removing a key from a flow map has to eat a
+comma too, or `{ name: Rook, sprite: … }` becomes `{ name: Rook, }`. Both failures are one
+function's to get right, or the copy that did not know about flow maps would be the one
+somebody's character was written in.
+
+**A portrait is removed by un-declaring it, and the bytes are a separate decision.**
+A face is in the show exactly as long as a `sprite:` names it, so `removeSpriteFrom` drops the
+key and stops — the published PNG and its takes stay exactly where they are. That is not
+laziness: they become strays, which `findStrays` already prices and `discardStrays` already
+deletes in front of a list, and the recipe row holding the prompt becomes an orphan for
+`pruneOrphans`. A remove button that also threw away an afternoon of rendering is one nobody
+dares press, and the author who wanted the face out of one scene would have lost the picture.
+What it reports is where the file *went*, not merely that it left — a board that stops
+mentioning a file is otherwise indistinguishable from one that deleted it. Two characters can
+share a portrait, so `sharedWith` is computed rather than assumed: calling a file spare while
+the projector still opens it is the one wrong answer here. And re-declaring is
+`wireSprites`, unchanged — removal keeps no memory of itself, because a hidden list of
+"portraits the author said no to" is state nobody can see and nobody can clear.
 
 **A list entry moves whole, like a node one level up.** `moveListItem` is `reorderBlocks`
 against `itemSpans`, for the same reason: a line's `hold`, `voice` and `sfx` have to travel

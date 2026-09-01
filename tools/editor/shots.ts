@@ -314,7 +314,7 @@ export function migrateShotsInto(
         continue;
       }
       const pair = pairFor(scenesMap, id);
-      const span = pair ? spanOfEntry(source, pair) : undefined;
+      const span = pair ? spanOfEntry(source, scenesMap, pair) : undefined;
       if (!span) continue;
       edits.push(span);
       folded.push({ scene: id, into, nodes });
