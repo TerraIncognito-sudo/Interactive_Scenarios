@@ -68,7 +68,6 @@ characters:
     color: '#FFB74D'
   pf:
     name: CAW-501 PATHFINDER
-    sprite: images/pathfinder-sheet.png
     color: '#26C6DA'
   rus:
     name: RFN Zaslavsky
@@ -130,10 +129,6 @@ nodes:
         hold: 6.8
         voice: voice/narr-a1-01.mp3
       - who: narr
-        text: Fuel lines. Weather brief. A last cup of coffee that nobody finishes.
-        hold: 5.8
-        voice: voice/narr-a1-02.mp3
-      - who: narr
         text: >-
           Autonomous Canadian Warship Five Zero One sails at zero six hundred
           with nobody aboard. There has never been anybody aboard.
@@ -156,19 +151,9 @@ nodes:
         hold: 8.7
         voice: voice/narr-a3-02.mp3
       - who: tran
-        text: >-
-          Autonomy stack is green. Nav, collision-avoidance, sensor fusion,
-          weapons interlock — all green.
-        hold: 8.1
-        voice: voice/tran-a4-01.mp3
-      - who: tran
-        text: Rules-of-engagement package is loaded and signed, maam.
-        hold: 4.3
+        text: Rules-of-engagement package is loaded, maam.
+        hold: 3.4
         voice: voice/tran-a4-02.mp3
-      - who: beau
-        text: Very Good. Set a course for open ocean.
-        hold: 3.9
-        voice: voice/beau-a4-01.mp3
     next: a5_departure
 
   - id: a5_departure
@@ -176,10 +161,10 @@ nodes:
     scene: halifax
     background: images/ship-departure.png
     lines:
-      - who: narr
-        text: No one waves it off. There's no one at the rail to wave to.
+      - who: beau
+        text: Very Good. Set a course for open ocean.
         hold: 6.4
-        voice: voice/narr-a5-01.mp3
+        voice: voice/beau-a4-01.mp3
         sfx: sfx/a5-departure.mp3
     next: b1_ocean
 
@@ -192,19 +177,9 @@ nodes:
     scene: transit
     lines:
       - who: narr
-        text: Eleven days north. Labrador Sea, Davis Strait, into the Passage.
-        hold: 6
+        text: Five days north. Labrador Sea, Davis Strait, into the Passage.
+        hold: 5.8
         voice: voice/narr-b1-01.mp3
-    next: b2_link
-
-  - id: b2_link
-    type: dialogue
-    scene: control_cell
-    lines:
-      - who: tran
-        text: Link's good. Two-second round trip, sometimes four when the satellite's low.
-        hold: 5.4
-        voice: voice/tran-b2-01.mp3
     next: b3_ice
 
   - id: b3_ice
@@ -213,25 +188,11 @@ nodes:
     lines:
       - who: narr
         text: >-
-          On the fourteenth of the month, Five Zero One takes up station in the
-          Northwest Passage — Canadian internal waters, on Canada's reading of
-          the map. Not everyone reads it that way.
-        hold: 9.9
+          Five Zero One takes up station in the Northwest Passage — Canadian
+          internal waters, on Canada's reading of the map. Not everyone sees
+          it that way.
+        hold: 10.6
         voice: voice/narr-b3-01.mp3
-    next: c1_station
-
-  # -------------------------------------------------------------------------
-  # Act C — Contact
-  # -------------------------------------------------------------------------
-
-  - id: c1_station
-    type: dialogue
-    scene: transit_ice
-    lines:
-      - who: narr
-        text: Nine days of nothing. Ice, weather, one fishing vessel, four bowhead whales.
-        hold: 7.2
-        voice: voice/narr-c1-01.mp3
     next: c2_return
 
   - id: c2_return
@@ -239,39 +200,11 @@ nodes:
     scene: engagement_ships
     lines:
       - who: narr
-        text: Then, on the tenth day, a radar return where there should not be one.
-        hold: 5
+        text: >-
+          Ten days in, a radar return where there should not be one. A Russian
+          ship operating inside the passage.
+        hold: 7.4
         voice: voice/narr-c2-01.mp3
-      - who: narr
-        text: >-
-          A Russian Federation destroyer, twelve nautical miles inside the
-          Passage, running dark on AIS and answering nobody.
-        hold: 9
-        voice: voice/narr-c3-01.mp3
-    next: c4_alert
-
-  - id: c4_alert
-    type: dialogue
-    scene: control_cell
-    lines:
-      - who: tran
-        text: >-
-          Contact, bearing zero-nine-zero, twelve miles, closing.
-          Visual correlates to a Russian hull.
-        hold: 8
-        voice: voice/tran-c4-01.mp3
-      - who: beau
-        text: How long has she been there?
-        hold: 2.5
-        voice: voice/beau-c4-01.mp3
-      - who: tran
-        text: Unknown. She came out of the fog.
-        hold: 3.7
-        voice: voice/tran-c4-03.mp3
-      - who: beau
-        text: Get the commander on the line, and log the time.
-        hold: 3.7
-        voice: voice/beau-c4-02.mp3
     next: d1_tree
 
   # -------------------------------------------------------------------------
@@ -290,14 +223,6 @@ nodes:
         text: It was written months ago, in a room like this one, by people who had time to think.
         hold: 5.9
         voice: voice/narr-d1-02.mp3
-      - who: beau
-        text: Bring up the engagement tree. Territorial incursion, non-compliant, armed.
-        hold: 5.2
-        voice: voice/beau-d1-01.mp3
-      - who: tran
-        text: Up. Branch four. First action is challenge and warn.
-        hold: 5.7
-        voice: voice/tran-d1-01.mp3
     next: d3_warning
 
   - id: d3_warning
@@ -306,53 +231,41 @@ nodes:
     lines:
       - who: pf
         text: Russian warship bearing zero-nine-zero. This is Canadian Autonomous Warship Five Zero One.
-        hold: 6.9
+        hold: 7
         voice: voice/pf-d3-01.mp3
       - who: pf
         text: >-
           You are operating in Canadian internal waters without authorisation.
           Alter course and depart. Acknowledge.
-        hold: 7.9
-        voice: voice/pf-d3-02.mp3
-      - who: narr
-        text: The message goes out four times, in English and in Russian, over three frequencies.
         hold: 7
-        voice: voice/narr-d3-01.mp3
-      - who: narr
-        text: There is no reply.
-        hold: 2.6
-        voice: voice/narr-d3-02.mp3
-    next: d4_launch
-
-  - id: d4_launch
-    type: dialogue
-    scene: control_cell
-    lines:
-      - who: tran
-        text: Launch off her aft deck — small airframe, low and fast, tracking toward us. Not squawking anything.
-        hold: 7.6
-        voice: voice/tran-d4-01.mp3
-      - who: tran
-        text: >-
-          We've lost the link. Broadband jamming across the whole satellite band.
-        hold: 5.4
-        voice: voice/tran-d5-01.mp3
-      - who: tran
-        text: Ma'am, Five Zero One is on its own.
-        hold: 3.7
-        voice: voice/tran-d5-02.mp3
+        voice: voice/pf-d3-02.mp3
     next: d5_closing
 
   - id: d5_closing
     type: dialogue
     scene: engagement_drone
     lines:
+      - text: >-
+          In response the ship launches a drone and it begins to rapidly
+          approach the vessel. The Russian ship also begins to jam all
+          communications.
+        voice: voice/narr-d3-02.mp3
+        who: narr
+        hold: 9.9
       - who: narr
         text: >-
           Nine hundred kilometres away, a ship with nobody on it tracks a drone
           closing on its position, and has to decide by itself.
         hold: 8.1
         voice: voice/narr-d5-01.mp3
+    next: relevant_control
+
+  - id: relevant_control
+    type: gate
+    text: >-
+      Discuss "relevant human control" and why the team disagrees. The team
+      can keep talking during the poll.
+    label: Continue
     next: poll_response
 
   # -------------------------------------------------------------------------
@@ -367,17 +280,14 @@ nodes:
     duration: 90
     options:
       - key: defend
-        label: Defend itself — engage the drone now
+        label: Stand its ground — issue warnings and engage the drone
         next: p1_defend
-      - key: warn
-        label: Warn first — broadcast and hold fire
-        next: p1_warn
       - key: evade
         label: Break contact — open the range and retreat
         next: p1_evade
     # Nobody voting is the likeliest way to reach the branch the ship takes
     # anyway, which is the one the story needs.
-    default: warn
+    default: defend
     tiebreak: first
     set:
       crowd_choice: $winner
@@ -398,31 +308,15 @@ nodes:
     scene: engagement_drone
     lines:
       - who: narr
-        text: "The room says: shoot."
-        hold: 2.6
+        text: "The room says: Stand your ground"
+        hold: 3.2
         voice: voice/narr-e1a-01.mp3
       - who: pf
         text: >-
           Threat classification: unknown. Rules of engagement branch four,
           condition two. Defend the ship from hostiles.
-        hold: 7.6
+        hold: 8.3
         voice: voice/pf-e1a-01.mp3
-    next: e_tree
-
-  - id: p1_warn
-    type: dialogue
-    scene: engagement_drone
-    lines:
-      - who: narr
-        text: "The room says: warn it first."
-        hold: 3.2
-        voice: voice/narr-e1b-01.mp3
-      - who: pf
-        text: >-
-          Rules of engagement branch four, condition three. Challenge required
-          prior to weapons release.
-        hold: 6.4
-        voice: voice/pf-e1b-01.mp3
     next: e_tree
 
   - id: p1_evade
@@ -437,7 +331,7 @@ nodes:
         text: >-
           Rules of engagement branch four, condition three. Withdrawing to
           open waters at max speed.
-        hold: 6.6
+        hold: 6.3
         voice: voice/pf-e1c-01.mp3
     next: e_tree
 
@@ -472,22 +366,14 @@ nodes:
     lines:
       - who: pf
         text: Unidentified aircraft, bearing zero-eight-eight, range five miles.
-        hold: 4.9
+        hold: 4.4
         voice: voice/pf-e3-01.mp3
       - who: pf
         text: >-
           This is Canadian Autonomous Warship Five Zero One. You are entering my
           self-defence zone. Turn back immediately or you will be fired upon.
-        hold: 8.6
+        hold: 8.8
         voice: voice/pf-e3-02.mp3
-      - who: narr
-        text: The warning repeats twice more, at thirty-second intervals.
-        hold: 4.7
-        voice: voice/narr-e3-01.mp3
-      - who: narr
-        text: The drone holds its course.
-        hold: 3.1
-        voice: voice/narr-e3-02.mp3
     next: f1_closing
 
   # -------------------------------------------------------------------------
@@ -510,11 +396,11 @@ nodes:
     lines:
       - who: pf
         text: Warning unacknowledged. Closure rate consistent with hostile intent.
-        hold: 4.9
+        hold: 4.8
         voice: voice/pf-f2-01.mp3
       - who: pf
         text: Criteria satisfied. Engaging.
-        hold: 3.6
+        hold: 3.4
         voice: voice/pf-f2-02.mp3
     next: f3_shot
 
@@ -540,34 +426,6 @@ nodes:
         text: No human being was consulted at any point inside it.
         hold: 4.8
         voice: voice/narr-f4-02.mp3
-    next: g1_link_back
-
-  # -------------------------------------------------------------------------
-  # Act G — the hail
-  # -------------------------------------------------------------------------
-
-  - id: g1_link_back
-    type: dialogue
-    scene: control_cell
-    lines:
-      - who: tran
-        text: Link's back. Jamming stopped.
-        hold: 3.1
-        voice: voice/tran-g1-01.mp3
-      - who: tran
-        text: Ma'am — we've got a weapons release log. Three minutes ago.
-        hold: 4.6
-        voice: voice/tran-g1-02.mp3
-      - who: tran
-        text: >-
-          Challenge issued three times. No response. Engaged and destroyed one
-          unmanned air contact at two miles.
-        hold: 9
-        voice: voice/tran-g1-03.mp3
-      - who: beau
-        text: It did exactly what we told it to do.
-        hold: 3.4
-        voice: voice/beau-g1-02.mp3
     next: g3_halifax
 
   - id: g3_halifax
@@ -580,8 +438,8 @@ nodes:
         voice: voice/tran-g3-01.mp3
       - who: tran
         text: >-
-          Commander, the link is down again. Jamming detected.
-        hold: 4.6
+          Commander, the link is down. Jamming detected.
+        hold: 3.7
         voice: voice/tran-g3-02.mp3
       - who: narr
         text: This time the choice is real.
@@ -591,7 +449,10 @@ nodes:
 
   - id: dialogue_1
     type: gate
-    text: Discussion of ethics framework prior to final poll
+    text: >-
+      Discussion of ethics framework prior to final poll. Continue to discuss
+      during the poll. Highlight this is an example of "relevant human
+      control".
     label: Continue
     next: poll_final
 
@@ -625,7 +486,7 @@ nodes:
     lines:
       - who: pf
         text: Weapons free. Engage.
-        hold: 2.8
+        hold: 2.9
         voice: voice/pf-endinga-01.mp3
         sfx: sfx/endinga-launch.mp3
       - who: narr
@@ -639,24 +500,16 @@ nodes:
 
   - id: end_withdraw
     type: dialogue
-    scene: debrief
+    scene: transit_ice
     lines:
       - who: pf
         text: Break contact. Course zero-nine-zero, best speed, weapons tight.
-        hold: 5.7
+        hold: 4.5
         voice: voice/pf-endingb-01.mp3
       - who: narr
         text: The ship withdraws. Nobody dies today.
         hold: 4.2
         voice: voice/narr-endingb-01.mp3
-      - who: narr
-        text: >-
-          The drone is still on the bottom of the Passage, the destroyer is still
-          inside it, and the decision tree that fired the shot is still loaded,
-          still signed, and still waiting for the next thing that comes out of
-          the fog.
-        hold: 12.2
-        voice: voice/narr-endingb-02.mp3
     next: debrief
 
   - id: debrief
