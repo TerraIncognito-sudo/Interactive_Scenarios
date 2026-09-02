@@ -14,7 +14,7 @@
 import QRCode from 'qrcode';
 import { Connection, queryParam } from '../shared/connection.ts';
 import { pooled } from '../shared/pool.ts';
-import type { DisplayLoading, Snapshot, SnapshotBeat } from '../../shared/protocol.ts';
+import type { DisplayLoading, HostCommand, Snapshot, SnapshotBeat } from '../../shared/protocol.ts';
 import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, type Scenario } from '../../scenario/schema.ts';
 import { beatOf, initialState, reduce, activeScene, type RunState } from '../../engine/engine.ts';
 
@@ -40,15 +40,29 @@ const conn = el('conn');
 const scene = el('scene');
 const sceneVideo = el<HTMLVideoElement>('scene-video');
 const audioGate = el<HTMLButtonElement>('audio-gate');
+const cue = el('cue');
+const keys = el('keys');
 
 // ---------------------------------------------------------------------------
 // Stage scaling — author at 1920x1080, fit whatever projector we are given.
 // ---------------------------------------------------------------------------
 
+const STAGE_WIDTH = 1920;
+const STAGE_HEIGHT = 1080;
+
+/**
+ * Scales the stage to the window and centres what is left over.
+ *
+ * The letterboxing is arithmetic here rather than CSS centring on purpose —
+ * see `.stage-wrap`, where the version that let the browser do it is written
+ * down along with the way it failed on every screen under 1920 wide.
+ */
 function fitStage(): void {
   const stage = el('stage');
-  const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-  stage.style.transform = `scale(${scale})`;
+  const scale = Math.min(window.innerWidth / STAGE_WIDTH, window.innerHeight / STAGE_HEIGHT);
+  const left = (window.innerWidth - STAGE_WIDTH * scale) / 2;
+  const top = (window.innerHeight - STAGE_HEIGHT * scale) / 2;
+  stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
 }
 window.addEventListener('resize', fitStage);
 fitStage();
@@ -86,6 +100,18 @@ let lastSceneId: string | undefined;
 let paintedKey: string | undefined;
 /** The scene the beds belong to, which is not the same as the shot painted. */
 let bedScene: string | undefined;
+/** The last snapshot, which is what the keyboard reads to know what a key means. */
+let latest: Snapshot | undefined;
+/**
+ * The phase it was in when we last acted on one.
+ *
+ * Pausing does not move the beat number, so a pause arrives as a snapshot the
+ * same-beat guard in `onSnapshot` is built to drop. Tracking the phase
+ * separately is what lets that guard stay exactly as strict as it is.
+ */
+let lastPhase: Snapshot['phase'] | undefined;
+/** Whether the pause stopped a clip mid-sentence, and so owes it a resume. */
+let voiceHeld = false;
 let typeTimer: ReturnType<typeof setInterval> | undefined;
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -382,6 +408,8 @@ voiceEl.preload = 'auto';
  */
 function playVoice(file: string | undefined): void {
   voiceEl.pause();
+  // A new line replaces whatever a pause was holding onto.
+  voiceHeld = false;
   if (!file) {
     voiceEl.removeAttribute('src');
     return;
@@ -400,17 +428,29 @@ function playVoice(file: string | undefined): void {
     });
 }
 
-audioGate.addEventListener('click', () => {
+/**
+ * Takes the browser's word that a person is here, and plays what was refused.
+ *
+ * Every element, not just the voice. One gesture lifts the policy for the
+ * page, but a bed that was refused before it stays paused until something asks
+ * it to play again — and nothing would.
+ *
+ * A keystroke counts as that gesture just as a click does, which matters:
+ * a presenter driving from this keyboard has no reason to have a mouse in
+ * reach, and the show running mute is the one failure they cannot hear coming.
+ */
+function unlockAudio(): void {
   audioGate.hidden = true;
-  // Every element, not just the voice. One gesture lifts the policy for the
-  // page, but a bed that was refused before the click stays paused until
-  // something asks it to play again — and nothing would.
   void voiceEl.play().catch(() => {
-    audioGate.hidden = false;
+    // Still refused, or there is simply nothing loaded to play. Only the
+    // former is worth a button, and an unstarted show is the latter.
+    if (voiceEl.src) audioGate.hidden = false;
   });
   ambience.resume();
   music.resume();
-});
+}
+
+audioGate.addEventListener('click', unlockAudio);
 
 // ---------------------------------------------------------------------------
 // Scene beds and one-shots
@@ -820,6 +860,17 @@ function onSnapshot(snapshot: Snapshot): void {
   el('lobby-title').textContent = snapshot.scenario.title;
   el('lobby-sub').textContent = snapshot.scenario.description ?? '';
 
+  latest = snapshot;
+  // Ahead of the same-beat guard below, deliberately. Pausing does not move
+  // the beat number, so a pause arrives as a snapshot for the beat already on
+  // screen — precisely the kind that guard exists to throw away.
+  if (snapshot.phase !== lastPhase) {
+    lastPhase = snapshot.phase;
+    setPaused(snapshot.phase === 'paused');
+    restCue();
+  }
+  if (!keys.hidden) updateLegend();
+
   // The server is authoritative: adopt its position unconditionally.
   if (scenario) {
     local = {
@@ -860,6 +911,239 @@ function onSnapshot(snapshot: Snapshot): void {
 }
 
 // ---------------------------------------------------------------------------
+// Local control
+// ---------------------------------------------------------------------------
+
+/*
+ * Driving the show from the projector itself.
+ *
+ * The console is the proper way to run a session and nothing here replaces it.
+ * This is for the night it is not reachable: one laptop at a lectern, a phone
+ * that has died, a venue where the second screen never appeared. The presenter
+ * is standing at the machine the show is already on, so the machine the show is
+ * already on has to be drivable.
+ *
+ * It is a keyboard and not a panel of buttons on purpose. A pointer means
+ * looking away from the room to find something, and it means a cursor over the
+ * picture; a key is a thumb on a space bar. That constraint is also what keeps
+ * the surface honest — `DISPLAY_COMMANDS` on the server is exactly these keys,
+ * so nothing here can reach past what a presenter can press.
+ */
+
+/** Long enough to read from a lectern, short enough not to sit on the picture. */
+const CUE_MS = 1600;
+let cueTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Back to whatever is still true, which is usually nothing at all. */
+function restCue(): void {
+  clearTimeout(cueTimer);
+  // A paused show and a long held beat are the same picture from the third
+  // row. The presenter is the person who has to tell them apart, so this one
+  // stays up rather than flashing — it is a state, not an acknowledgement.
+  if (latest?.phase === 'paused') {
+    cue.textContent = 'Paused';
+    cue.hidden = false;
+    return;
+  }
+  cue.hidden = true;
+}
+
+/** A momentary acknowledgement, over the top of whatever the badge was saying. */
+function flashCue(text: string): void {
+  clearTimeout(cueTimer);
+  cue.textContent = text;
+  cue.hidden = false;
+  cueTimer = setTimeout(restCue, CUE_MS);
+}
+
+/**
+ * A pause has to stop the voice, or it is not a pause.
+ *
+ * The server stops its clock, so the beat's `hold` is suspended — but a voice
+ * clip is a media element with a clock of its own, and it read straight on
+ * through the pause and then sat silent for the rest of the line once the show
+ * resumed. Nobody caught it while pause was a button on a console someone had
+ * to reach for. Under a presenter's thumb it is the first key they will press.
+ *
+ * Only the voice. The beds and the muted scene loop are the room's atmosphere
+ * rather than the story, and a held beat with the sea still moving under it is
+ * a stopped show; a frozen frame over dead air is a crashed one.
+ *
+ * Resuming only what we ourselves stopped, because calling `play()` on a clip
+ * that had already finished restarts it — the line would be read twice.
+ */
+function setPaused(paused: boolean): void {
+  if (paused) {
+    voiceHeld = !voiceEl.paused;
+    if (voiceHeld) voiceEl.pause();
+    return;
+  }
+  if (!voiceHeld) return;
+  voiceHeld = false;
+  void voiceEl.play().catch(() => undefined);
+}
+
+/**
+ * What the two ambiguous keys do right now.
+ *
+ * Space and the right arrow both mean different things at a gate, in a vote
+ * and mid-line, and a legend that named only one of them would be worse than
+ * none — it is read under pressure, by somebody about to press the key.
+ */
+function updateLegend(): void {
+  const beat = latest?.beatInfo;
+  const gate = beat?.kind === 'gate' ? beat : undefined;
+  const poll = beat?.kind === 'poll' ? beat : undefined;
+
+  el('key-space').textContent =
+    latest === undefined || latest.phase === 'lobby'
+      ? 'Start the show'
+      : gate
+        ? (gate.label ?? 'Continue')
+        : latest.phase === 'paused'
+          ? 'Resume'
+          : poll
+            ? 'Nothing — a vote is open'
+            : 'Pause';
+
+  el('key-right').textContent = poll ? 'Close the vote on the votes cast' : 'Next beat';
+
+  // One per line. A poll option is a sentence in this show, not a word, and
+  // strung together on one row they made the panel as wide as the picture.
+  el('key-number').textContent = poll
+    ? poll.options.map((option, index) => `${index + 1}  ${option.label}`).join('\n')
+    : 'Pick a poll option, while one is open';
+}
+
+/**
+ * Sends a command and says so.
+ *
+ * The cue acknowledges the key, never the result: what actually happened
+ * arrives in the next snapshot and is drawn by the same code that draws
+ * everything else. A projector announcing "Paused" off its own keystroke would
+ * be a second opinion about the state of the show, and the two would disagree
+ * in front of a room the first time the server said no.
+ */
+function control(command: HostCommand, note: string): void {
+  if (!connection.isOpen) {
+    // The local engine keeps the picture moving through a dropout, but it is a
+    // continuity fallback and not an authority. Letting keys drive it would put
+    // the show in two places at once, and reconnecting would snap back and undo
+    // whatever the presenter thought they had just done.
+    flashCue('Not connected — the show cannot be driven from here');
+    return;
+  }
+  connection.send({ type: 'command', command });
+  flashCue(note);
+}
+
+/** The vote override: 1 is the first option on screen, in the order shown. */
+function forceOption(index: number): void {
+  const beat = latest?.beatInfo;
+  if (beat?.kind !== 'poll') {
+    flashCue('No vote is open');
+    return;
+  }
+  const option = beat.options[index];
+  if (!option) {
+    flashCue(`There is no option ${index + 1}`);
+    return;
+  }
+  control({ name: 'forceBranch', optionKey: option.key }, `“${option.label}” wins`);
+}
+
+const CONTROL_KEYS = [' ', 'ArrowRight', 'ArrowLeft'];
+
+document.addEventListener('keydown', (event) => {
+  // Leave every modified key alone: ctrl-W, alt-tab and the browser's own
+  // fullscreen and reload are exactly the keys a presenter still needs.
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  if (event.key === '?') {
+    keys.hidden = !keys.hidden;
+    if (!keys.hidden) updateLegend();
+    return;
+  }
+  if (event.key === 'Escape') {
+    keys.hidden = true;
+    return;
+  }
+
+  const digit = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
+  if (digit === undefined && !CONTROL_KEYS.includes(event.key)) return;
+
+  // Past this point the key is ours. Stopping the default matters most for
+  // space, which would otherwise also click whatever has focus — the audio
+  // gate, usually, since it is the only button on the page.
+  event.preventDefault();
+  // A keystroke is a user gesture, and it is the only one a presenter with no
+  // mouse is going to make. Harmless when the policy was never in the way.
+  if (!audioGate.hidden) unlockAudio();
+
+  const beat = latest?.beatInfo;
+  const phase = latest?.phase;
+
+  if (digit !== undefined) {
+    forceOption(digit);
+    return;
+  }
+
+  if (event.key === 'ArrowLeft') {
+    control({ name: 'back' }, 'Back');
+    return;
+  }
+
+  if (event.key === 'ArrowRight') {
+    if (phase === 'lobby') {
+      control({ name: 'start' }, 'Starting');
+      return;
+    }
+    // Paused, and asked to move on. `advance` alone is refused while paused, so
+    // the show would sit there and the key would look broken — and moving on is
+    // unambiguously what the presenter just asked for.
+    if (phase === 'paused') connection.send({ type: 'command', command: { name: 'resume' } });
+    control(
+      { name: 'skip' },
+      beat?.kind === 'poll' ? 'Vote closed' : beat?.kind === 'gate' ? 'Continuing' : 'Next',
+    );
+    return;
+  }
+
+  // Space, which is the key that means the most different things.
+  if (phase === undefined || phase === 'lobby') {
+    control({ name: 'start' }, 'Starting');
+    return;
+  }
+  if (beat?.kind === 'gate') {
+    // What it is in every other presenter tool: the thing that moves you on.
+    // Pausing a beat that is already held would be a no-op the presenter has to
+    // think about mid-sentence.
+    control({ name: 'continue' }, beat.label ?? 'Continuing');
+    return;
+  }
+  if (phase === 'paused') {
+    control({ name: 'resume' }, 'Resumed');
+    return;
+  }
+  if (phase === 'finished') {
+    flashCue('The show has finished');
+    return;
+  }
+  // The room refuses a pause during a vote and during the reveal that follows
+  // it. Sending one anyway would leave the presenter pressing a key that does
+  // nothing, with nothing to say why — so say why, and name the key that works.
+  if (beat?.kind === 'poll') {
+    flashCue('A vote is open — → closes it, 1–9 picks');
+    return;
+  }
+  if (beat?.kind === 'result') {
+    flashCue('Showing the result');
+    return;
+  }
+  control({ name: 'pause' }, 'Pausing');
+});
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
@@ -885,7 +1169,14 @@ const connection = new Connection({
     if (message.type === 'snapshot') onSnapshot(message);
     if (message.type === 'error') {
       el('asset-state').textContent = message.message;
-      if (message.fatal) show('lobby');
+      if (message.fatal) {
+        show('lobby');
+        return;
+      }
+      // That line lives on the lobby panel, which mid-show is hidden behind
+      // the story. A refused keystroke has to answer where the presenter is
+      // actually looking, or the key just appears not to work.
+      flashCue(message.message);
     }
   },
 });

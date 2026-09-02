@@ -7,7 +7,7 @@
 
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { Server } from 'node:http';
-import { parseClientMessage, type ServerMessage } from '../shared/protocol.ts';
+import { isDisplayCommand, parseClientMessage, type ServerMessage } from '../shared/protocol.ts';
 import type { RoomRegistry } from './rooms.ts';
 import type { Room, Subscriber } from './room.ts';
 
@@ -181,8 +181,22 @@ export function attachWebSocketServer(server: Server, registry: RoomRegistry): W
         }
 
         case 'command': {
-          if (subscriber.role !== 'host') {
-            fail(socket, 'badToken', 'Only the host may send commands.', false);
+          // The projector drives the show too, from its own keyboard, for the
+          // presenter who has no second screen to put the console on. It gets
+          // the keys it has and no more — `DISPLAY_COMMANDS` is that list, and
+          // says why the rest is not on it.
+          const allowed =
+            subscriber.role === 'host' ||
+            (subscriber.role === 'display' && isDisplayCommand(message.command));
+          if (!allowed) {
+            fail(
+              socket,
+              'badToken',
+              subscriber.role === 'display'
+                ? `The display cannot ${message.command.name} — that one is the host console's.`
+                : 'Only the host may send commands.',
+              false,
+            );
             return;
           }
           try {

@@ -15,6 +15,22 @@
          and there is nothing on screen to say why. -->
     <button class="audio-gate" id="audio-gate" hidden>Click to enable sound</button>
 
+    <!-- Local control, for a presenter driving from the projector's own
+         keyboard. Both are on the wall the moment they are not hidden, so both
+         stay hidden until there is something to say: the cue speaks for a
+         second, the legend only when somebody asks for it. -->
+    <div class="cue" id="cue" hidden></div>
+    <aside class="keys" id="keys" hidden>
+      <h2>Presenter keys</h2>
+      <dl>
+        <div><dt>Space</dt><dd id="key-space">Pause</dd></div>
+        <div><dt>&rarr;</dt><dd id="key-right">Next beat</dd></div>
+        <div><dt>&larr;</dt><dd>Back a beat</dd></div>
+        <div><dt>1&hairsp;&ndash;&hairsp;9</dt><dd id="key-number">Pick a poll option</dd></div>
+        <div><dt>?</dt><dd>Hide this</dd></div>
+      </dl>
+    </aside>
+
     <!-- Fixed 1920x1080 design surface, scaled by JS to fit any projector. -->
     <div class="stage-wrap" id="stage-wrap">
       <div class="stage" id="stage">
@@ -40,6 +56,7 @@
               </div>
             </div>
             <p class="asset-state" id="asset-state"></p>
+            <p class="keys-hint">Press <kbd>?</kbd> on this screen for presenter keys</p>
           </div>
         </section>
 

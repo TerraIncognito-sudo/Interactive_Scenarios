@@ -412,10 +412,36 @@ the projector, the host console for your phone, and a code the audience joins wi
 
 `/admin` also lists every session currently running, with its links, so a host console
 lost to a closed tab or a flat battery can be recovered — and lets you restart a session
-from the top or end it outright.
+from the top or end it outright. If there is no second device to put the console on, the
+display drives the show from its own keyboard; see below.
 
 Set the password with `ADMIN_PASSWORD`. Leave it unset and a readable one is
 generated and printed at startup, so the server is never accidentally left open.
+
+### Running it from the projector
+
+The host console assumes a second device — a phone in your hand, a laptop beside the one
+driving the picture. When there isn't one, the display page takes keystrokes of its own, so
+a presenter can run the whole show from the machine it is already playing on.
+
+| Key | What it does |
+|---|---|
+| <kbd>Space</kbd> | Starts the show in the lobby. On a `gate`, releases it — the legend shows the gate's own label. Otherwise pauses, and resumes when paused. |
+| <kbd>→</kbd> | The next beat. During a vote it closes the poll on the votes cast so far; while paused it resumes and moves on. |
+| <kbd>←</kbd> | Back a beat. |
+| <kbd>1</kbd>–<kbd>9</kbd> | While a vote is open, ends it and makes that option win, in the order the options are on screen. Ignored the rest of the time. |
+| <kbd>?</kbd> | Shows the key legend, bottom right. <kbd>Esc</kbd> hides it. |
+
+Pressing a key confirms itself in the bottom-left corner for a moment, and **Paused** stays
+there until the show moves again — from the third row a held beat and a stopped one are the
+same picture. Both are deliberately small: this is a screen an audience is looking at.
+
+The display and the host console drive the same room and see the same state, so it is fine
+to use both, or to hand the console to someone else and keep the keyboard.
+
+Two commands are **not** on the keyboard and stay on the console: resetting the show to the
+top, and jumping to a named node. A reset in front of an audience should cost more than one
+key, and there is nothing on a projector to pick a node with.
 
 ### Offline fallback
 
@@ -438,11 +464,12 @@ See [DEPLOY.md](DEPLOY.md).
 
 Working end to end: scenario authoring and validation, the story engine, the room
 server, all three client surfaces, live voting with automatic branching, host
-overrides, moderator-held `gate` beats for running a scenario as a presentation, the
+overrides, moderator-held `gate` beats for running a scenario as a presentation,
+keyboard control from the projector itself for presenting off a single screen, the
 password-gated admin console with live session control, recovery from a server restart
 mid-show, the offline fallback, and the scenario editor — its graph inspector, its
 simulator, its asset pipeline, and a Nodes tab that builds and reorders the story
-without opening the YAML. 505 tests, including a run with fifty simultaneous voters
+without opening the YAML. 535 tests, including a run with fifty simultaneous voters
 and a full restart with votes already cast.
 
 Not built yet: creating a poll's first `set:` block still needs the `scenario.yaml`

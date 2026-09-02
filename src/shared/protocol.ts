@@ -120,6 +120,36 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type HostCommand = z.infer<typeof HostCommandSchema>['command'];
 
+/**
+ * The commands a display may send on its own authority.
+ *
+ * The projector is a control surface as well as a renderer, because the person
+ * standing in front of the room may have no console to reach: one laptop, one
+ * screen, the show already on it. Its keyboard is the whole of that surface,
+ * so this list is exactly the keys it has and nothing else.
+ *
+ * What is deliberately absent is what a stray keystroke must never be able to
+ * do in front of an audience. `reset` puts the show back to the beginning, and
+ * on the console it sits behind a confirm dialog that a key press has no
+ * equivalent of. `jump` needs a node id, which the projector has no way to
+ * offer and no way to check. Both stay with the host, whose link is handed to
+ * a person rather than left open on a lectern all evening.
+ */
+export const DISPLAY_COMMANDS = [
+  'start',
+  'pause',
+  'resume',
+  'back',
+  'skip',
+  'continue',
+  'forceBranch',
+] as const;
+
+/** Whether the projector may send this itself. See `DISPLAY_COMMANDS`. */
+export function isDisplayCommand(command: HostCommand): boolean {
+  return (DISPLAY_COMMANDS as readonly string[]).includes(command.name);
+}
+
 // ---------------------------------------------------------------------------
 // Server -> client
 // ---------------------------------------------------------------------------

@@ -650,6 +650,52 @@ hand-tuned prompts and comments recording why. Field edits go through YAML's doc
 (`tools/editor/projects.ts`); parsing to an object and re-serialising strips every comment in
 the file the first time anyone touches a text box. A test guards this.
 
+**The projector is a control surface, and its keyboard is the whole of it.** The console
+is the proper way to run a show and nothing replaces it — but it assumes a second device,
+and the night there isn't one the presenter is standing at the machine the show is already
+on. So a display may send commands, and `DISPLAY_COMMANDS` in `src/shared/protocol.ts` is
+the list: exactly the keys it has. `reset` and `jump` are deliberately absent. Reset puts
+the show back to the beginning in front of everyone and on the console it sits behind a
+confirm dialog, which a key press has no equivalent of; jump needs a node id a projector
+can neither offer nor check. The enforcement is in `ws.ts` and not only in the client,
+because the client is the untrusted end of that socket and always was — and the *join*
+of the two halves is `tests/control.test.ts`, which reads every command literal out of the
+display and checks it against the allowlist. Without that they are one decision written in
+two files with nothing between them, and a key wired to `reset` would typecheck, run, and
+fail as a key that silently does nothing, which is the worst of the three ways it could go
+— the presenter presses it again.
+
+**A key acknowledges itself; only the snapshot says what happened.** `flashCue` confirms
+the press and disappears; the "Paused" badge is set from `snapshot.phase` in `onSnapshot`,
+never from the keystroke that asked for it. A projector that announced "Paused" off its own
+key press would be a second opinion about the state of the show, and the two would disagree
+in front of a room the first time the server said no — which it does for a pause during a
+vote, during a reveal, and on a stale beat. That handler sits *ahead* of the same-beat guard
+on purpose: pausing does not move the beat number, so a pause arrives as a snapshot for the
+beat already on screen, which is precisely the kind that guard exists to throw away. Space
+during a poll sends nothing at all and says which key does work instead, because a key that
+is refused in silence is indistinguishable from a broken one.
+
+**Pausing has to stop the voice, or it is not a pause.** The server stops its clock, so the
+beat's `hold` is suspended — but a voice clip is a media element with a clock of its own, and
+it read straight on through a pause and then sat silent for the rest of the line when the show
+resumed. Nobody caught it while pause was a button on a console somebody had to reach for; as
+the space bar under a presenter's thumb it is the first key they press. Only the voice: the
+beds and the muted scene loop are the room's atmosphere rather than the story, and a held beat
+with the sea still moving under it reads as a stopped show where a frozen frame over dead air
+reads as a crashed one. `setPaused` resumes only a clip it stopped itself, because `play()` on
+one that had already finished restarts it and the line is read twice.
+
+**The stage is letterboxed by arithmetic, never by CSS centring.** Everything is authored
+against a fixed 1920x1080 surface and scaled to whatever projector turns up. `place-items:
+center` did the centring and did nothing useful once the window was narrower than 1920:
+centring an item larger than its area is unsafe overflow, so the browser pins it to the start
+edge — and `transform-origin: center` then scaled about a centre that was already in the wrong
+place, putting the picture half its own overflow to the right and clipping that much off the
+edge. True on every screen under 1920 wide and no projector, which is exactly why it survived
+until somebody presented off a laptop panel. `fitStage` computes the offset and the scale
+together, with `transform-origin: top left` so the two cannot disagree.
+
 ## Layout
 
 | Path | What lives there |
@@ -670,7 +716,7 @@ the file the first time anyone touches a text box. A test guards this.
 | `tools/editor/outstanding.ts` | The command centre — the board projected into one list of what is left |
 | `tools/editor/duration.ts` | How long a clip runs, from its header — the other half of the `hold` check |
 | `tools/editor/timing.ts` | Clip + gap = beat, and writing it into `scenario.yaml` |
-| `src/shared/protocol.ts` | Message unions, Zod-validated in both directions |
+| `src/shared/protocol.ts` | Message unions, Zod-validated in both directions; `DISPLAY_COMMANDS` |
 | `scenarios/` | Content. Adding a scenario is adding a folder — no code changes |
 
 `src/scenario/check.ts` holds the graph integrity Zod cannot express: dangling `next`,

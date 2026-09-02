@@ -144,6 +144,13 @@ async function joinHost(code: string, token: string): Promise<Client> {
   return client;
 }
 
+async function joinDisplay(code: string, token: string): Promise<Client> {
+  const client = await connect();
+  client.send({ type: 'hello', role: 'display', room: code, token });
+  await client.next(isSnapshot);
+  return client;
+}
+
 async function joinPlayer(code: string, deviceId: string): Promise<Client> {
   const client = await connect();
   client.send({ type: 'hello', role: 'player', room: code, deviceId });
@@ -1230,5 +1237,153 @@ describe('a gate holds the show until a person releases it', () => {
     assert.equal(session?.phase, 'lobby', 'continue must not be able to start a show');
 
     host.close();
+  });
+});
+
+describe('the projector can drive the show from its own keyboard', () => {
+  /**
+   * The failure this is for: one laptop at a lectern, no second screen, and a
+   * host console nobody can reach. The display token is a control token now,
+   * so every one of these is also an assertion about what that token is worth.
+   */
+
+  test('it can start a show', async () => {
+    const room = await createRoom();
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'start' } });
+    const running = await display.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'running');
+    assert.notEqual(running.beatInfo.kind, 'idle');
+
+    display.close();
+  });
+
+  test('and walk it forwards and back', async () => {
+    const room = await createRoom();
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'start' } });
+    const first = await display.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo?.kind === 'dialogue',
+    );
+
+    display.send({ type: 'command', command: { name: 'skip' } });
+    const moved = await display.next<Snapshot>((m) => isSnapshot(m) && m.beat > first.beat);
+    assert.ok(moved.beat > first.beat, 'the right arrow has to move the show');
+
+    display.send({ type: 'command', command: { name: 'back' } });
+    // `back` steps to the previous *node*, and the fixture's opening dialogue
+    // is the first one — so the honest evidence is the beat moving again
+    // rather than a particular line index.
+    await display.next<Snapshot>((m) => isSnapshot(m) && m.beat > moved.beat);
+
+    display.close();
+  });
+
+  test('and hold it, with the host console watching the same state', async () => {
+    const room = await createRoom();
+    const host = await joinHost(room.code, room.hostToken);
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'start' } });
+    await display.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'running');
+
+    display.send({ type: 'command', command: { name: 'pause' } });
+    // The console has to see it too. Two people running one show from two
+    // surfaces is the ordinary case, not the exception.
+    const paused = await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'paused');
+
+    await new Promise((r) => setTimeout(r, 300));
+    const stillPaused = display.messages.filter(isSnapshot).at(-1)!;
+    assert.equal(stillPaused.beat, paused.beat, 'a paused show must not advance');
+
+    display.send({ type: 'command', command: { name: 'resume' } });
+    await display.next<Snapshot>((m) => isSnapshot(m) && m.beat > paused.beat);
+
+    host.close();
+    display.close();
+  });
+
+  test('and release a gate, which is the whole point of a presentation', async () => {
+    const room = await createRoom('gate');
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'start' } });
+    const held = await display.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo?.kind === 'gate');
+
+    display.send({ type: 'command', command: { name: 'continue' } });
+    const next = await display.next<Snapshot>((m) => isSnapshot(m) && m.beat > held.beat);
+    assert.notEqual(next.beatInfo.kind, 'gate');
+
+    display.close();
+  });
+
+  test('and decide a vote outright, which is what the number keys send', async () => {
+    // The slow fixture, so the poll is still open when the key arrives rather
+    // than having closed itself out from under the test.
+    const room = await createRoom('slowpoll');
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'start' } });
+    await display.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo?.kind === 'poll');
+
+    display.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'left' } });
+    const finished = await display.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'finished');
+    assert.equal(finished.lastResult?.winner, 'left');
+    assert.equal(finished.beatInfo.kind === 'end' && finished.beatInfo.text, 'Went left.');
+
+    display.close();
+  });
+
+  test('but it cannot reset the show, because a key press has no confirm dialog', async () => {
+    const room = await createRoom();
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'start' } });
+    const running = await display.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'running');
+
+    display.send({ type: 'command', command: { name: 'reset' } });
+    const error = await display.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+    assert.equal(error.fatal, false, 'a refused key must not drop the projector off the socket');
+    assert.equal(display.socket.readyState, WebSocket.OPEN);
+
+    // And it has to have been refused, not merely complained about.
+    await new Promise((r) => setTimeout(r, 200));
+    const latest = display.messages.filter(isSnapshot).at(-1)!;
+    assert.notEqual(latest.phase, 'lobby', 'the show went back to the top anyway');
+    assert.ok(latest.beat >= running.beat);
+
+    display.close();
+  });
+
+  test('and it cannot jump, having no way to name a node or check one', async () => {
+    const room = await createRoom();
+    const display = await joinDisplay(room.code, room.displayToken);
+
+    display.send({ type: 'command', command: { name: 'jump', nodeId: 'finish_left' } });
+    const error = await display.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+
+    await new Promise((r) => setTimeout(r, 200));
+    const latest = display.messages.filter(isSnapshot).at(-1)!;
+    assert.equal(latest.beatInfo.kind, 'idle', 'the display teleported the show');
+
+    display.close();
+  });
+
+  test('and the room code still drives nothing at all', async () => {
+    // The rule the display's new powers must not have loosened: a phone holds
+    // the join code and nothing else, and a vote is the whole of what it may
+    // send. This is the same assertion as before, re-made from the other side.
+    const room = await createRoom();
+    const player = await joinPlayer(room.code, 'device-nocommand');
+
+    player.send({ type: 'command', command: { name: 'skip' } });
+    const error = await player.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badToken');
+    assert.match(error.message, /host/);
+
+    player.close();
   });
 });
