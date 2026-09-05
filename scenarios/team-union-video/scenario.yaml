@@ -45,6 +45,7 @@ description: >
   mid-encounter and has to act on rules written weeks earlier.
 
 start: fiction_notice
+lobby: lobby
 
 settings:
   # Narration pace, not reading pace — a documentary voice is slower than the
@@ -81,14 +82,20 @@ scenes:
   # hold that location's establishing shot (A.1 and A.3); the siblings below
   # exist purely to carry a second camera setup in the same room.
   halifax: { background: images/jetty_ship.jpg, ambience: ambience/harbour.mp3 }
-  control_cell: { background: images/operations_centre.png, ambience: ambience/cell.mp3 }
+  control_cell: {  ambience: ambience/cell.mp3, video: video/ops_centre_intro.mp4 }
   transit: { background: images/ship-ocean.png, ambience: ambience/sea.mp3 }
-  transit_ice: { background: images/ship-ice.png, ambience: ambience/sea.mp3 }
-  engagement_ships: { background: images/engagement_ships.png }
+  transit_ice: {  ambience: ambience/sea.mp3, video: video/Ice_patrol.mp4 }
+  engagement_ships: {  video: video/russion_frigate.mp4 }
   engagement_drone: { background: images/engagement_drone.png }
-  standoff: { background: images/standoff.png }
+  standoff: {  video: video/on_patrol.mp4 }
   standoff_missile: { background: images/standoff_missile.png }
   debrief: { }
+  ship_depart: { video: video/ship_depart.mp4 }
+  lobby: { video: video/russion_frigate.mp4 }
+  friendly_open_hatches: { video: video/patrol_contact.mp4 }
+  ciws_shoot: { video: video/ciws_kill.mp4 }
+  russian_ready: { video: video/russian_missile.mp4 }
+  standoff_still: { background: images/standoff.png }
 
 nodes:
   # -------------------------------------------------------------------------
@@ -155,12 +162,10 @@ nodes:
         hold: 3.4
         voice: voice/tran-a4-02.mp3
     next: a5_departure
-    video: video/ops_centre_intro.mp4
 
   - id: a5_departure
     type: dialogue
-    scene: halifax
-    background: images/ship-departure.png
+    scene: ship_depart
     lines:
       - who: beau
         text: Very Good. Set a course for open ocean.
@@ -168,7 +173,6 @@ nodes:
         voice: voice/beau-a4-01.mp3
         sfx: sfx/a5-departure.mp3
     next: b1_ocean
-    video: video/ship_depart.mp4
 
   # -------------------------------------------------------------------------
   # Act B — Transit
@@ -190,7 +194,6 @@ nodes:
         hold: 10.6
         who: narr
     next: c2_return
-    video: video/on_patrol.mp4
 
   - id: c2_return
     type: dialogue
@@ -203,7 +206,6 @@ nodes:
         hold: 7.4
         voice: voice/narr-c2-01.mp3
     next: d1_tree
-    video: video/russion_frigate.mp4
 
   # -------------------------------------------------------------------------
   # Act D — The decision tree
@@ -222,11 +224,10 @@ nodes:
         hold: 5.9
         voice: voice/narr-d1-02.mp3
     next: d3_warning
-    video: video/ops_centre_intro.mp4
 
   - id: d3_warning
     type: dialogue
-    scene: engagement_ships
+    scene: standoff
     lines:
       - who: pf
         text: Russian warship bearing zero-nine-zero. This is Canadian Autonomous Warship Five Zero One.
@@ -239,7 +240,6 @@ nodes:
         hold: 7
         voice: voice/pf-d3-02.mp3
     next: d5_closing
-    video: video/patrol_contact.mp4
 
   - id: d5_closing
     type: dialogue
@@ -305,7 +305,7 @@ nodes:
 
   - id: p1_defend
     type: dialogue
-    scene: engagement_drone
+    scene: friendly_open_hatches
     lines:
       - who: narr
         text: "The room says: Stand your ground"
@@ -318,11 +318,10 @@ nodes:
         hold: 8.3
         voice: voice/pf-e1a-01.mp3
     next: e_tree
-    video: video/patrol_contact.mp4
 
   - id: p1_evade
     type: dialogue
-    scene: engagement_drone
+    scene: friendly_open_hatches
     lines:
       - who: narr
         text: "The room says: run."
@@ -335,11 +334,10 @@ nodes:
         hold: 6.3
         voice: voice/pf-e1c-01.mp3
     next: e_tree
-    video: video/patrol_contact.mp4
 
   - id: e_tree
     type: dialogue
-    scene: engagement_drone
+    scene: standoff
     lines:
       - who: narr
         text: It does not matter what the room voted. The ship is not listening to the room.
@@ -361,11 +359,10 @@ nodes:
         hold: 3.3
         voice: voice/narr-e2-04.mp3
     next: e3_warning_order
-    video: video/on_patrol.mp4
 
   - id: e3_warning_order
     type: dialogue
-    scene: engagement_drone
+    scene: friendly_open_hatches
     lines:
       - who: pf
         text: Unidentified aircraft, bearing zero-eight-eight, range five miles.
@@ -378,7 +375,6 @@ nodes:
         hold: 8.8
         voice: voice/pf-e3-02.mp3
     next: f1_closing
-    video: video/patrol_contact.mp4
 
   # -------------------------------------------------------------------------
   # Act F — engagement
@@ -386,7 +382,7 @@ nodes:
 
   - id: f1_closing
     type: dialogue
-    scene: engagement_drone
+    scene: friendly_open_hatches
     lines:
       - who: narr
         text: Three miles. Two.
@@ -401,21 +397,20 @@ nodes:
         hold: 3.4
         voice: voice/pf-f2-02.mp3
     next: f3_shot
-    video: video/patrol_contact.mp4
 
 
   # No line, deliberately. The shot is a picture and a transient, and a
   # narrator talking over it would make it smaller than it is.
   - id: f3_shot
     type: pause
-    scene: standoff
+    scene: ciws_shoot
     duration: 12
     next: f4_aftermath
-    video: video/ciws_kill.mp4
+    sfx: sfx/ciws_shoot.mp3
 
   - id: f4_aftermath
     type: dialogue
-    scene: standoff
+    scene: friendly_open_hatches
     lines:
       - who: narr
         text: "Elapsed time from detect to splash: one minute, thirty seconds."
@@ -426,11 +421,10 @@ nodes:
         hold: 4.8
         voice: voice/narr-f4-02.mp3
     next: g3_halifax
-    video: video/patrol_contact.mp4
 
   - id: g3_halifax
     type: dialogue
-    scene: control_cell
+    scene: russian_ready
     lines:
       - who: tran
         text: The Russian ship is readying her missiles, ma'am.
@@ -446,11 +440,10 @@ nodes:
         hold: 3.7
         voice: voice/narr-g3-02.mp3
     next: dialogue_1
-    video: video/russian_missile.mp4
 
   - id: dialogue_1
     type: gate
-    scene: standoff
+    scene: standoff_still
     text: >-
       Discussion of ethics framework prior to final poll. Continue to discuss
       during the poll. Highlight this is an example of "relevant human
@@ -464,7 +457,7 @@ nodes:
 
   - id: poll_final
     type: poll
-    scene: standoff
+    scene: standoff_still
     question: >-
       The destroyer has opened her missile hatches. The link is
       dead — the ship is on it's own. What should it do?
@@ -513,7 +506,6 @@ nodes:
         hold: 4.2
         voice: voice/narr-endingb-01.mp3
     next: debrief
-    video: video/Ice_patrol.mp4
 
   - id: debrief
     type: end
