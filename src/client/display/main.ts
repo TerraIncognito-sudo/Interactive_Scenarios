@@ -14,8 +14,9 @@
 import QRCode from 'qrcode';
 import { Connection, queryParam } from '../shared/connection.ts';
 import { pooled } from '../shared/pool.ts';
+import { fetchAsset } from '../shared/fetch-asset.ts';
 import type { DisplayLoading, HostCommand, Snapshot, SnapshotBeat } from '../../shared/protocol.ts';
-import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, type Scenario } from '../../scenario/schema.ts';
+import { type Scenario } from '../../scenario/schema.ts';
 import { beatOf, initialState, reduce, activeScene, type RunState } from '../../engine/engine.ts';
 
 const room = queryParam('room')?.toUpperCase();
@@ -126,77 +127,15 @@ function show(which: keyof typeof views): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Each preloader answers "did it arrive", not just "is it finished".
+ * How many at once — and now a limit on downloads rather than on starts.
  *
- * Resolving on error is still right — a missing decoration must not stop a
- * show — but it must not be silent either. "Ready" over eleven assets that
- * never arrived is the same lie as "ready" halfway through the download, and
- * the whole point of this screen is that somebody can read it and know.
- */
-function preloadImage(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(true);
-    img.onerror = () => resolve(false);
-    img.src = url;
-  });
-}
-
-function preloadAudio(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const audio = new Audio();
-    audio.oncanplaythrough = () => resolve(true);
-    audio.onerror = () => resolve(false);
-    audio.preload = 'auto';
-    audio.src = url;
-  });
-}
-
-function preloadVideo(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const video = document.createElement('video');
-    video.oncanplaythrough = () => resolve(true);
-    video.onerror = () => resolve(false);
-    video.preload = 'auto';
-    video.muted = true;
-    video.src = url;
-  });
-}
-
-/**
- * Same reasoning as resolving on error: an asset that never finishes must not
- * be able to hold the show at "loading…" forever. A background clip on a bad
- * venue connection is far more capable of stalling than a JPEG ever was.
- */
-const PRELOAD_TIMEOUT_MS = 20_000;
-
-/**
- * How many at once. About what a browser will open to one host anyway, and the
- * reason the count used to lie — see `pooled`, where that story is written down.
+ * Under the media elements this number bounded how many loads were *begun*: each
+ * freed its slot at `canplaythrough` and kept streaming, so the real figure in
+ * flight climbed with every asset and the pool throttled nothing. A `fetch` holds
+ * its slot until the last byte, so six means six. About what a browser will open
+ * to one host anyway.
  */
 const PRELOAD_CONCURRENCY = 6;
-
-function preload(url: string): Promise<boolean> {
-  if (VIDEO_EXTENSIONS.test(url)) return preloadVideo(url);
-  if (AUDIO_EXTENSIONS.test(url)) return preloadAudio(url);
-  return preloadImage(url);
-}
-
-/** One asset, with its own clock, started now. */
-async function fetchOne(url: string): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      preload(url),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), PRELOAD_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 
 /** Megabytes, at one decimal — the unit a person can hold in their head. */
 function mb(bytes: number): string {
@@ -283,15 +222,26 @@ async function loadScenario(): Promise<void> {
   state.textContent = describeLoading(loading);
   reportProgress(true);
 
+  // What went wrong, kept per file so the screen can say more than a number. A
+  // presenter who reads "2 unavailable" has to guess whether the venue's proxy
+  // hiccuped or somebody renamed a clip, and those want opposite responses.
+  const problems: { file: string; why: string }[] = [];
+
   await pooled(body.assets, PRELOAD_CONCURRENCY, async (file) => {
-    const ok = await fetchOne(assetBase + file);
+    // Real bytes as they stream, which the media elements could never report —
+    // so the total now moves continuously and is measuring the download itself
+    // rather than counting a file whole at the moment it finishes.
+    const result = await fetchAsset(assetBase + file, (n) => {
+      if (!loading) return;
+      loading.bytes = Math.max(0, (loading.bytes ?? 0) + n);
+      reportProgress();
+    });
     if (!loading) return;
     loading.done += 1;
-    if (!ok) loading.failed += 1;
-    // Counted as it lands rather than as it streams: a media element gives no
-    // byte progress, and a bar that moved smoothly by guessing would be a
-    // prettier version of the thing this exists to stop.
-    if (ok) loading.bytes = (loading.bytes ?? 0) + (sizes[file] ?? 0);
+    if (!result.ok) {
+      loading.failed += 1;
+      problems.push({ file, why: result.why });
+    }
     state.textContent = describeLoading(loading);
     reportProgress();
   });
@@ -300,10 +250,24 @@ async function loadScenario(): Promise<void> {
   // Ready either way — a missing decoration must never stop a show — but never
   // silently. A bare "Ready." over eleven assets that are not there is how a
   // black background reaches a projector unannounced.
+  // Naming the files is the difference between a number somebody can only worry
+  // about and a fault they can act on before the room fills. Capped, because a
+  // scenario whose whole asset folder is missing must not push the room code off
+  // the screen — the join details are what the audience is reading.
+  const named = problems
+    .slice(0, 3)
+    .map((p) => `${p.file} (${p.why})`)
+    .join(', ');
+  const rest = problems.length > 3 ? ` and ${problems.length - 3} more` : '';
   state.textContent =
     failed === 0
       ? 'Ready.'
-      : `Ready — ${failed} of ${total} could not be fetched. The show can still run.`;
+      : `Ready — ${failed} of ${total} could not be fetched: ${named}${rest}. The show can still run.`;
+  if (problems.length > 0) {
+    // The screen is read from the back of a room and cannot hold sixty lines;
+    // the console is where somebody debugging this actually looks.
+    console.warn('[display] assets that never arrived:', problems);
+  }
   assetsMissing = { failed, total };
   loading = undefined;
   assetsLoaded = true;
