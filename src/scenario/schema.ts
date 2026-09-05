@@ -243,6 +243,17 @@ export const ScenarioSchema = z.strictObject({
   title: z.string().min(1),
   description: z.string().optional(),
   start: NodeIdSchema,
+  /**
+   * The scene the lobby sits in front of, before anyone presses start.
+   *
+   * A scene id rather than a picture of its own, because a lobby is a place
+   * like any other: naming one gets the still, the looping clip over it and the
+   * pre-show bed from the same four fields the rest of the show uses, and the
+   * asset board tracks it with no extra walk — `assetReferencesOf` already
+   * visits every scene. A room fills up over several minutes with this on the
+   * projector, so it is the longest anything in the show is looked at.
+   */
+  lobby: z.string().regex(idPattern).optional(),
   settings: SettingsSchema.prefault({}),
   characters: z.record(z.string().regex(idPattern), CharacterSchema).prefault({}),
   scenes: z.record(z.string().regex(idPattern), SceneSchema).prefault({}),

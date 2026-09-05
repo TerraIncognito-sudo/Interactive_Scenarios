@@ -26,6 +26,7 @@ import {
 } from './assets.js';
 import { initPicker, openPicker } from './picker.js';
 import { initNodes, initNodesBar, renderNodes, describeWork } from './nodes.js';
+import { initScenes, renderScenes } from './scenes.js';
 
 const state = {
   /** The open project. Null means nothing is open and Save has no target. */
@@ -233,6 +234,7 @@ function apply(result) {
   });
 
   renderNodes(result.analysis, result.scenario, result.assets);
+  renderScenes(result.scenario, result.assets);
   renderVars(result.analysis);
   renderChoices(result.analysis);
 }
@@ -726,6 +728,20 @@ async function boot() {
     spareAssets,
     afterEdit: afterNodeEdit,
   });
+  initScenes({
+    projectName: () => state.projectName,
+    setStatus,
+    showProblems: (message, problems) => {
+      const box = $('problems');
+      box.hidden = false;
+      box.className = 'problems';
+      box.replaceChildren(h('strong', {}, message), h('ul', {}, problems.map((p) => h('li', {}, p))));
+    },
+    jumpTo,
+    spareAssets,
+    afterEdit: afterNodeEdit,
+  });
+
   initNodesBar();
 
   initAssets({

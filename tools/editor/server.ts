@@ -51,6 +51,12 @@ import {
   removeScenarioNode,
   renameScenarioNode,
   retypeScenarioNode,
+  addScenarioScene,
+  removeScenarioScene,
+  renameScenarioScene,
+  setScenarioLobby,
+  setScenarioSceneField,
+  sceneUsers,
   setScenarioNodeField,
   addScenarioListItem,
   moveScenarioListItem,
@@ -65,6 +71,7 @@ import {
   renameToFormat,
   wireVoice,
 } from './projects.ts';
+import { SCENE_FIELDS, type SceneField } from './scenes.ts';
 import {
   browse,
   loadConfig,
@@ -570,6 +577,81 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         }
         const result = await retypeScenarioNode(name, body.id, body.to);
         return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // ---------------------------------------------------------------------
+      // Scenes
+      // ---------------------------------------------------------------------
+
+      if (action === 'scene-add' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown };
+        if (typeof body.id !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id }' });
+        }
+        const result = await addScenarioScene(name, body.id);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      // Its own route rather than a field edit, for the reason `node-id` is:
+      // an id is the only value other lines depend on by name, so the key, every
+      // node's `scene:` and the `lobby:` move together or not at all.
+      if (action === 'scene-id' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown; to?: unknown };
+        if (typeof body.id !== 'string' || typeof body.to !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id, to }' });
+        }
+        const result = await renameScenarioScene(name, body.id, body.to);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'scene-delete' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown };
+        if (typeof body.id !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id }' });
+        }
+        const result = await removeScenarioScene(name, body.id);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'scene' && request.method === 'PATCH') {
+        const body = (await readBody(request)) as {
+          id?: unknown;
+          field?: unknown;
+          value?: unknown;
+        };
+        if (typeof body.id !== 'string' || typeof body.field !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id, field, value }' });
+        }
+        if (!(SCENE_FIELDS as readonly string[]).includes(body.field)) {
+          return sendJson(response, 400, { error: `"${body.field}" is not a scene field` });
+        }
+        // An empty box clears the field rather than writing an empty string: a
+        // scene that paints nothing is a real choice and has to stay
+        // distinguishable from one nobody has filled in yet.
+        const value =
+          body.value === null || body.value === '' ? null : String(body.value ?? '').trim();
+        const result = await setScenarioSceneField(
+          name,
+          body.id,
+          body.field as SceneField,
+          value === '' ? null : value,
+        );
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'lobby' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown };
+        const id = body.id === null || body.id === '' ? null : String(body.id ?? '');
+        const result = await setScenarioLobby(name, id);
+        return sendJson(response, 200, { ...result, project: await openProject(name) });
+      }
+
+      if (action === 'scene-users' && request.method === 'POST') {
+        const body = (await readBody(request)) as { id?: unknown };
+        if (typeof body.id !== 'string') {
+          return sendJson(response, 400, { error: 'Expected { id }' });
+        }
+        return sendJson(response, 200, { nodes: await sceneUsers(name, body.id) });
       }
 
       if (action === 'node-list' && request.method === 'POST') {

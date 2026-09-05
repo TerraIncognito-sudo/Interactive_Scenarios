@@ -48,6 +48,7 @@
           -->
           <button class="tab" data-tab="cast" role="tab" aria-selected="true">Characters</button>
           <button class="tab" data-tab="nodes" role="tab" aria-selected="false">Nodes</button>
+          <button class="tab" data-tab="scenes" role="tab" aria-selected="false">Scenes</button>
           <button class="tab" data-tab="vars" role="tab" aria-selected="false">Variables</button>
           <button class="tab" data-tab="sim" role="tab" aria-selected="false">Simulate</button>
           <button class="tab" data-tab="assets" role="tab" aria-selected="false">Assets</button>
@@ -102,6 +103,17 @@
               <button id="add-node" type="button" class="ghost">Add at end</button>
             </div>
             <ul class="nodes" id="nodes"></ul>
+          </div>
+
+          <div class="tab-panel" id="panel-scenes" hidden>
+            <p class="hint">
+              A scene is a place. <code>music</code> and <code>ambience</code> hang off it and
+              persist across every beat played there; <code>background</code> is the still, and
+              <code>video</code> is a looping clip over it, with the still as its poster frame.
+              A clip that belongs to the place goes here — declaring it on each node instead is
+              what the poster-frame warning is about.
+            </p>
+            <div class="scenes" id="scenes-list"></div>
           </div>
 
           <div class="tab-panel" id="panel-vars" hidden>

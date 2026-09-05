@@ -245,6 +245,15 @@ export function checkScenario(scenario: Scenario): CheckResult {
     }
   }
 
+  // The lobby is on the projector while the room fills, so a name that resolves
+  // to nothing is a blank screen for the longest stretch of the evening — and
+  // the one stretch nobody is watching for problems, because the show has not
+  // started. An error rather than a warning: it is a typo with no correct
+  // reading, exactly like a node pointing at a scene that is not there.
+  if (scenario.lobby !== undefined && !scenario.scenes[scenario.lobby]) {
+    errors.push({ message: `lobby names unknown scene "${scenario.lobby}"` });
+  }
+
   return { errors, warnings };
 }
 

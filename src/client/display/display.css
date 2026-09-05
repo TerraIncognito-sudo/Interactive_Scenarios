@@ -154,25 +154,44 @@
 .lobby-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 132px;
-  line-height: 1.03;
+  /* Sized to leave room for the join block rather than to be as large as it can
+     be. The stage is a fixed 1080 with nothing to scroll, so every block on this
+     panel is spending from one budget, and the title is the cheapest place to
+     find room — it is read once, where the room code is read by everybody
+     holding a phone. */
+  font-size: 92px;
+  line-height: 1.05;
   letter-spacing: -0.015em;
 }
 
 .lobby-sub {
-  margin: 28px auto 0;
-  max-width: 1100px;
-  font-size: 34px;
-  line-height: 1.5;
+  margin: 24px auto 0;
+  max-width: 1220px;
+  font-size: 28px;
+  line-height: 1.45;
   color: var(--text-dim);
 }
 
 .join-block {
-  margin-top: 64px;
+  margin-top: 44px;
   display: flex;
   gap: 56px;
   align-items: center;
   justify-content: center;
+  /* The one thing on this screen the audience has to be able to read, so it
+     carries its own ground rather than trusting the picture behind it. A `lobby:`
+     scene can be a daylight clip, and white-on-white is a room that cannot join.
+     Sized to its contents — `fit-content` with the panel centring it — because
+     the point of a lobby scene is to be seen: a full-panel scrim solved the
+     legibility and threw away the picture that made anyone want it. */
+  width: fit-content;
+  margin-inline: auto;
+  /* Hugging the QR, which is the tallest thing in here: the box is a ground for
+     the join details, not a frame around them, and every pixel of it is a pixel
+     of the lobby clip nobody can see. */
+  padding: 16px 40px;
+  border-radius: 22px;
+  background: rgb(0 0 0 / 0.72);
 }
 
 .qr {
@@ -231,7 +250,7 @@
 }
 
 .asset-state {
-  margin: 48px 0 0;
+  margin: 26px 0 0;
   font-size: 24px;
   color: var(--text-faint);
 }

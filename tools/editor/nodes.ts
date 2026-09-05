@@ -791,7 +791,7 @@ export function addNode(
   //
   // Every type here has structure the schema insists on — a dialogue needs a
   // line, a poll needs two options and a default, a branch needs a condition
-  // and an else — and `editNodesIn` refuses to write a file that will not
+  // and an else — and `editScenarioIn` refuses to write a file that will not
   // load. Without these the Add button would simply report an error for four
   // of the six types, which is a worse answer than not offering them.
   //
@@ -915,7 +915,7 @@ function heirFor(blocks: NodeBlock[], block: NodeBlock): string | undefined {
  * and *reported* — a retype is a real edit with a real cost, and the cost is
  * worth knowing before the author has closed the tab. And anything the new type
  * insists on is supplied, so the node is valid the moment it lands:
- * `editNodesIn` refuses to write a broken file, and a dropdown that answers
+ * `editScenarioIn` refuses to write a broken file, and a dropdown that answers
  * four of its six choices with an error message is a dropdown nobody uses.
  */
 export function retypeNode(source: string, id: string, to: string): NodeEdit {

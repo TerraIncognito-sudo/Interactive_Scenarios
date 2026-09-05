@@ -271,6 +271,10 @@ async function loadScenario(): Promise<void> {
   assetsMissing = { failed, total };
   loading = undefined;
   assetsLoaded = true;
+  // The other half of `paintLobby`'s two directions. Guarded on the lobby being
+  // what is actually on screen: a scenario that finishes loading mid-show must
+  // not repaint the shot the audience is looking at.
+  if (!views.lobby.hidden) paintLobby();
   announceReady();
 }
 
@@ -329,6 +333,25 @@ function applyScene(sceneId: string | undefined, nodeId?: string): void {
 
   scene.style.backgroundImage = background ? `url("${assetBase}${background}")` : '';
   applySceneVideo(video);
+}
+
+/**
+ * Paints whatever place the lobby sits in front of.
+ *
+ * The lobby is a place, so it goes through the same resolver as every other —
+ * still, looping clip and pre-show bed from one scene id. Naming no scene paints
+ * nothing, which is what every scenario written before `lobby:` asks for.
+ *
+ * Called from two directions on purpose. The `idle` beat arrives over the socket
+ * and `loadScenario` is a separate async job, so whichever finishes second is
+ * the one that can paint: an early snapshot finds `scenario` still undefined and
+ * paints nothing, and if the room then simply sits there — which is exactly what
+ * a lobby does — no further snapshot ever comes to correct it. That was a lobby
+ * that stayed black on every projector that reached the room before the
+ * download did, which is all of them.
+ */
+function paintLobby(): void {
+  applyScene(scenario?.lobby);
 }
 
 /**
@@ -713,6 +736,7 @@ function renderBeat(beat: SnapshotBeat, snapshot?: Snapshot): void {
 
   switch (beat.kind) {
     case 'idle':
+      paintLobby();
       show('lobby');
       return;
     case 'dialogue':

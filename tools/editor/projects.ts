@@ -89,6 +89,15 @@ import {
   setNodeField,
   type SpineWarning,
 } from './nodes.ts';
+import {
+  addScene,
+  removeScene,
+  renameScene,
+  setLobby,
+  setSceneField,
+  usersOf,
+  type SceneField,
+} from './scenes.ts';
 import { looksSynced, modelsRoot, within, workspace } from './workspace.ts';
 
 /**
@@ -782,7 +791,7 @@ export type NodeWork = {
  * discovered by whoever next presses play. Refusing to write and saying why
  * keeps a bad edit on the author's screen instead of on disk.
  */
-async function editNodesIn(
+async function editScenarioIn(
   name: string,
   what: string,
   edit: (source: string) => {
@@ -809,7 +818,16 @@ async function editNodesIn(
   }
 
   const check = parseScenarioSource(result.source);
-  if (!check.ok) throw new ProjectError(`${what} would have broken the scenario`, check.problems);
+  if (!check.ok) {
+    // `problems` is empty when the result is not YAML at all — the parser
+    // failed before there was a document to check — and `message` is the only
+    // thing that says why. Dropping it left a refusal that could name nothing
+    // whatever, which is how a stray comma in a written value cost an afternoon
+    // to find: the edit undid itself and the banner said only that something
+    // would have broken.
+    const problems = check.problems.length > 0 ? check.problems : [check.message];
+    throw new ProjectError(`${what} would have broken the scenario`, problems);
+  }
 
   await writeAtomic(paths.scenario, result.source);
   return {
@@ -822,7 +840,7 @@ async function editNodesIn(
 }
 
 export function moveScenarioNode(name: string, id: string, toIndex: number): Promise<NodeWork> {
-  return editNodesIn(name, 'Moving that node', (source) => moveNode(source, id, toIndex));
+  return editScenarioIn(name, 'Moving that node', (source) => moveNode(source, id, toIndex));
 }
 
 export function addScenarioNode(
@@ -830,19 +848,67 @@ export function addScenarioNode(
   spec: { id: string; type: string; fields?: Record<string, string | number> },
   afterId?: string,
 ): Promise<NodeWork> {
-  return editNodesIn(name, 'Adding that node', (source) => addNode(source, spec, afterId));
+  return editScenarioIn(name, 'Adding that node', (source) => addNode(source, spec, afterId));
 }
 
 export function removeScenarioNode(name: string, id: string): Promise<NodeWork> {
-  return editNodesIn(name, 'Removing that node', (source) => removeNode(source, id));
+  return editScenarioIn(name, 'Removing that node', (source) => removeNode(source, id));
 }
 
 export function renameScenarioNode(name: string, from: string, to: string): Promise<NodeWork> {
-  return editNodesIn(name, 'Renaming that node', (source) => renameNode(source, from, to));
+  return editScenarioIn(name, 'Renaming that node', (source) => renameNode(source, from, to));
 }
 
 export function retypeScenarioNode(name: string, id: string, to: string): Promise<NodeWork> {
-  return editNodesIn(name, 'Changing that node type', (source) => retypeNode(source, id, to));
+  return editScenarioIn(name, 'Changing that node type', (source) => retypeNode(source, id, to));
+}
+
+// ---------------------------------------------------------------------------
+// Scenes
+// ---------------------------------------------------------------------------
+//
+// The same write path as every node action, deliberately: one place that
+// refuses to save a scenario that will not load, and one place that reconciles
+// `project.yaml` afterwards. A scene edit reaches the asset board — dropping a
+// scene's `video:` orphans a recipe row the same way cutting a line does — so a
+// second path would be a second answer about what is finished.
+
+export function setScenarioSceneField(
+  name: string,
+  id: string,
+  field: SceneField,
+  value: string | null,
+): Promise<NodeWork> {
+  return editScenarioIn(name, 'That edit', (source) => ({
+    source: setSceneField(source, id, field, value),
+  }));
+}
+
+export function addScenarioScene(name: string, id: string): Promise<NodeWork> {
+  return editScenarioIn(name, 'Adding that scene', (source) => ({ source: addScene(source, id) }));
+}
+
+export function removeScenarioScene(name: string, id: string): Promise<NodeWork> {
+  return editScenarioIn(name, 'Removing that scene', (source) => removeScene(source, id));
+}
+
+export function renameScenarioScene(name: string, from: string, to: string): Promise<NodeWork> {
+  return editScenarioIn(name, 'Renaming that scene', (source) => renameScene(source, from, to));
+}
+
+export function setScenarioLobby(name: string, id: string | null): Promise<NodeWork> {
+  return editScenarioIn(name, 'Setting the lobby', (source) => ({ source: setLobby(source, id) }));
+}
+
+/** Which nodes name a scene, so the sheet can say what a removal would break. */
+export async function sceneUsers(name: string, id: string): Promise<string[]> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  const paths = pathsOf(file, project);
+  const source = await readFile(paths.scenario, 'utf8').catch(() => '');
+  if (!source) return [];
+  return usersOf(source, id);
 }
 
 export function moveScenarioListItem(
@@ -852,7 +918,7 @@ export function moveScenarioListItem(
   fromIndex: number,
   toIndex: number,
 ): Promise<NodeWork> {
-  return editNodesIn(name, 'Moving that entry', (source) => ({
+  return editScenarioIn(name, 'Moving that entry', (source) => ({
     source: moveListItem(source, id, path, fromIndex, toIndex),
   }));
 }
@@ -864,7 +930,7 @@ export function setScenarioNodeField(
   value: string | number | boolean | null,
   after?: string,
 ): Promise<NodeWork> {
-  return editNodesIn(name, 'That edit', (source) => ({
+  return editScenarioIn(name, 'That edit', (source) => ({
     source: setNodeField(source, id, path, value, after),
   }));
 }
@@ -875,7 +941,7 @@ export function addScenarioListItem(
   path: (string | number)[],
   fields: Record<string, string | number>,
 ): Promise<NodeWork> {
-  return editNodesIn(name, 'Adding that entry', (source) => ({
+  return editScenarioIn(name, 'Adding that entry', (source) => ({
     source: addListItem(source, id, path, fields),
   }));
 }
@@ -886,7 +952,7 @@ export function removeScenarioListItem(
   path: (string | number)[],
   index: number,
 ): Promise<NodeWork> {
-  return editNodesIn(name, 'Removing that entry', (source) => ({
+  return editScenarioIn(name, 'Removing that entry', (source) => ({
     source: removeListItem(source, id, path, index),
   }));
 }
