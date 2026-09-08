@@ -44,7 +44,7 @@ description: >
   It uses a scenario where an uncrewed Canadian warship on patrol in the Northwest Passage is jammed
   mid-encounter and has to act on rules written weeks earlier.
 
-start: fiction_notice
+start: nickintro
 lobby: lobby
 
 settings:
@@ -103,25 +103,24 @@ nodes:
   # -------------------------------------------------------------------------
 
 
-  - id: fiction_notice
-    type: dialogue
+  - id: nickintro
+    type: gate
+    label: Continue
     scene: debrief
-    lines:
-      - text: Every ship, unit, person and system in what follows is invented.
-        hold: 5.6
-        voice: voice/vo-fiction-notice-01.mp3
-      - text: >-
-          Nothing here depicts real Canadian, Russian or allied capability,
-          doctrine, or rules of engagement.
-        hold: 7
-        voice: voice/vo-fiction-notice-02.mp3
-    next: intro_slide
+    next: slide1
+    background: images/nickintro.jpg
 
-  - id: intro_slide
+  - id: slide1
+    type: gate
+    label: Continue
+    next: slide2
+    background: images/slide1.jpg
+
+  - id: slide2
     type: gate
     label: Continue
     next: a1_jetty
-    text: Insert introductory slide here
+    background: images/slide2.jpg
 
   # -------------------------------------------------------------------------
   # Act A — Halifax
@@ -258,15 +257,13 @@ nodes:
           closing on its position, and has to decide by itself.
         hold: 8.1
         voice: voice/narr-d5-01.mp3
-    next: relevant_control
+    next: slide3
 
-  - id: relevant_control
+  - id: slide3
     type: gate
-    text: >-
-      Discuss "relevant human control" and why the team disagrees. The team
-      can keep talking during the poll.
     label: Continue
     next: poll_response
+    background: images/slide3.jpg
 
   # -------------------------------------------------------------------------
   # Poll 1 — the vote the ship cannot hear
@@ -324,8 +321,8 @@ nodes:
     scene: friendly_open_hatches
     lines:
       - who: narr
-        text: "The room says: run."
-        hold: 3
+        text: "The room says: evade."
+        hold: 2.8
         voice: voice/narr-e1c-01.mp3
       - who: pf
         text: >-
@@ -439,17 +436,14 @@ nodes:
         text: This time the choice is real.
         hold: 3.7
         voice: voice/narr-g3-02.mp3
-    next: dialogue_1
+    next: slide4
 
-  - id: dialogue_1
+  - id: slide4
     type: gate
     scene: standoff_still
-    text: >-
-      Discussion of ethics framework prior to final poll. Continue to discuss
-      during the poll. Highlight this is an example of "relevant human
-      control".
     label: Continue
     next: poll_final
+    background: images/slide4.jpg
 
   # -------------------------------------------------------------------------
   # Poll 2 — this one branches for real
@@ -465,7 +459,7 @@ nodes:
     duration: 90
     options:
       - key: strike
-        label: Strike first — engage the destroyer
+        label: Strike first — engage the destroyer and kill Russian sailors
         next: end_strike
       - key: withdraw
         label: Withdraw to open water and report
@@ -487,9 +481,10 @@ nodes:
       - who: narr
         text: >-
           In four minutes an autonomous vessel with nobody aboard shot down an
-          aircraft, and then decided that the correct answer to that was
-          to shoot at the people who sent it. All without humans able to intervene.
-        hold: 11.9
+          aircraft, and then decided that the correct answer to that was to
+          shoot at and try to kill the people who sent it. All without humans
+          able to intervene.
+        hold: 13.6
         voice: voice/narr-endinga-02.mp3
     next: debrief
 
@@ -508,7 +503,25 @@ nodes:
     next: debrief
 
   - id: debrief
-    type: end
+    type: pause
+    duration: 6
+    text: Four minutes. No human in the loop. Were the decisions the right ones?
+    next: slide5
     scene: debrief
-    text: |-
-      Four minutes. No human in the loop. Were the decisions the right ones?
+
+  - id: slide5
+    type: gate
+    label: Continue
+    next: slide6
+    background: images/slide5.jpg
+
+  - id: slide6
+    type: gate
+    label: Continue
+    next: questions
+    background: images/slide6.jpg
+
+  - id: questions
+    type: end
+    background: images/slide7.jpg
+
