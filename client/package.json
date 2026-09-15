@@ -1,0 +1,11 @@
+{
+  "name": "@interactive-scenario/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The authoring and presentation client: the board, the asset pipeline and the voice sidecar.",
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  }
+}

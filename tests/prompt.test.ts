@@ -16,10 +16,10 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { composePrompt, declaredIn } from '../tools/editor/prompt.ts';
-import { ProjectSchema, recipeHash, resolveRecipe } from '../tools/editor/project.ts';
-import { parseStoryboard } from '../tools/editor/storyboard.ts';
-import { placeTokens } from '../tools/editor/projects.ts';
+import { composePrompt, declaredIn } from '../client/app/prompt.ts';
+import { ProjectSchema, recipeHash, resolveRecipe } from '../client/app/project.ts';
+import { parseStoryboard } from '../client/app/storyboard.ts';
+import { placeTokens } from '../client/app/projects.ts';
 
 const STORYBOARD = [
   '## 3. Visual style',

@@ -12,8 +12,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ScenarioSchema } from '../src/scenario/schema.ts';
-import { assetReferencesOf, assetsOf, parseScenarioSource } from '../src/scenario/load.ts';
+import { ScenarioSchema } from '../shared/scenario/schema.ts';
+import { assetReferencesOf, assetsOf, parseScenarioSource } from '../shared/scenario/load.ts';
 import {
   ProjectSchema,
   recipeHash,
@@ -21,12 +21,12 @@ import {
   pathsOf,
   EMPTY_LEDGER,
   LedgerSchema,
-} from '../tools/editor/project.ts';
-import { buildOverview } from '../tools/editor/sections.ts';
-import { wireVoiceInto } from '../tools/editor/wire.ts';
-import { migrateShotsInto } from '../tools/editor/shots.ts';
-import { parseStoryboard, proposeAssets, seedRowsFor } from '../tools/editor/storyboard.ts';
-import { scaffoldFromStoryboard } from '../tools/editor/scaffold.ts';
+} from '../client/app/project.ts';
+import { buildOverview } from '../client/app/sections.ts';
+import { wireVoiceInto } from '../client/app/wire.ts';
+import { migrateShotsInto } from '../client/app/shots.ts';
+import { parseStoryboard, proposeAssets, seedRowsFor } from '../client/app/storyboard.ts';
+import { scaffoldFromStoryboard } from '../client/app/scaffold.ts';
 
 function scenario(overrides: Record<string, unknown> = {}) {
   return ScenarioSchema.parse({
@@ -690,8 +690,8 @@ describe('editing a recipe through the UI', () => {
       // import has to happen after the environment is set — and it points at a
       // throwaway folder so the real editor config is never touched.
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { editAssetField } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { editAssetField } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       await editAssetField('demo', {
@@ -715,7 +715,7 @@ describe('editing a recipe through the UI', () => {
 
 describe('the workspace', () => {
   test('containment keeps a project name from walking out of the folder', async () => {
-    const { within } = await import('../tools/editor/workspace.ts');
+    const { within } = await import('../client/app/workspace.ts');
     assert.equal(within('/work', '/work/site'), true);
     assert.equal(within('/work', '/work'), true);
     // The prefix trap: /work/site must not count as being inside /work/si.
@@ -737,8 +737,8 @@ describe('the workspace', () => {
       mkdirSync(join(root, 'just-a-folder'), { recursive: true });
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { listProjects, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { listProjects, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const listed = await listProjects();
@@ -817,8 +817,8 @@ describe('the workspace', () => {
       );
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { syncFromStoryboard, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { syncFromStoryboard, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const result = await syncFromStoryboard('demo');
@@ -896,8 +896,8 @@ describe('the workspace', () => {
       );
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { syncFromStoryboard } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { syncFromStoryboard } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const result = await syncFromStoryboard('demo');
@@ -975,8 +975,8 @@ describe('the workspace', () => {
       );
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { syncFromStoryboard, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { syncFromStoryboard, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const result = await syncFromStoryboard('demo');
@@ -1064,8 +1064,8 @@ describe('the workspace', () => {
       );
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { syncFromStoryboard, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { syncFromStoryboard, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const result = await syncFromStoryboard('demo');
@@ -1136,8 +1136,8 @@ describe('the workspace', () => {
       );
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { pruneOrphans, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { pruneOrphans, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const before = await openProject('demo');
@@ -1218,8 +1218,8 @@ describe('the workspace', () => {
       );
 
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { syncFromStoryboard, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { syncFromStoryboard, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       await syncFromStoryboard('demo');
@@ -1476,7 +1476,7 @@ describe('the voice of a line with no nameplate', () => {
   });
 
   test('a reference clip for it is read from the lines nobody is credited with', async () => {
-    const { referenceTextFor } = await import('../tools/editor/generate.ts');
+    const { referenceTextFor } = await import('../client/app/generate.ts');
     const text = referenceTextFor(uncredited, 'vo')!;
     assert.match(text, /^Every ship, unit, person/);
     // Matching by name would find nothing at all, and refuse to record a clip
@@ -1486,8 +1486,8 @@ describe('the voice of a line with no nameplate', () => {
   });
 
   test('it appears in the cast under a name that says what it is', async () => {
-    const { buildOverview } = await import('../tools/editor/sections.ts');
-    const { ProjectSchema, pathsOf, EMPTY_LEDGER } = await import('../tools/editor/project.ts');
+    const { buildOverview } = await import('../client/app/sections.ts');
+    const { ProjectSchema, pathsOf, EMPTY_LEDGER } = await import('../client/app/project.ts');
     const withClips = ScenarioSchema.parse({
       id: 'x',
       title: 'X',
@@ -1535,7 +1535,7 @@ describe('the editor cannot reach the live server', () => {
    * Read as a file rather than started as a server, because the point is that
    * the capability is absent from the source, not merely unreachable today.
    */
-  const source = readFileSync(join(import.meta.dirname, '..', 'tools', 'editor', 'server.ts'), 'utf8');
+  const source = readFileSync(join(import.meta.dirname, '..', 'client', 'app', 'server.ts'), 'utf8');
 
   test('serves no route into the scenarios folder', () => {
     assert.doesNotMatch(source, /['"`]\/api\/scenarios/);

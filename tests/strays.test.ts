@@ -123,8 +123,8 @@ async function workshop() {
   );
 
   process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-  const { setWorkspace } = await import('../tools/editor/workspace.ts');
-  const { openProject, discardStrays } = await import('../tools/editor/projects.ts');
+  const { setWorkspace } = await import('../client/app/workspace.ts');
+  const { openProject, discardStrays } = await import('../client/app/projects.ts');
   await setWorkspace(root);
 
   const ledger = () => JSON.parse(readFileSync(join(dir, '.ledger.json'), 'utf8'));

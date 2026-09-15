@@ -18,23 +18,23 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ScenarioSchema } from '../src/scenario/schema.ts';
+import { ScenarioSchema } from '../shared/scenario/schema.ts';
 import {
   ProjectSchema,
   recipeHash,
   resolveRecipe,
   pathsOf,
   EMPTY_LEDGER,
-} from '../tools/editor/project.ts';
+} from '../client/app/project.ts';
 import {
   generateAsset,
   publishAsset,
   referenceTextFor,
   GenerateError,
-} from '../tools/editor/generate.ts';
-import { modelById, modelsFor, modelStatus } from '../tools/editor/models.ts';
-import { isConsoleNoise } from '../tools/editor/sidecar.ts';
-import { buildOverview } from '../tools/editor/sections.ts';
+} from '../client/app/generate.ts';
+import { modelById, modelsFor, modelStatus } from '../client/app/models.ts';
+import { isConsoleNoise } from '../client/app/sidecar.ts';
+import { buildOverview } from '../client/app/sections.ts';
 
 const SCENARIO = ScenarioSchema.parse({
   id: 'demo',
@@ -428,14 +428,14 @@ describe('publishing', () => {
 
 describe('downloading a model', () => {
   test('a model that fetches its own weights offers nothing to download', async () => {
-    const { downloadModel } = await import('../tools/editor/download.ts');
+    const { downloadModel } = await import('../client/app/download.ts');
     // chatterbox pulls from Hugging Face on first load. Offering a Download
     // button for it would be a button that cannot do anything.
     await assert.rejects(() => downloadModel('chatterbox', '/tmp', undefined), /fetches its own/i);
   });
 
   test('downloading without a models folder says so rather than guessing', async () => {
-    const { downloadModel } = await import('../tools/editor/download.ts');
+    const { downloadModel } = await import('../client/app/download.ts');
     await assert.rejects(() => downloadModel('kokoro', undefined, undefined), /No models folder/i);
   });
 

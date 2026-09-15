@@ -3,10 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const client = (...parts: string[]) => resolve(here, 'src', 'client', ...parts);
+const web = (...parts: string[]) => resolve(here, 'server', 'web', ...parts);
 
 export default defineConfig({
-  root: client(),
+  root: web(),
   publicDir: false,
   build: {
     outDir: resolve(here, 'dist', 'client'),
@@ -16,10 +16,10 @@ export default defineConfig({
       input: {
         // No root index.html: the server routes / to the player app, so the
         // landing page is the audience join screen rather than the admin one.
-        display: client('display', 'index.html'),
-        host: client('host', 'index.html'),
-        player: client('player', 'index.html'),
-        admin: client('admin', 'index.html'),
+        display: web('display', 'index.html'),
+        host: web('host', 'index.html'),
+        player: web('player', 'index.html'),
+        admin: web('admin', 'index.html'),
       },
     },
   },

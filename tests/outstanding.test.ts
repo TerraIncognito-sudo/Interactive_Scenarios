@@ -16,8 +16,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { outstandingOf, OUTSTANDING_GROUPS } from '../tools/editor/outstanding.ts';
-import type { AssetView, Overview, SectionView } from '../tools/editor/sections.ts';
+import { outstandingOf, OUTSTANDING_GROUPS } from '../client/app/outstanding.ts';
+import type { AssetView, Overview, SectionView } from '../client/app/sections.ts';
 
 function asset(over: Partial<AssetView> & Pick<AssetView, 'file' | 'status'>): AssetView {
   return {

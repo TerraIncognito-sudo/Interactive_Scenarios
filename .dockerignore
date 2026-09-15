@@ -5,9 +5,12 @@ data
 .gitignore
 .github
 tests
-# The editor is a desk tool that writes to scenarios/. It has no authentication
-# and no business being inside the image that faces an audience.
-tools
+# The client is a desk tool that writes to project folders. It has no
+# authentication and no business inside the image that faces an audience.
+# Its package.json is copied explicitly in the Dockerfile, because npm ci
+# validates the workspace list -- but none of its source comes along.
+client
+!client/package.json
 *.md
 !README.md
 .env

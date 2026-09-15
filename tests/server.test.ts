@@ -13,9 +13,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
-import { buildServer } from '../src/server/index.ts';
-import type { Config } from '../src/server/config.ts';
-import type { PlayerState, SessionListResponse, Snapshot } from '../src/shared/protocol.ts';
+import { buildServer } from '../server/index.ts';
+import type { Config } from '../server/config.ts';
+import type { PlayerState, SessionListResponse, Snapshot } from '../shared/show/protocol.ts';
 
 type App = Awaited<ReturnType<typeof buildServer>>;
 

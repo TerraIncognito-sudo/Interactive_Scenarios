@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { rankCandidates, normalizePublicUrl } from '../src/server/config.ts';
+import { rankCandidates, normalizePublicUrl } from '../server/config.ts';
 
 describe('PUBLIC_URL normalisation', () => {
   test('supplies https for a bare hostname', () => {

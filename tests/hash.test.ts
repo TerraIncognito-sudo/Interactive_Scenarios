@@ -24,10 +24,10 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadProject, pathsOf, resolveRecipe, recipeHash } from '../tools/editor/project.ts';
-import { parseScenarioSource } from '../src/scenario/load.ts';
-import { portraitFilesOf } from '../tools/editor/sprites.ts';
-import type { AssetSection } from '../src/scenario/load.ts';
+import { loadProject, pathsOf, resolveRecipe, recipeHash } from '../client/app/project.ts';
+import { parseScenarioSource } from '../shared/scenario/load.ts';
+import { portraitFilesOf } from '../client/app/sprites.ts';
+import type { AssetSection } from '../shared/scenario/load.ts';
 
 const FIXTURE = join(import.meta.dirname, 'fixtures', 'hash-legacy', 'project.yaml');
 
@@ -119,8 +119,8 @@ describe('the recipe hash is frozen', () => {
 describe('the finished shows are still finished', () => {
   test('every row of every real project is ready, and matched by hash', async () => {
     const { readdir } = await import('node:fs/promises');
-    const { loadLedger } = await import('../tools/editor/project.ts');
-    const { buildOverview } = await import('../tools/editor/sections.ts');
+    const { loadLedger } = await import('../client/app/project.ts');
+    const { buildOverview } = await import('../client/app/sections.ts');
 
     const root = join(import.meta.dirname, '..', 'scenarios');
     const entries = await readdir(root, { withFileTypes: true }).catch(() => []);

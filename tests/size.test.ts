@@ -23,10 +23,10 @@ import {
   sizeOf,
   PORTRAIT,
   STAGE,
-} from '../tools/editor/size.ts';
-import { ScenarioSchema } from '../src/scenario/schema.ts';
-import { ProjectSchema, EMPTY_LEDGER, pathsOf, takesDir } from '../tools/editor/project.ts';
-import { buildOverview } from '../tools/editor/sections.ts';
+} from '../client/app/size.ts';
+import { ScenarioSchema } from '../shared/scenario/schema.ts';
+import { ProjectSchema, EMPTY_LEDGER, pathsOf, takesDir } from '../client/app/project.ts';
+import { buildOverview } from '../client/app/sections.ts';
 
 /** A real PNG of the given size — header and one IDAT, which is all that is read. */
 function png(width: number, height: number, colour = 6): Buffer {

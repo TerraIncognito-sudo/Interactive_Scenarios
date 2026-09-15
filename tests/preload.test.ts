@@ -16,7 +16,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { pooled } from '../src/client/shared/pool.ts';
+import { pooled } from '../server/web/lib/pool.ts';
 
 /** Resolves after a turn of the event loop, a few times over. */
 function tick(times = 3): Promise<void> {

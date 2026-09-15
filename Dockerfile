@@ -4,11 +4,17 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 
+# Every workspace manifest, because `npm ci` validates the whole workspace list
+# before it installs anything -- a missing one fails the install outright.
 COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/
+COPY server/package.json ./server/
+COPY client/package.json ./client/
 RUN npm ci
 
 COPY tsconfig.json vite.config.ts ./
-COPY src ./src
+COPY shared ./shared
+COPY server ./server
 RUN npx vite build
 
 # ---------------------------------------------------------------------------
@@ -18,11 +24,19 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Only production dependencies; the client is already built.
+# Only production dependencies; the browser bundles are already built.
 COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/
+COPY server/package.json ./server/
+COPY client/package.json ./client/
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY src ./src
+# `shared` travels with the server because the server imports it by relative
+# path. Nothing here resolves through node_modules, which is deliberate: Node
+# refuses to strip types for any file under a node_modules segment, so a
+# package-name import would be a container that will not start.
+COPY shared ./shared
+COPY server ./server
 COPY scenarios ./scenarios
 COPY --from=build /app/dist ./dist
 
@@ -41,4 +55,4 @@ USER node
 HEALTHCHECK --interval=30s --timeout=4s --start-period=8s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8880)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "src/server/index.ts"]
+CMD ["node", "server/index.ts"]

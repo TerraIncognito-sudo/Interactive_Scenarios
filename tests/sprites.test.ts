@@ -10,16 +10,16 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseScenarioSource } from '../src/scenario/load.ts';
+import { parseScenarioSource } from '../shared/scenario/load.ts';
 import {
   portraitFilesOf,
   removeSpriteFrom,
   sheetName,
   SpriteError,
   wireSpritesInto,
-} from '../tools/editor/sprites.ts';
-import { asksForBackground, composePrompt } from '../tools/editor/prompt.ts';
-import { ProjectSchema, recipeHash, resolveRecipe } from '../tools/editor/project.ts';
+} from '../client/app/sprites.ts';
+import { asksForBackground, composePrompt } from '../client/app/prompt.ts';
+import { ProjectSchema, recipeHash, resolveRecipe } from '../client/app/project.ts';
 
 const SHEETS = {
   Beaudoin: 'STYLE. Character reference sheet, neutral slate background. A woman in her forties.',
