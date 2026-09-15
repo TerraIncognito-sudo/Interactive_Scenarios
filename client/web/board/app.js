@@ -20,6 +20,7 @@ import {
   migrateShots,
   wireSprites,
   sortFolders,
+  migrateRecipes,
   pruneOrphans,
   refreshModels,
   stopModels,
@@ -630,6 +631,57 @@ $('sort-folders').addEventListener('click', () => {
     // to pick a winner for quietly.
     const stuck = (result.skipped ?? []).map((entry) => `${entry.file}: ${entry.why}`);
     setStatus(stuck.length > 0 ? 'warn' : 'ok', [...parts, ...stuck].join(' · '));
+  })();
+});
+
+/**
+ * Re-stamping the ledger for a change in the shape of a recipe.
+ *
+ * Two presses on purpose. The first is a dry run that says how many takes would
+ * move and which keys would leave project.yaml; the second does it. A single
+ * button that rewrote an author's ledger and their project file without showing
+ * its working first is one nobody would press twice.
+ */
+$('migrate-recipes').addEventListener('click', () => {
+  void (async () => {
+    const plan = await migrateRecipes(true);
+    if (!plan) return;
+
+    const takes = plan.restamped.reduce((sum, row) => sum + row.takes, 0);
+    if (takes === 0 && plan.stripped.length === 0) {
+      setStatus('warn', 'nothing to migrate: every take already matches its recipe');
+      return;
+    }
+
+    const lines = [
+      `${takes} take${takes === 1 ? '' : 's'} across ${plan.restamped.length} row${plan.restamped.length === 1 ? '' : 's'} will be re-stamped.`,
+      plan.stripped.length > 0 ? `${plan.stripped.length} dead key${plan.stripped.length === 1 ? '' : 's'} will be removed from project.yaml.` : '',
+      // The one thing worth stopping for: these were stale before this ran and
+      // will still be stale after. Saying so up front is what stops the report
+      // afterwards reading as damage this did.
+      plan.unrecognised.length > 0
+        ? `${plan.unrecognised.length} take${plan.unrecognised.length === 1 ? '' : 's'} match neither the old recipe nor the new one, and will be left alone.`
+        : '',
+      '',
+      'Go ahead?',
+    ].filter(Boolean);
+
+    if (!confirm(lines.join('
+'))) {
+      setStatus('warn', 'migration cancelled');
+      return;
+    }
+
+    const done = await migrateRecipes(false);
+    if (!done) return;
+
+    const moved = done.restamped.reduce((sum, row) => sum + row.takes, 0);
+    const parts = [`re-stamped ${moved} take${moved === 1 ? '' : 's'}`];
+    if (done.stripped.length > 0) parts.push(`removed ${done.stripped.length} dead key${done.stripped.length === 1 ? '' : 's'}`);
+    if (done.unrecognised.length > 0) parts.push(`${done.unrecognised.length} left alone`);
+    // Comments the removal has made wrong, by line number and never reworded.
+    for (const note of done.staleComments) parts.push(`line ${note.line} still describes a key that has gone`);
+    setStatus(done.unrecognised.length > 0 || done.staleComments.length > 0 ? 'warn' : 'ok', parts.join(' · '));
   })();
 });
 

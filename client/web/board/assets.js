@@ -361,6 +361,28 @@ export async function discardStrays(files) {
 }
 
 /** Drops recipes for files the scenario no longer references. */
+/**
+ * Re-stamps the ledger after a change in the shape of a recipe.
+ *
+ * A dry run first, always. This is one press that rewrites both the ledger and
+ * project.yaml, and being able to read what it is about to do is what makes it
+ * a button somebody dares use.
+ */
+export async function migrateRecipes(dryRun) {
+  if (!state.name) return null;
+  const result = await api(`/api/projects/${encodeURIComponent(state.name)}/migrate-recipes`, {
+    method: 'POST',
+    body: JSON.stringify({ dryRun: dryRun === true }),
+  });
+  // A dry run changes nothing, so there is no new board to take -- and taking
+  // the undefined one would blank it.
+  if (result.project) {
+    state.data = result.project;
+    render();
+  }
+  return result;
+}
+
 export async function pruneOrphans() {
   if (!state.name) return null;
   const result = await api(`/api/projects/${encodeURIComponent(state.name)}/prune`, {
@@ -3193,6 +3215,9 @@ function render() {
   // Pruning is destructive and only ever the right answer when there is
   // something orphaned, so the button appears only when it applies.
   $('board-bar').hidden = state.data.projectSource === undefined;
+  // Shown only where there is something to migrate, so a project born after
+  // the change never carries a button that would do nothing.
+  $('migrate-recipes').hidden = !state.data?.needsMigration;
   $('prune').hidden = overview.orphans.length === 0;
   $('prune').textContent =
     overview.orphans.length === 1

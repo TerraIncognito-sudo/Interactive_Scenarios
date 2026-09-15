@@ -44,6 +44,12 @@ import {
   type Project,
   type ProjectPaths,
 } from './project.ts';
+import {
+  migrateRecipes,
+  needsRecipeMigration,
+  strippedProjectSource,
+  type RecipeMigration,
+} from './migrate-recipes.ts';
 import { buildOverview, type Overview } from './sections.ts';
 import { outstandingOf, type Outstanding } from './outstanding.ts';
 import {
@@ -161,6 +167,16 @@ export type OpenProject = {
   /** The same board, projected into one ordered list of what is left. */
   outstanding: Outstanding;
   problems: { level: 'error' | 'warning'; message: string }[];
+  /**
+   * True while this project still carries keys a recipe no longer has.
+   *
+   * Until `migrate-recipes` has run, every row's recorded hash was computed
+   * over a shape the current code does not produce, so the whole board reads
+   * `stale`. Saying which of the two it is -- a project that needs migrating,
+   * or art that genuinely needs remaking -- is the difference between a board
+   * somebody trusts and one they stop reading.
+   */
+  needsMigration: boolean;
 };
 
 function requireWorkspace(): string {
@@ -287,9 +303,26 @@ export async function openProject(name: string): Promise<OpenProject> {
 
   let projectSource: string | undefined;
   let project: Project;
+  let needsMigration = false;
   try {
     projectSource = await readFile(projectFile, 'utf8');
-    project = parseProjectSource(projectSource);
+    // Read through the strip when the file predates the change, or the strict
+    // schema rejects it and the catch below reports a project file that is
+    // plainly there as missing -- rendering every row of a finished show as
+    // art that was never made.
+    needsMigration = needsRecipeMigration(projectSource);
+    project = parseProjectSource(
+      needsMigration ? strippedProjectSource(projectSource) : projectSource,
+    );
+    if (needsMigration) {
+      problems.push({
+        level: 'warning',
+        message:
+          'This project was made before recipes changed shape, so every row will read ' +
+          'stale until the ledger is re-stamped. Press "Migrate recipes" — it shows what ' +
+          'it will do before it does it, and it never touches a take it does not recognise.',
+      });
+    }
   } catch (err) {
     if (err instanceof ProjectError) throw err;
     project = await defaultProject(name, dir);
@@ -341,6 +374,7 @@ export async function openProject(name: string): Promise<OpenProject> {
     overview,
     outstanding: outstandingOf(overview),
     problems,
+    needsMigration,
   };
 }
 
@@ -1040,6 +1074,20 @@ export async function reconcileProject(name: string): Promise<ReconcilePlan> {
  * its own. A row can hold an afternoon of tuning, and losing it to a rename
  * nobody meant to make is not a trade the machine gets to choose.
  */
+/**
+ * Re-stamps this project's ledger for a change in the shape of a recipe.
+ *
+ * A thin wrapper so the containment check lives where every other project route
+ * has it: `migrate-recipes.ts` takes a directory and knows nothing about the
+ * workspace, which is what keeps it testable against a temp folder.
+ */
+export async function migrateProjectRecipes(
+  name: string,
+  options: { dryRun?: boolean } = {},
+): Promise<RecipeMigration> {
+  return migrateRecipes(projectDir(name), options);
+}
+
 export async function pruneOrphans(name: string): Promise<{ removed: string[] }> {
   const dir = projectDir(name);
   const file = join(dir, 'project.yaml');

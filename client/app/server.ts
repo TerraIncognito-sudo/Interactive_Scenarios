@@ -70,6 +70,7 @@ import {
   adoptTakes,
   renameToFormat,
   wireVoice,
+  migrateProjectRecipes,
 } from './projects.ts';
 import { SCENE_FIELDS, type SceneField } from './scenes.ts';
 import {
@@ -407,6 +408,18 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
       if (action === 'init' && request.method === 'POST') {
         return sendJson(response, 200, await initProject(name));
+      }
+
+      if (action === 'migrate-recipes' && request.method === 'POST') {
+        // A dry run answers "what would this do" without touching the ledger or
+        // the project file. The button asks that first and shows the answer,
+        // because this is one press that rewrites both.
+        const body = (await readBody(request)) as { dryRun?: unknown };
+        const result = await migrateProjectRecipes(name, { dryRun: body.dryRun === true });
+        return sendJson(response, 200, {
+          ...result,
+          project: body.dryRun === true ? undefined : await openProject(name),
+        });
       }
 
       if (action === 'prune' && request.method === 'POST') {

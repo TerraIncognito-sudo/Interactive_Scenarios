@@ -252,7 +252,18 @@ export const LedgerEntrySchema = z.strictObject({
 });
 
 export const LedgerSchema = z.strictObject({
-  version: z.literal(1).default(1),
+  /**
+   * 1 wrote hashes over the old recipe shape; 2 is after `migrate-recipes` has
+   * re-stamped them.
+   *
+   * A record rather than a gate: what decides whether a project still needs
+   * migrating is whether `project.yaml` still carries the removed keys, because
+   * that is the question with no false positives — a project created after the
+   * deletion has never had them and must never be asked. This says the
+   * re-stamp happened, which is the only way a later run can tell "already
+   * migrated" from "never had anything to migrate".
+   */
+  version: z.union([z.literal(1), z.literal(2)]).default(1),
   assets: z.record(z.string().min(1), LedgerEntrySchema).prefault({}),
 });
 
