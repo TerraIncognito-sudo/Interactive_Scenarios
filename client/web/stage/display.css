@@ -194,6 +194,28 @@
   background: rgb(0 0 0 / 0.72);
 }
 
+/* `hidden` is a presentation hint and loses to any class that sets `display`,
+   which is the trap a projector shows you from the back of a room: the join
+   block was `hidden` all through an unlinked show and still held 221 pixels of
+   empty black box in the middle of the lobby — a gap exactly where a QR code
+   that failed to draw would leave one, which is the reading the unlinked state
+   exists to prevent. Every element this stylesheet gives a `display` to and the
+   script ever hides needs its own rule. */
+.join-block[hidden],
+#poll-join[hidden] {
+  display: none;
+}
+
+/* The other half: said in words, in the place the block would have been. */
+#lobby-unlinked {
+  margin-top: 44px;
+  opacity: 0.55;
+}
+
+#lobby-unlinked[hidden] {
+  display: none;
+}
+
 .qr {
   width: 300px;
   height: 300px;

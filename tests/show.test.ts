@@ -33,6 +33,7 @@ process.env.EDITOR_CONFIG_DIR = configDir;
 
 const { buildEditorServer } = await import('../client/app/server.ts');
 const { setWorkspace } = await import('../client/app/workspace.ts');
+const { currentShow } = await import('../client/app/show/session.ts');
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'scenarios');
 
@@ -494,6 +495,226 @@ describe('what the projector says while it loads', () => {
 });
 
 /**
+ * Rehearsing a vote, and the one thing that must stop it.
+ *
+ * `castVotes` and `forceBranch` look alike and do opposite things. Force hands
+ * `closePoll` a decided result, so `resolvePoll` never runs — it is the
+ * override for the night a vote goes wrong, and it proves nothing about the
+ * poll. Cast puts ballots in the box and lets the poll close on its own clock,
+ * which is the only one of the two that exercises a poll's `default:`, its
+ * tie-break and the reveal beat before an audience is the thing testing them.
+ */
+describe('a vote nobody cast', () => {
+  /** Drives a show to its open poll and returns the board client. */
+  async function runToPoll(): Promise<Client> {
+    await start('quick');
+    const board = await joinBoard();
+    board.send({ type: 'command', command: { name: 'start' } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'poll');
+    return board;
+  }
+
+  test('simulated ballots are tallied and the poll resolves on them', async () => {
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 5 } });
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'right', count: 2 } });
+
+    const tallied = await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 7);
+    assert.deepEqual(tallied.tally?.counts, { left: 5, right: 2 });
+
+    board.send({ type: 'command', command: { name: 'closePoll' } });
+    const result = await board.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'result');
+    if (result.beatInfo.kind !== 'result') return assert.fail('expected a result beat');
+    // Through `resolvePoll`, which is the point: the fixture's declared default
+    // is `right`, and a Force would have reported a winner while proving none
+    // of this.
+    assert.equal(result.beatInfo.winner, 'left');
+    assert.equal(result.beatInfo.total, 7);
+    assert.equal(result.beatInfo.usedDefault, false);
+    board.close();
+  });
+
+  test('the count is a target, so the dial turns back down as well as up', async () => {
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 9 } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 9);
+
+    // Pressing the same option with a smaller number takes votes away. Without
+    // that the only way down from nine is to restart the show, which makes
+    // trying a second split cost more than it is worth — and trying splits is
+    // the entire job of this control.
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 2 } });
+    const down = await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 2);
+    assert.deepEqual(down.tally?.counts, { left: 2, right: 0 });
+
+    // And zero is a real number: it is how a rehearsal gets back to the empty
+    // poll whose `default:` nobody otherwise sees fire.
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 0 } });
+    const empty = await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 0);
+    assert.deepEqual(empty.tally?.counts, { left: 0, right: 0 });
+    board.close();
+  });
+
+  test('options do not take voters out of each other', async () => {
+    // The failure the shared-voter scheme had: asking for five Left and two
+    // Right handed back three and two, because the two Rights were taken out
+    // of the five Lefts. A control whose total is less than the numbers typed
+    // into it is one people stop trusting.
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 5 } });
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'right', count: 2 } });
+    const tallied = await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 7);
+    assert.deepEqual(tallied.tally?.counts, { left: 5, right: 2 });
+    board.close();
+  });
+
+  test('withdrawn voters stay withdrawn when the poll is re-entered', async () => {
+    // Stepping back into a poll rebuilds the ballot box from storage, which is
+    // what makes a restart lossless for a real audience. It also means a
+    // withdrawal that only reached the box would come undone the first time
+    // anybody pressed Back.
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 6 } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 6);
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 1 } });
+    const trimmed = await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 1);
+
+    // Out of the poll and back into it. The fixture's opening lines hold for
+    // hundredths of a second, so the clock brings the show round on its own.
+    board.send({ type: 'command', command: { name: 'back' } });
+    const again = await board.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beat > trimmed.beat && m.beatInfo.kind === 'poll',
+    );
+    assert.equal(again.tally?.voters, 1);
+    board.close();
+  });
+
+  test('Force decides without a tally, which is what makes it the other button', async () => {
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 9 } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 9);
+
+    board.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'right' } });
+    const result = await board.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'result');
+    if (result.beatInfo.kind !== 'result') return assert.fail('expected a result beat');
+    // Nine votes for the other option and it wins anyway. The counts still
+    // travel, because the room is about to look at them.
+    assert.equal(result.beatInfo.winner, 'right');
+    assert.equal(result.beatInfo.counts.left, 9);
+    assert.equal(result.beatInfo.usedDefault, false);
+    board.close();
+  });
+
+  test('a poll nobody votes in takes its default rather than deadlocking', async () => {
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'closePoll' } });
+    const result = await board.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'result');
+    if (result.beatInfo.kind !== 'result') return assert.fail('expected a result beat');
+    assert.equal(result.beatInfo.winner, 'right');
+    assert.equal(result.beatInfo.usedDefault, true);
+    board.close();
+  });
+
+  test('a simulated vote is refused the moment a relay is linked', async () => {
+    const board = await runToPoll();
+
+    // What the link will do in step 7. A room with a join code is a room
+    // phones can reach, so the refusal keys off exactly that rather than a
+    // second flag that could disagree with it.
+    currentShow()!.room.joinCode = 'ABCD24';
+
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 6 } });
+    // There is nothing to wait for, which is the assertion. Give the command a
+    // clear round trip and then look at what the room actually holds.
+    board.send({ type: 'ping' });
+    await board.next((m: any) => m.type === 'pong');
+    assert.equal(currentShow()!.room.snapshot().tally?.voters, 0);
+
+    // And it comes back when the link goes, because this is a state rather
+    // than a mode somebody has to remember to leave.
+    currentShow()!.room.joinCode = undefined;
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 6 } });
+    const tallied = await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 6);
+    assert.equal(tallied.tally?.counts.left, 6);
+    board.close();
+  });
+
+  test('the console stops offering the buttons rather than letting them fail', () => {
+    // The refusal is the Room's. This is the half that keeps somebody pressing
+    // a control all evening wondering why the tally will not move — and it
+    // names the room, because "disabled" is a puzzle.
+    const source = readBoard('show.js');
+    assert.ok(source.includes('votes come from the room now'));
+    assert.ok(source.includes("name: 'castVotes'"));
+  });
+});
+
+/**
+ * The failure that merging the two programs created.
+ *
+ * Autoplay wants a gesture in the window that makes the sound. Start used to be
+ * pressed on a host console — a different device — so the projector's own audio
+ * gate covered it. Start is now a button in the board window, so the stage can
+ * reach an audience having never been touched, and the first anybody would
+ * learn of it is a fiction notice nobody hears.
+ */
+describe('the projector has to have been clicked', () => {
+  test('a fresh show reports its sound locked, because nothing has touched it', async () => {
+    await start('quick');
+    const stage = await joinStage();
+    const snapshot = await stage.next<Snapshot>(isSnapshot);
+    assert.equal(snapshot.audioUnlocked, false);
+    stage.close();
+  });
+
+  test('the stage says when it is unlocked, and the board sees it', async () => {
+    await start('quick');
+    const stage = await joinStage();
+    const board = await joinBoard();
+
+    stage.send({ type: 'displayAudio', unlocked: true });
+    const unlocked = await board.next<Snapshot>((m) => isSnapshot(m) && m.audioUnlocked);
+    assert.equal(unlocked.audioUnlocked, true);
+    stage.close();
+    board.close();
+  });
+
+  test('the gesture goes with the window it was made in', async () => {
+    await start('quick');
+    const stage = await joinStage();
+    const board = await joinBoard();
+    stage.send({ type: 'displayAudio', unlocked: true });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.audioUnlocked);
+
+    stage.close();
+    const gone = await board.next<Snapshot>((m) => isSnapshot(m) && m.presence.displays === 0);
+    // The next projector to open is one nobody has clicked. Carrying the old
+    // window's answer forward would let a show start into silence on exactly
+    // the reconnect that caused it.
+    assert.equal(gone.audioUnlocked, false);
+    board.close();
+  });
+
+  test('the stage asks for the gesture before a line has gone silent', () => {
+    // The gate used to appear only once a clip had actually been refused,
+    // which was fine while Start lived on another device. By then a line has
+    // been read to nobody.
+    const source = readStage();
+    assert.ok(source.includes('primeAudio'));
+    assert.ok(source.includes('hasBeenActive'));
+  });
+
+  test('Start says which window needs the click, rather than only refusing', () => {
+    const source = readBoard('show.js');
+    assert.ok(source.includes('audioUnlocked'));
+    assert.ok(source.includes('Click the stage window once'));
+    // A sentence rather than a boolean: a disabled button with no explanation
+    // is a bug report, and this one is about a window nobody is looking at.
+    assert.ok(source.includes('startBlockedBecause'));
+  });
+});
+
+/**
  * The invariant this rebuild destroyed, and what replaced it.
  *
  * The editor used to be unable to reach a running show because it was a
@@ -575,3 +796,13 @@ describe('a show holds its own folder', () => {
   });
 });
 
+function readBoard(file: string): string {
+  return readFileSync(join(import.meta.dirname, '..', 'client', 'web', 'board', file), 'utf8');
+}
+
+function readStage(): string {
+  return readFileSync(
+    join(import.meta.dirname, '..', 'client', 'web', 'stage', 'main.ts'),
+    'utf8',
+  );
+}

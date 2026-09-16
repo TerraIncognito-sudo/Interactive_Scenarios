@@ -453,9 +453,65 @@ function unlockAudio(): void {
   });
   ambience.resume();
   music.resume();
+  reportAudio();
 }
 
 audioGate.addEventListener('click', unlockAudio);
+
+/**
+ * Whether this window has had the gesture the autoplay policy wants.
+ *
+ * `hasBeenActive` is the browser's own answer to exactly that question, which
+ * is better than inferring it from a clip that failed to play — by the time a
+ * clip has failed, a line has already been read in silence.
+ *
+ * A browser with no `userActivation` gets `true`, deliberately. This gates the
+ * Start button on the board, and a gate that cannot prove it is needed must
+ * not be allowed to stop a show: the cost of a wrong `true` is the audio gate
+ * appearing on the projector, which is the behaviour this had before. The cost
+ * of a wrong `false` is a button that refuses to start with no way to satisfy
+ * it.
+ */
+function audioAllowed(): boolean {
+  return navigator.userActivation?.hasBeenActive ?? true;
+}
+
+let reportedAudio: boolean | undefined;
+
+function reportAudio(): void {
+  const unlocked = audioAllowed();
+  // Re-sent on every connect, like readiness, because a send on a closed
+  // socket is silently dropped — and unlike readiness this is routinely true
+  // before the socket ever opens, since the operator clicks the window the
+  // moment they have dragged it onto the projector.
+  if (unlocked === reportedAudio || !connection.isOpen) return;
+  reportedAudio = unlocked;
+  connection.send({ type: 'displayAudio', unlocked });
+}
+
+/**
+ * Asks for the gesture up front rather than after a line has gone silent.
+ *
+ * The gate used to appear only once a clip had actually been refused, which
+ * was fine while Start lived on a second device: the projector had been opened
+ * by hand and clicked on the way past. Start is now a button in the board
+ * window, so this window can reach an audience having never been touched — and
+ * the first thing anybody would learn about it is a fiction notice nobody
+ * hears.
+ */
+function primeAudio(): void {
+  if (audioAllowed()) {
+    reportAudio();
+    return;
+  }
+  audioGate.hidden = false;
+  // Any gesture at all counts, not only one aimed at the button. A presenter
+  // who clicks the window to focus it before pressing a key has already done
+  // the thing the policy was waiting for.
+  for (const event of ['pointerdown', 'keydown'] as const) {
+    document.addEventListener(event, () => reportAudio(), { once: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Scene beds and one-shots
@@ -1178,6 +1234,11 @@ const connection = new Connection({
       // Reconnected: the next snapshot resyncs us, so stop local playback.
       clearTimeout(localTimer);
       announceReady();
+      // Forgotten by the room when the last display left, which on a reconnect
+      // is this same window a moment ago — so it has to be said again or the
+      // board holds Start against a projector that was clicked long since.
+      reportedAudio = undefined;
+      reportAudio();
     }
   },
   onMessage: (message) => {
@@ -1236,3 +1297,4 @@ async function renderJoinInfo(): Promise<void> {
 
 void renderJoinInfo();
 void loadScenario();
+primeAudio();

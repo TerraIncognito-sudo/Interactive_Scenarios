@@ -190,6 +190,13 @@ export class Store {
       .all(room, nodeId) as VoteRow[];
   }
 
+  /** Removes one device's vote. Only ever a simulated one — see `RoomStore`. */
+  forgetVote(room: string, nodeId: string, deviceId: string): void {
+    this.db
+      .prepare(`DELETE FROM votes WHERE room = ? AND node_id = ? AND device_id = ?`)
+      .run(room, nodeId, deviceId);
+  }
+
   appendEvent(room: string, kind: string, payload: unknown, at: number): void {
     this.db
       .prepare(`INSERT INTO events (room, at, kind, payload) VALUES (?, ?, ?, ?)`)

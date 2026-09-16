@@ -50,6 +50,20 @@ export class BallotBox {
     return true;
   }
 
+  /**
+   * Takes a device's ballot back out.
+   *
+   * No phone sends this — an audience member changes their mind by voting
+   * again, and one who puts their phone away is simply somebody who voted.
+   * It exists because a *simulated* room has to be a dial rather than a
+   * ratchet: rehearsing a poll means trying a split, watching it resolve, and
+   * then trying a different one, and without this the only way down from
+   * eight votes is to restart the show.
+   */
+  withdraw(deviceId: string): boolean {
+    return this.byDevice.delete(deviceId);
+  }
+
   /** What a given device currently has selected, for restoring on reconnect. */
   choiceOf(deviceId: string): string | undefined {
     return this.byDevice.get(deviceId)?.optionKey;

@@ -92,6 +92,38 @@ export const DisplayProgressSchema = z.object({
   totalBytes: z.number().nonnegative().optional(),
 });
 
+/**
+ * The projector says whether sound is allowed yet.
+ *
+ * Its own message rather than a field on `displayReady`, because the two are
+ * about unrelated things that happen at unrelated times: readiness is the
+ * download finishing, and this is a person having touched the window. Folding
+ * one into the other would mean re-announcing a completed download in order to
+ * report a click.
+ *
+ * This exists because merging the two programs created a failure that could
+ * not happen before. Autoplay needs a gesture in the *window that plays the
+ * sound*, and Start used to be pressed on a host console — a different device
+ * — so the projector's own audio gate covered it. Start is now a button in the
+ * board window, the stage may never have been clicked, and the first voice
+ * line is silent with nothing anywhere saying why.
+ */
+export const DisplayAudioSchema = z.object({
+  type: z.literal('displayAudio'),
+  unlocked: z.boolean(),
+});
+
+/**
+ * The most simulated voters one option can hold.
+ *
+ * A full room is forty phones; anything past a couple of hundred is a stress
+ * test of the tally rather than a rehearsal of the show, and this command's
+ * job is the show. It is a shared constant because the Room sweeps the whole
+ * range on every press to take withdrawn voters back out — so a cap the two
+ * ends disagreed about would leave simulated ballots nobody could clear.
+ */
+export const MAX_SIMULATED_VOTERS = 200;
+
 export const HostCommandSchema = z.object({
   type: z.literal('command'),
   command: z.discriminatedUnion('name', [
@@ -113,6 +145,40 @@ export const HostCommandSchema = z.object({
     z.object({ name: z.literal('forceBranch'), optionKey: z.string().min(1).max(12) }),
     z.object({ name: z.literal('jump'), nodeId: z.string().min(1).max(64) }),
     z.object({ name: z.literal('reset') }),
+    /**
+     * Votes nobody cast, for rehearsing a poll at a desk.
+     *
+     * The difference between this and `forceBranch` is the whole reason both
+     * exist. Force hands `closePoll` a decided result, so it never runs
+     * `resolvePoll` and never draws a truthful bar chart — it is the override
+     * for the night a vote goes wrong. This puts ballots in the box and lets
+     * the poll close on its own clock, which is the only one of the two that
+     * proves a poll's `default:`, its tie-break and the reveal beat work
+     * before an audience is the thing testing them.
+     *
+     * **`count` is a target, not an increment**: it says how many simulated
+     * voters have chosen this option, and pressing it again with a smaller
+     * number takes some away. Zero is allowed and means nobody — which is how
+     * a rehearsal gets back to an empty poll to watch its `default:` fire.
+     *
+     * The alternative was one pool of simulated voters shared across the
+     * options, so that re-casting moved a voter rather than adding one. That
+     * dedupes for free, and it is wrong at the only moment anybody uses this:
+     * asking for five Left and two Right hands back three and two, because the
+     * two Rights were taken out of the five Lefts. A control whose total is
+     * less than the numbers typed into it is a control people stop trusting.
+     * So each option owns its own voters and the counts are independent.
+     *
+     * Refused outright while a relay is linked. Otherwise the rehearsal
+     * control stuffs a live ballot, and that will happen exactly once: in
+     * front of a room, five minutes after somebody goes live having simulated
+     * all afternoon.
+     */
+    z.object({
+      name: z.literal('castVotes'),
+      optionKey: z.string().min(1).max(12),
+      count: z.number().int().min(0).max(MAX_SIMULATED_VOTERS),
+    }),
   ]),
 });
 
@@ -123,6 +189,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   CastVoteSchema,
   DisplayReadySchema,
   DisplayProgressSchema,
+  DisplayAudioSchema,
   HostCommandSchema,
   PingSchema,
 ]);
@@ -282,6 +349,15 @@ export type Snapshot = {
   presence: { displays: number; players: number };
   /** Whether the display has finished prefetching assets. */
   displayReady: boolean;
+  /**
+   * Whether the projector window is allowed to make a sound yet.
+   *
+   * False until somebody has touched that window, and a show started in that
+   * state reads every line in silence. The board keeps Start behind this and
+   * says which window needs the click — see `DisplayAudioSchema` for the
+   * failure it exists for.
+   */
+  audioUnlocked: boolean;
   /**
    * How far it has got, while it has not. Absent once it is ready, and absent
    * before the first report — which is itself worth showing as "connected,

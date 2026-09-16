@@ -183,6 +183,15 @@ export function attachWebSocketServer(server: Server, registry: RoomRegistry): W
           return;
         }
 
+        case 'displayAudio': {
+          if (subscriber.role !== 'display') {
+            fail(socket, 'badToken', 'Only the display may report its audio.', false);
+            return;
+          }
+          room.setAudioUnlocked(message.unlocked);
+          return;
+        }
+
         case 'command': {
           // The projector drives the show too, from its own keyboard, for the
           // presenter who has no second screen to put the console on. It gets

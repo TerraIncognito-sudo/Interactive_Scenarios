@@ -25,7 +25,11 @@ import type {
   SnapshotBeat,
   PlayerState,
 } from '../shared/show/protocol.ts';
-import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from '../shared/show/protocol.ts';
+import {
+  MAX_SIMULATED_VOTERS,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+} from '../shared/show/protocol.ts';
 /**
  * What a Room needs from storage, and nothing else.
  *
@@ -60,6 +64,14 @@ export type RoomStore = {
   ): void;
   /** Votes already cast for a poll, so reopening after a restart is lossless. */
   votesFor(room: string, nodeId: string): { device_id: string; option_key: string; at: number }[];
+  /**
+   * Removes one device's vote.
+   *
+   * Only a simulated voter is ever taken back out — see `BallotBox.withdraw`.
+   * It has to reach storage rather than only the box, or stepping back into a
+   * poll replays the ballots the operator just cleared.
+   */
+  forgetVote(room: string, nodeId: string, deviceId: string): void;
   closeRoom(code: string, now: number): void;
 };
 
@@ -135,6 +147,15 @@ export class Room {
    * shot is going to open black.
    */
   displayMissing: { failed: number; total: number } | undefined;
+  /**
+   * Whether the projector window may make a sound.
+   *
+   * Reported by the display rather than assumed, because only that window
+   * knows — autoplay is refused per document, and the answer changes the
+   * moment somebody touches it. Reset when the last display goes, since the
+   * next window to open is a window nobody has clicked.
+   */
+  audioUnlocked = false;
   lastActivityAt: number;
   closed = false;
 
@@ -244,6 +265,10 @@ export class Room {
         // would show a console counting up for a projector that is gone.
         this.displayLoading = undefined;
         this.displayMissing = undefined;
+        // And the gesture went with the window. The next projector to open is
+        // one nobody has touched, so claiming its audio is unlocked would let
+        // a show start into silence on exactly the reconnect that caused it.
+        this.audioUnlocked = false;
       }
       this.broadcast();
     }
@@ -327,6 +352,7 @@ export class Room {
       serverNow: Date.now(),
       presence: { displays: this.displayCount, players: this.playerCount },
       displayReady: this.displayReady,
+      audioUnlocked: this.audioUnlocked,
       ...(this.displayLoading ? { displayLoading: this.displayLoading } : {}),
       ...(this.displayMissing ? { displayMissing: this.displayMissing } : {}),
     };
@@ -508,8 +534,15 @@ export class Room {
   // Voting
   // -------------------------------------------------------------------------
 
-  /** Returns false if voting is not open or the option is not on this poll. */
-  castVote(deviceId: string, optionKey: string): boolean {
+  /**
+   * Puts one ballot in the box, without telling anybody.
+   *
+   * Split from `castVote` so a batch can be one broadcast rather than one per
+   * voter: a simulated room of forty would otherwise rebuild and send forty
+   * snapshots, each of which resolves a beat and a scene, to show a tally that
+   * was only ever going to be looked at once.
+   */
+  private recordVote(deviceId: string, optionKey: string): boolean {
     if (this.state.phase !== 'polling' || !this.box) return false;
     const now = Date.now();
     if (!this.box.cast(deviceId, optionKey, now)) return false;
@@ -522,6 +555,20 @@ export class Room {
       at: now,
     });
     this.touch();
+    return true;
+  }
+
+  /** The other half of `recordVote`, for a simulated voter being taken away. */
+  private withdrawVote(deviceId: string): boolean {
+    if (this.state.phase !== 'polling' || !this.box) return false;
+    if (!this.box.withdraw(deviceId)) return false;
+    this.store.forgetVote(this.code, this.state.nodeId, deviceId);
+    return true;
+  }
+
+  /** Returns false if voting is not open or the option is not on this poll. */
+  castVote(deviceId: string, optionKey: string): boolean {
+    if (!this.recordVote(deviceId, optionKey)) return false;
     this.broadcastTally();
     return true;
   }
@@ -653,6 +700,38 @@ export class Room {
         this.apply({ type: 'jump', nodeId: command.nodeId });
         return;
 
+      case 'castVotes': {
+        // Refused whenever there is a join code, which is precisely "a relay
+        // is carrying real votes for this room". The condition is not a second
+        // flag that could disagree with the first: a room with a code has
+        // phones able to reach it, and a rehearsal control that could add to
+        // their tally is a rigged vote waiting for the one evening somebody
+        // forgets which mode they are in.
+        if (this.joinCode !== undefined) return;
+        if (this.state.phase !== 'polling' || !this.box) return;
+
+        // `sim:1`, `sim:2`, … rather than a fresh id each time. `BallotBox`
+        // dedupes by device, so casting twice moves simulated voter 1 rather
+        // than adding a second one — which is what makes the buttons behave
+        // like a room changing its mind instead of a counter going up.
+        // Each option owns its own voters, so the counts are independent and
+        // the numbers typed into the console are the numbers that come back.
+        // The whole range is swept rather than the difference from last time,
+        // because that needs no remembered state to be right — and state about
+        // a rehearsal is state that can disagree with the tally it describes.
+        let changed = false;
+        for (let i = 1; i <= MAX_SIMULATED_VOTERS; i++) {
+          const device = `sim:${command.optionKey}:${i}`;
+          const moved =
+            i <= command.count
+              ? this.recordVote(device, command.optionKey)
+              : this.withdrawVote(device);
+          changed = moved || changed;
+        }
+        if (changed) this.broadcastTally();
+        return;
+      }
+
       case 'reset': {
         this.clearTimer();
         this.box = undefined;
@@ -692,6 +771,20 @@ export class Room {
   noteDisplayProgress(progress: DisplayLoading): void {
     if (this.displayReady) return;
     this.displayLoading = progress;
+    this.broadcast();
+  }
+
+  /**
+   * Notes that the projector window has had the gesture autoplay wants.
+   *
+   * Both directions, because the answer can go back to false: the window is
+   * reloaded, or replaced by a different one. Broadcast only on a change,
+   * since the display re-announces this on every reconnect and a snapshot per
+   * repeat is a repaint of the board for no news.
+   */
+  setAudioUnlocked(unlocked: boolean): void {
+    if (this.audioUnlocked === unlocked) return;
+    this.audioUnlocked = unlocked;
     this.broadcast();
   }
 

@@ -2156,3 +2156,213 @@ button.small {
   font-size: 0.75rem;
   color: var(--text-faint);
 }
+
+/* ------------------------------------------------------------------ show -- */
+
+/* The console the phone used to be. Laid out like the old host page, because
+   that layout was right: what is on screen, then the vote, then the transport.
+   Wider than that page could be, since this is a tab on a laptop rather than a
+   column on a phone held at the back of a room. */
+
+.tab-badge.live {
+  background: rgba(94, 201, 138, 0.2);
+  color: var(--good);
+  letter-spacing: 0.04em;
+}
+
+.show {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 44rem;
+}
+
+.show-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.show-strip .stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-raised);
+}
+
+.show-strip .stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.show-strip .stat-value {
+  font-size: 0.9rem;
+}
+
+.show-strip .stat-value.good {
+  color: var(--good);
+}
+
+.show-strip .stat-value.warn {
+  color: var(--accent-warm);
+}
+
+.show-block {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.show-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.show .eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.show-now {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.4;
+}
+
+.show-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.show-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.show-clock.urgent {
+  color: var(--bad);
+}
+
+/* The one line that says why Start will not start. A disabled button with no
+   explanation is a bug report. */
+.show-warn {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  background: rgba(255, 138, 101, 0.12);
+  border: 1px solid rgba(255, 138, 101, 0.35);
+  color: var(--accent-warm);
+  font-size: 0.85rem;
+}
+
+.show-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* Cast and Force, stacked and separately labelled. They look alike and do
+   opposite things, so the label does the work the buttons cannot. */
+.show-decide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.show-decide-label {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.show-decide-row,
+.show-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.show-row > button {
+  flex: 1 1 auto;
+}
+
+.show-count {
+  width: 4.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Force is not dangerous the way Reset is — it is an ordinary override — but
+   it discards a real tally, so it should not look like the button beside it. */
+button.danger-quiet {
+  border-color: rgba(239, 90, 90, 0.35);
+  color: var(--bad);
+}
+
+.show .wide {
+  width: 100%;
+}
+
+.show .tally {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.show .tally-row {
+  position: relative;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  padding: 0.55rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.95rem;
+}
+
+.show .tally-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(79, 195, 247, 0.24);
+  transition: width 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.show .tally-row.leading .tally-fill {
+  background: rgba(94, 201, 138, 0.28);
+}
+
+.show .tally-label {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.show .tally-count {
+  position: relative;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

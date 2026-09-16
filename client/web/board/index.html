@@ -70,6 +70,15 @@
           <button class="tab" data-tab="story" role="tab" aria-selected="false">Storyboard</button>
           <button class="tab" data-tab="source" role="tab" aria-selected="false">scenario.yaml</button>
           <!--
+            After the file, because a show is the last thing you do to a
+            project and the first thing you do to it again. It is the console
+            the phone used to be: the beat on screen, the transport, the tally
+            and the two ways to decide a vote.
+          -->
+          <button class="tab" data-tab="show" role="tab" aria-selected="false">
+            Show <span class="tab-badge live" id="show-badge" hidden></span>
+          </button>
+          <!--
             Last, and pushed to the far edge, because it is not a stage of the
             work — it is the answer to "am I done", which is a question you ask
             from wherever you happen to be. The badge is the whole point: it is
@@ -215,6 +224,17 @@
             </div>
             <div class="collapse-bar" id="assets-collapse" hidden></div>
             <div class="sections" id="sections"></div>
+          </div>
+
+          <!--
+            Laid out like the console it replaces, because the layout was
+            right: what is on screen, then the vote, then the transport. What
+            is new is the pair of ways to decide a poll, which are deliberately
+            not the same button — see show.js.
+          -->
+          <div class="tab-panel" id="panel-show" hidden>
+            <p class="hint" id="show-hint"></p>
+            <div class="show" id="show-console"></div>
           </div>
 
           <div class="tab-panel" id="panel-command" hidden>

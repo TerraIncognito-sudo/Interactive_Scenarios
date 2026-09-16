@@ -667,8 +667,7 @@ $('migrate-recipes').addEventListener('click', () => {
       'Go ahead?',
     ].filter(Boolean);
 
-    if (!confirm(lines.join('
-'))) {
+    if (!confirm(lines.join('\n'))) {
       setStatus('warn', 'migration cancelled');
       return;
     }
@@ -802,6 +801,7 @@ async function boot() {
     // under this control all day and a stale name would run the wrong show.
     getProject: () => state.projectName,
     onStatus: (kind, text) => setStatus(kind === 'error' ? 'bad' : kind, text),
+    onTab: (name) => showTab(name),
   });
 
   initAssets({

@@ -49,6 +49,10 @@ describe('what a display is allowed to send', () => {
       !isDisplayCommand({ name: 'jump', nodeId: 'anywhere' }),
       'a projector cannot name a node, so it must not be able to go to one',
     );
+    assert.ok(
+      !isDisplayCommand({ name: 'castVotes', optionKey: 'a', count: 1 }),
+      'a stray keystroke must never be able to put ballots in a box',
+    );
   });
 
   test('the server asks before it acts on one', () => {

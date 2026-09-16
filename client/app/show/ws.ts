@@ -140,6 +140,10 @@ export function attachShowSocket(server: Server): ShowSocket {
           });
           return;
 
+        case 'displayAudio':
+          show.room.setAudioUnlocked(message.unlocked);
+          return;
+
         case 'command':
           // Both surfaces may command, and the stage still sends only the keys
           // it has. `DISPLAY_COMMANDS` stopped being a security boundary the
