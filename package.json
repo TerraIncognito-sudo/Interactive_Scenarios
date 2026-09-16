@@ -11,7 +11,6 @@
   "scripts": {
     "dev": "node --watch server/index.ts",
     "start": "node server/index.ts",
-    "local": "node server/index.ts --local",
     "editor": "node client/app/server.ts",
     "project:new": "node client/app/import.ts",
     "build": "vite build && vite build --config client/vite.config.ts",

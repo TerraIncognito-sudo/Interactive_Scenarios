@@ -1,12 +1,21 @@
 /**
- * The projector's keyboard, and the list on the server that bounds it.
+ * The projector's keyboard, and the list that bounds it.
  *
- * These are two halves of one decision written in two files, and the halves
- * are checked by different things: the server refuses a command a display may
- * not send, and the display never sends one. Nothing joins them up. So a key
- * bound to `reset` would typecheck, run, and fail only in front of an audience
- * — as a key that quietly does nothing, which is the worst of the three ways
- * it could go wrong, because the presenter presses it again.
+ * `DISPLAY_COMMANDS` used to be a security boundary: the display was a page on
+ * a public server, holding a token somebody had been handed, and the socket
+ * refused anything off the list. That is gone. Both surfaces are now windows
+ * this process opened on the operator's own machine, so the transport checks
+ * nothing and says so — and **this file is what is left holding the decision
+ * up.**
+ *
+ * Which does not make the list less useful, only differently useful. It is now
+ * a decision about what belongs on a keyboard at a lectern: `reset` puts the
+ * show back to the beginning and on the console it sits behind a confirm that
+ * a keystroke has no equivalent of, and `jump` needs a node id a projector can
+ * neither offer nor check. A key wired to either would typecheck, run, and
+ * fail only in front of an audience — as a key that quietly does nothing,
+ * which is the worst of the three ways it could go, because the presenter
+ * presses it again.
  *
  * Read as text, like `playback.test.ts` and for the same reason: the other
  * side of this is a browser, and a check that needs a browser is a check
@@ -22,7 +31,8 @@ import { DISPLAY_COMMANDS, HostCommandSchema, isDisplayCommand } from '../shared
 const root = join(import.meta.dirname, '..');
 const display = readFileSync(join(root, 'client', 'web', 'stage', 'main.ts'), 'utf8');
 const markup = readFileSync(join(root, 'client', 'web', 'stage', 'index.html'), 'utf8');
-const ws = readFileSync(join(root, 'server', 'ws.ts'), 'utf8');
+const ws = readFileSync(join(root, 'client', 'app', 'show', 'ws.ts'), 'utf8');
+const clientServer = readFileSync(join(root, 'client', 'app', 'server.ts'), 'utf8');
 
 /** Every command name the schema actually has, taken from the schema itself. */
 const ALL_COMMANDS = HostCommandSchema.shape.command.options.map(
@@ -55,10 +65,22 @@ describe('what a display is allowed to send', () => {
     );
   });
 
-  test('the server asks before it acts on one', () => {
-    // The check has to be in the transport, not only in the client: the client
-    // is the untrusted end of this connection and always was.
-    assert.match(ws, /isDisplayCommand\(message\.command\)/);
+  test('the only thing that can send one is a window on this machine', () => {
+    // What replaced the token check. The socket carrying commands no longer
+    // authorises anybody, so the whole of what stops a stranger driving the
+    // show is the address it is bound to — which makes that bind an invariant
+    // rather than a default, and one nothing else in the suite is watching.
+    assert.match(clientServer, /server\.listen\(PORT, '127\.0\.0\.1'/);
+
+    // And the transport says why it checks nothing, rather than looking like
+    // somewhere the check was dropped.
+    assert.match(ws, /DISPLAY_COMMANDS/);
+  });
+
+  test('a vote is refused on the operator\'s own socket', () => {
+    // The other half of the same boundary. Votes come from the relay; a frame
+    // claiming to be one here is either a bug or somebody who got to the port.
+    assert.match(ws, /Votes arrive from the relay/);
   });
 });
 
@@ -82,9 +104,10 @@ describe('the projector binds the keys a presenter reaches for', () => {
   });
 
   test('and it sends nothing the server would refuse', () => {
-    // The join between the two halves, and the only reason this file exists.
-    // Every command literal in the projector, checked against the list the
-    // server bounds it by — so a key wired to something off that list is a
+    // The join between the two halves, and the only reason this file exists —
+    // now more so, because nothing at the far end of the socket is checking any
+    // more. Every command literal in the projector, against the list it is
+    // supposed to be bounded by, so a key wired to something off that list is a
     // failed test rather than a dead key on the night.
     const sent = new Set(
       [...display.matchAll(/\{ name: '([a-zA-Z]+)'/g)].map((match) => match[1] as string),
@@ -93,7 +116,7 @@ describe('the projector binds the keys a presenter reaches for', () => {
     for (const name of sent) {
       assert.ok(
         (DISPLAY_COMMANDS as readonly string[]).includes(name),
-        `the display sends ${name}, which the server will refuse`,
+        `the display sends ${name}, which is not a key a projector may have`,
       );
     }
   });
@@ -121,7 +144,8 @@ describe('nothing the presenter needs is on the wall by default', () => {
   test('the pause badge is driven by the snapshot, not by the key', () => {
     // A projector that announced "Paused" off its own keystroke would be a
     // second opinion about the state of the show, and the two would disagree
-    // the first time the server refused one.
+    // the first time the Room refused one — which it does for a pause during a
+    // vote, during a reveal, and on a stale beat.
     const rest = display.slice(display.indexOf('function restCue'));
     assert.match(
       rest.slice(0, rest.indexOf('function flashCue')),

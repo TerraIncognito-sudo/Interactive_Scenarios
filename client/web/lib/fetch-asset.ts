@@ -1,7 +1,8 @@
 /**
  * A copy, on purpose, and it must stay one.
  *
- * `server/web/lib/` holds the same four files and the phone page imports those.
+ * `server/web/lib/` holds a `connection.ts` and a `base.css`, which the phone
+ * page imports instead.
  * The two halves are in different workspaces behind different bundlers, and
  * they are about to stop talking the same protocol: this side speaks the show
  * protocol to a Room in the operator's own process, and that side will speak

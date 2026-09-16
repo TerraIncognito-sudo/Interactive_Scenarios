@@ -14,25 +14,26 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       input: {
-        // No root index.html: the server routes / to the player app, so the
-        // landing page is the audience join screen rather than the admin one.
+        // No root index.html: the relay routes / to the player app, so the
+        // landing page is the audience join screen.
         //
-        // No display either — the projector moved to the client, which is the
-        // whole point of the rebuild, and builds through `client/vite.config.ts`.
-        // What is left here is the audience's page and two consoles that the
-        // relay is about to replace.
-        host: web('host', 'index.html'),
+        // Three entries, and the list is the relay's whole face. The projector
+        // moved to the client and builds through `client/vite.config.ts`; the
+        // host console was deleted rather than unrouted, because a page that
+        // still builds and no longer works is one somebody opens from a
+        // bookmark in front of a room.
         player: web('player', 'index.html'),
-        admin: web('admin', 'index.html'),
+        status: web('status', 'index.html'),
+        keys: web('keys', 'index.html'),
       },
     },
   },
   server: {
-    // `npm run dev` serves the API on 8880; proxy so the client dev server can
-    // talk to it without CORS or a second origin.
+    // `npm run dev` serves the relay on 8880; proxy so the dev server can talk
+    // to it without CORS or a second origin. There is no asset route to proxy
+    // — the relay serves no scenario media, because it holds no scenario.
     proxy: {
       '/api': { target: 'http://localhost:8880', changeOrigin: true },
-      '/scenario-assets': { target: 'http://localhost:8880', changeOrigin: true },
       '/ws': { target: 'ws://localhost:8880', ws: true },
     },
   },

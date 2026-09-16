@@ -1,20 +1,29 @@
 /**
- * The client side of the socket.
+ * The phone's side of the socket.
  *
  * Reconnection is not optional here: this runs in a room with an audience, on
  * venue wifi, on phones that sleep. Every surface assumes the socket will drop
  * and come back, and nothing about the show should depend on it not dropping.
+ *
+ * `client/web/lib/connection.ts` is the same file with a different protocol
+ * bolted to it, and the divergence is the design rather than the debt. This
+ * one speaks to a relay in a container holding no scenario; that one speaks to
+ * a Room in the operator's own process. Neither is the original.
+ *
+ * Typed against the relay protocol, which is how narrow this end is: three
+ * frames out, and in, a poll or an error. There is no `command` here and there
+ * is nowhere for one to go.
  */
 
-import type { ClientMessage, ServerMessage } from '../../../shared/show/protocol.ts';
+import type { PhoneMessage, RelayToPhone } from '../../../shared/relay/protocol.ts';
 
 export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'failed';
 
 export type ConnectionOptions = {
-  onMessage: (message: ServerMessage) => void;
+  onMessage: (message: RelayToPhone) => void;
   onStatus?: (status: ConnectionStatus) => void;
   /** Sent immediately on every (re)connect, so state resyncs automatically. */
-  hello: () => ClientMessage;
+  hello: () => PhoneMessage;
 };
 
 export class Connection {
@@ -72,9 +81,9 @@ export class Connection {
     });
 
     socket.addEventListener('message', (event) => {
-      let message: ServerMessage;
+      let message: RelayToPhone;
       try {
-        message = JSON.parse(String(event.data)) as ServerMessage;
+        message = JSON.parse(String(event.data)) as RelayToPhone;
       } catch {
         return;
       }
@@ -121,7 +130,7 @@ export class Connection {
     return Date.now() + this.clockOffset;
   }
 
-  send(message: ClientMessage): void {
+  send(message: PhoneMessage): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(message));
     }

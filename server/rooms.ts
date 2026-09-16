@@ -1,96 +1,86 @@
 /**
- * The room registry: creation, lookup, token checks, and expiry.
+ * The room registry: minting codes, looking them up, resuming, and expiry.
  */
 
-import { Room, generateRoomCode, generateToken } from './room.ts';
-import type { LoadedScenario } from '../shared/scenario/load.ts';
+import { RelayRoom, type OpenPoll } from './relay.ts';
+import { generateRoomCode, generateRoomToken, type RecordedVote } from '../shared/relay/protocol.ts';
 import type { Store } from './db.ts';
-import type { Role } from '../shared/show/protocol.ts';
-import { initialState, type RunState } from '../shared/engine/engine.ts';
 
-export class RoomRegistry {
-  private readonly rooms = new Map<string, Room>();
+export class RelayRegistry {
+  private readonly rooms = new Map<string, RelayRoom>();
   private readonly store: Store;
   private readonly ttlMs: number;
   private sweeper: ReturnType<typeof setInterval> | undefined;
-  /** Reports a stalled room, so a clock failure reaches the log. */
-  onRoomError: ((error: unknown, room: string, nodeId: string) => void) | undefined;
 
   constructor(store: Store, ttlMs: number) {
     this.store = store;
     this.ttlMs = ttlMs;
   }
 
-  create(loaded: LoadedScenario): Room {
+  create(options: { keyId: string | null; title?: string }): RelayRoom {
     const now = Date.now();
 
     // Collisions are vanishingly unlikely, but a duplicate code would hand a
-    // stranger someone else's session, so retry rather than assume.
+    // stranger someone else's room, so retry rather than assume. Checked
+    // against the database as well as the live map: a room that fell out of
+    // memory on a restart is still a code somebody has written on a wall.
     let code = generateRoomCode();
-    for (let attempt = 0; this.rooms.has(code) && attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      if (!this.rooms.has(code) && !this.store.getRoom(code)) break;
       code = generateRoomCode();
     }
 
-    const room = new Room({
+    const room = new RelayRoom({
       code,
-      // The public server's room key is the code, because a phone joining is
-      // the only reason it exists.
-      joinCode: code,
-      hostToken: generateToken(),
-      displayToken: generateToken(),
-      loaded,
+      token: generateRoomToken(),
+      ...(options.title !== undefined ? { title: options.title } : {}),
+      keyId: options.keyId,
       store: this.store,
       now,
     });
 
     this.store.createRoom({
       code,
-      scenario_id: loaded.scenario.id,
-      host_token: room.hostToken,
-      display_token: room.displayToken,
-      state_json: JSON.stringify(room.state),
+      token: room.token,
+      title: options.title ?? null,
+      key_id: options.keyId,
       created_at: now,
       updated_at: now,
     });
 
-    room.onError = (error, roomCode, nodeId) => this.onRoomError?.(error, roomCode, nodeId);
     this.rooms.set(code, room);
     return room;
   }
 
-  get(code: string): Room | undefined {
+  get(code: string): RelayRoom | undefined {
     return this.rooms.get(code.toUpperCase());
   }
 
   /**
-   * Authorises a connection. Host and display need their token; the room code
-   * alone only ever grants the ability to vote.
+   * A client coming back to its own room.
+   *
+   * Proved by the room token and deliberately not by the key that opened it:
+   * a key may have been revoked while the client was away, and a revocation
+   * that stranded the show it was holding would leave forty phones on a dead
+   * code with no way to finish. Revoking refuses the *next* room.
    */
-  authorize(room: Room, role: Role, token: string | undefined): boolean {
-    switch (role) {
-      case 'host':
-        return token !== undefined && timingSafeEqual(token, room.hostToken);
-      case 'display':
-        return token !== undefined && timingSafeEqual(token, room.displayToken);
-      case 'player':
-        return true;
-    }
+  resume(code: string, token: string): RelayRoom | undefined {
+    const room = this.get(code);
+    if (!room || room.closed) return undefined;
+    return timingSafeEqual(token, room.token) ? room : undefined;
   }
 
-  /** Any valid token for the room, used to gate full-scenario downloads. */
-  hasAnyToken(room: Room, token: string | undefined): boolean {
-    if (token === undefined) return false;
-    return timingSafeEqual(token, room.hostToken) || timingSafeEqual(token, room.displayToken);
-  }
-
-  list(): Room[] {
+  list(): RelayRoom[] {
     return [...this.rooms.values()];
   }
 
   /**
-   * Ends one session and drops it from the registry, the way the sweeper does
-   * for an idle room. Distinct from `shutdownAll`: this one really is over, so
-   * it must not come back on the next restart.
+   * Ends one room and drops it from the registry, the way the sweeper does for
+   * an idle one. Distinct from `shutdownAll`: this one really is over, so it
+   * must not come back on the next restart.
+   *
+   * It is also the deliberate way to stop a show whose key has been revoked,
+   * and the escape for a room that a crashed client left holding a code.
    */
   closeRoom(code: string): boolean {
     const room = this.get(code);
@@ -100,38 +90,65 @@ export class RoomRegistry {
     return true;
   }
 
-  /** Rebuilds rooms from disk after a restart so a live show survives it. */
-  restore(scenarios: Map<string, LoadedScenario>): number {
+  /**
+   * Rebuilds rooms from disk after a restart, so a live show survives one.
+   *
+   * Phones reconnect through `Connection`'s backoff, get a `playerState` for
+   * the same poll, and their own recorded choice comes back highlighted. The
+   * client reconnects and resumes with its token. Nothing in the room needs to
+   * be told a restart happened.
+   */
+  restore(): number {
     const since = Date.now() - this.ttlMs;
     let restored = 0;
 
     for (const row of this.store.liveRooms(since)) {
       if (this.rooms.has(row.code)) continue;
-      const loaded = scenarios.get(row.scenario_id);
-      if (!loaded) continue;
 
-      let state: RunState;
-      try {
-        state = JSON.parse(row.state_json) as RunState;
-      } catch {
-        state = initialState(loaded.scenario);
+      let poll: OpenPoll | undefined;
+      let votes: RecordedVote[] | undefined;
+      if (row.current_node) {
+        const saved = this.store.pollFor(row.code, row.current_node);
+        if (saved) {
+          let options: { key: string; label: string }[];
+          try {
+            options = JSON.parse(saved.options_json) as { key: string; label: string }[];
+          } catch {
+            options = [];
+          }
+          // A poll with no options is one nobody can answer, so it is dropped
+          // rather than restored — the client will republish on resume.
+          if (options.length >= 2) {
+            poll = {
+              nodeId: saved.node_id,
+              question: saved.question,
+              ...(saved.prompt !== null ? { prompt: saved.prompt } : {}),
+              options,
+              endsAt: saved.ends_at,
+              closed: saved.closed === 1,
+            };
+            votes = this.store.votesFor(row.code, row.current_node).map((vote) => ({
+              deviceId: vote.device_id,
+              optionKey: vote.option_key,
+              at: vote.at,
+            }));
+          }
+        }
       }
 
-      const room = new Room({
+      const room = new RelayRoom({
         code: row.code,
-        joinCode: row.code,
-        hostToken: row.host_token,
-        displayToken: row.display_token,
-        loaded,
+        token: row.token,
+        ...(row.title !== null ? { title: row.title } : {}),
+        keyId: row.key_id,
         store: this.store,
         now: row.created_at,
-        state,
+        ...(poll ? { poll } : {}),
+        ...(votes ? { votes } : {}),
       });
       room.lastActivityAt = row.updated_at;
-      room.onError = (error, roomCode, nodeId) => this.onRoomError?.(error, roomCode, nodeId);
 
       this.rooms.set(row.code, room);
-      room.resumeClock();
       restored++;
     }
 
@@ -149,12 +166,12 @@ export class RoomRegistry {
     this.sweeper = undefined;
   }
 
-  /** Closes rooms idle beyond the TTL so abandoned sessions do not accumulate. */
+  /** Closes rooms idle beyond the TTL so abandoned ones do not accumulate. */
   sweep(now = Date.now()): number {
     let closed = 0;
     for (const [code, room] of this.rooms) {
       if (now - room.lastActivityAt > this.ttlMs) {
-        room.close();
+        room.close('This room was idle for too long and has closed.');
         this.rooms.delete(code);
         closed++;
       }
@@ -162,15 +179,9 @@ export class RoomRegistry {
     return closed;
   }
 
-  /** Ends every session permanently. Rooms will not survive a restart. */
-  closeAll(): void {
-    for (const room of this.rooms.values()) room.close();
-    this.rooms.clear();
-  }
-
   /**
-   * Releases rooms because the process is stopping. Rooms stay open in the
-   * database so the next process can pick a live show back up.
+   * Releases rooms because the process is stopping. They stay open in the
+   * database so the next process picks a live show back up.
    */
   shutdownAll(): void {
     for (const room of this.rooms.values()) room.shutdown();

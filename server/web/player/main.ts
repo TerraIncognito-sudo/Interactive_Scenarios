@@ -6,7 +6,7 @@
  */
 
 import { Connection, deviceId, queryParam } from '../lib/connection.ts';
-import type { PlayerState } from '../../../shared/show/protocol.ts';
+import type { PlayerState } from '../../../shared/relay/protocol.ts';
 
 const el = <T extends HTMLElement>(id: string): T => {
   const node = document.getElementById(id);

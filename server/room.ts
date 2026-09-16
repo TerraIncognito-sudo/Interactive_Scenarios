@@ -25,11 +25,16 @@ import type {
   SnapshotBeat,
   PlayerState,
 } from '../shared/show/protocol.ts';
-import {
-  MAX_SIMULATED_VOTERS,
-  ROOM_CODE_ALPHABET,
-  ROOM_CODE_LENGTH,
-} from '../shared/show/protocol.ts';
+import { MAX_SIMULATED_VOTERS } from '../shared/show/protocol.ts';
+/**
+ * A room's key is minted by the same generator the relay uses.
+ *
+ * The local show's code is never read off a wall — it is a key for the store,
+ * the registry and the log — but two generators would be two answers to what
+ * a room code is, and the first time they disagreed it would be about which
+ * characters a person can be asked to type.
+ */
+export { generateRoomCode } from '../shared/relay/protocol.ts';
 /**
  * What a Room needs from storage, and nothing else.
  *
@@ -74,15 +79,6 @@ export type RoomStore = {
   forgetVote(room: string, nodeId: string, deviceId: string): void;
   closeRoom(code: string, now: number): void;
 };
-
-export function generateRoomCode(): string {
-  const bytes = randomBytes(ROOM_CODE_LENGTH);
-  let code = '';
-  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
-    code += ROOM_CODE_ALPHABET[bytes[i]! % ROOM_CODE_ALPHABET.length];
-  }
-  return code;
-}
 
 export function generateToken(): string {
   return randomBytes(32).toString('base64url');

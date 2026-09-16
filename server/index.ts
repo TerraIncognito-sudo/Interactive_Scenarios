@@ -1,29 +1,35 @@
 /**
- * Server bootstrap.
+ * The relay.
  *
- * The same process runs on a container host and on a presenter's laptop in
- * offline fallback mode. Every difference between those two is an environment
- * variable read in config.ts — there are no cloud-specific APIs here.
+ * A box that carries votes between an operator's machine and a room full of
+ * phones. It holds no scenario, no beat and no state machine — hand it a
+ * `scenario.yaml` and it could not read one, because it has no YAML parser and
+ * nothing here imports the engine. That inability is the security property,
+ * and it is enforced by the dependency list rather than by care: a test walks
+ * this file's import graph and fails if anything from `shared/scenario/` or
+ * `shared/engine/` is reachable from it.
+ *
+ * Three surfaces. `/join/CODE` is the audience's page, and the root is that
+ * same page, because almost everyone who reaches this server is here to vote.
+ * `/status` says what is running, for the night somebody is holding a phone in
+ * front of forty people saying "it says no such room". `/keys` is where the
+ * passphrases that let a client open a room are issued and revoked.
  */
 
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
-import { loadConfig, lanAddress, lanCandidates, type Config } from './config.ts';
+import { randomUUID } from 'node:crypto';
+import { loadConfig, baseUrlFor, type Config } from './config.ts';
 import { Store } from './db.ts';
-import { RoomRegistry } from './rooms.ts';
-import { attachWebSocketServer } from './ws.ts';
-import { loadLibrary, assetsOf, type ScenarioLibrary } from '../shared/scenario/load.ts';
-import {
-  CreateRoomSchema,
-  type CreateRoomResponse,
-  type LiveSession,
-  type ScenarioListResponse,
-  type SessionListResponse,
-} from '../shared/show/protocol.ts';
-import type { Room } from './room.ts';
+import { RelayRegistry } from './rooms.ts';
+import { attachRelayWebSocketServer } from './ws.ts';
+import { generatePhrase, KeyAttempts } from './keys.ts';
+import type {
+  RelayKeysResponse,
+  RelayRoomView,
+  RelayStatusResponse,
+} from '../shared/relay/protocol.ts';
 import {
   ADMIN_COOKIE,
   buildCookie,
@@ -36,87 +42,44 @@ import {
 
 export async function buildServer(config: Config) {
   const app = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL ?? 'info',
-      transport: config.local ? undefined : undefined,
-    },
+    logger: { level: process.env.LOG_LEVEL ?? 'info' },
     // Behind Cloudflare or any proxy, trust forwarded headers so logged client
     // addresses are the real ones rather than the proxy's.
     trustProxy: true,
   });
 
   const store = new Store(config.dataDir);
-  const registry = new RoomRegistry(store, config.roomTtlMs);
+  const registry = new RelayRegistry(store, config.roomTtlMs);
+  const attempts = new KeyAttempts();
 
-  let library: ScenarioLibrary = await loadLibrary(config.scenariosDir);
-  for (const failure of library.failures) {
-    app.log.error(
-      { dir: failure.dir, problems: failure.error.problems },
-      `Scenario failed to load: ${failure.error.message}`,
-    );
-  }
-  for (const [id, loaded] of library.scenarios) {
-    for (const warning of loaded.warnings) {
-      app.log.warn(`[${id}] ${warning.nodeId ? `[${warning.nodeId}] ` : ''}${warning.message}`);
-    }
-  }
-
-  registry.onRoomError = (error, room, nodeId) => {
-    app.log.error({ room, nodeId, err: error }, 'Room clock stalled');
-  };
-
-  const restored = registry.restore(library.scenarios);
+  const restored = registry.restore();
   if (restored > 0) app.log.info(`Restored ${restored} live room(s) after restart`);
   registry.startSweeper();
 
-  // ---------------------------------------------------------------------------
-  // REST
-  // ---------------------------------------------------------------------------
-
   const secret = store.secret();
-
-  /**
-   * The base URL for links we hand out.
-   *
-   * Derived from the request unless explicitly overridden, so browsing to
-   * http://192.168.1.149:8880 yields links back to that same address. The old
-   * behaviour — falling back to localhost — produced links that looked valid
-   * and pointed at the operator's own machine.
-   */
-  const baseUrlFor = (request: { protocol: string; headers: Record<string, unknown> }): string => {
-    if (config.publicUrl) return config.publicUrl;
-
-    const forwardedHost = String(request.headers['x-forwarded-host'] ?? '')
-      .split(',')[0]
-      ?.trim();
-    const forwardedProto = String(request.headers['x-forwarded-proto'] ?? '')
-      .split(',')[0]
-      ?.trim();
-    const host = forwardedHost || String(request.headers['host'] ?? '') || 'localhost';
-    const protocol = forwardedProto || request.protocol || 'http';
-    return `${protocol}://${host}`;
-  };
-
-  /** The three links a session is driven from, built once so they cannot drift. */
-  const linksFor = (room: Room, base: string): LiveSession['urls'] => ({
-    host: `${base}/host/?room=${room.code}&token=${room.hostToken}&displayToken=${encodeURIComponent(room.displayToken)}`,
-    display: `${base}/display/?room=${room.code}&token=${room.displayToken}`,
-    join: `${base}/join/${room.code}`,
-  });
 
   const isAuthed = (request: { headers: Record<string, unknown> }): boolean => {
     const cookie = readCookie(request.headers['cookie'] as string | undefined, ADMIN_COOKIE);
     if (verifyToken(cookie, secret)) return true;
 
-    // Also accept the password directly, so scripts and curl can create rooms.
+    // Also accept the password directly, so scripts and curl can issue keys.
     const header = request.headers['x-admin-password'];
     return typeof header === 'string' && safeEqual(header, config.adminPassword);
   };
 
+  // ---------------------------------------------------------------------------
+  // Health
+  // ---------------------------------------------------------------------------
+
+  /**
+   * `keyed` is the one field that explains a relay which is up and refusing
+   * everything: a fresh container issues no keys and opens no rooms until
+   * somebody signs into the console and generates one.
+   */
   app.get('/api/health', async () => ({
     ok: true,
-    scenarios: library.scenarios.size,
     rooms: registry.list().length,
+    keyed: store.liveKeys().length > 0,
     uptime: Math.round(process.uptime()),
   }));
 
@@ -137,7 +100,9 @@ export async function buildServer(config: Config) {
       return reply.code(401).send({ error: 'Incorrect password' });
     }
 
-    const secureCookie = baseUrlFor(request).startsWith('https://');
+    const secureCookie = baseUrlFor(config.publicUrl, request.headers, request.protocol).startsWith(
+      'https://',
+    );
     reply.header('set-cookie', buildCookie(ADMIN_COOKIE, issueToken(secret), secureCookie));
     return { ok: true };
   });
@@ -147,246 +112,197 @@ export async function buildServer(config: Config) {
     return { ok: true };
   });
 
-  app.get('/api/scenarios', async (): Promise<ScenarioListResponse> => ({
-    scenarios: [...library.scenarios.values()].map(({ scenario }) => ({
-      id: scenario.id,
-      title: scenario.title,
-      description: scenario.description,
-      nodes: scenario.nodes.length,
-      polls: scenario.nodes.filter((n) => n.type === 'poll').length,
-    })),
-    failures: library.failures.map((f) => ({
-      dir: f.dir,
-      message: f.error.message,
-      problems: f.error.problems,
-    })),
-  }));
-
-  /**
-   * The full scenario, for the display's optimistic local rendering.
-   *
-   * Token-gated: it contains every branch and ending, and an audience member
-   * poking at the network tab should not be able to read the story ahead.
-   */
-  app.get<{ Params: { code: string }; Querystring: { token?: string } }>(
-    '/api/rooms/:code/scenario',
-    async (request, reply) => {
-      const room = registry.get(request.params.code);
-      if (!room) return reply.code(404).send({ error: 'No such room' });
-      if (!registry.hasAnyToken(room, request.query.token)) {
-        return reply.code(403).send({ error: 'A host or display token is required' });
-      }
-      const assets = assetsOf(room.loaded.scenario);
-      return {
-        scenario: room.loaded.scenario,
-        assets,
-        // What each one weighs, so the display can report megabytes rather
-        // than a file count — eighty-six is a number nobody can turn into a
-        // guess about how long is left, and "18 of 31 MB" is. Read here rather
-        // than cached with the library so a re-read after `reload` is right,
-        // and missing where the art has not been made, which the display is
-        // already built to cope with.
-        sizes: await assetSizes(room.loaded.dir, assets),
-        // Down to `assets/`, because that is where the files are and the
-        // display joins this to a name straight out of the scenario. Stopping
-        // one level short went unnoticed for as long as it did because no
-        // scenario had a single asset made yet — the first one would have been
-        // a 404 in front of a room.
-        assetBase: `/scenario-assets/${room.loaded.scenario.id}/assets/`,
-      };
-    },
-  );
-
-  /**
-   * Each asset's size on disk, by name. Absent for a file that is not there.
-   *
-   * Stats in parallel: a show is a few hundred files and doing them one after
-   * another turns milliseconds into a visible pause before a projector starts
-   * downloading anything at all.
-   */
-  async function assetSizes(dir: string, assets: string[]): Promise<Record<string, number>> {
-    const sizes: Record<string, number> = {};
-    await Promise.all(
-      assets.map(async (file) => {
-        const info = await stat(join(dir, 'assets', file)).catch(() => null);
-        if (info?.isFile()) sizes[file] = info.size;
-      }),
-    );
-    return sizes;
-  }
-
-  app.post('/api/rooms', async (request, reply): Promise<CreateRoomResponse | undefined> => {
-    if (!isAuthed(request)) {
-      reply.code(401).send({ error: 'Sign in to create a session' });
-      return undefined;
-    }
-
-    const parsed = CreateRoomSchema.safeParse(request.body);
-    if (!parsed.success) {
-      reply.code(400).send({ error: 'Expected { scenarioId }' });
-      return undefined;
-    }
-
-    const loaded = library.scenarios.get(parsed.data.scenarioId);
-    if (!loaded) {
-      reply.code(404).send({ error: `No scenario "${parsed.data.scenarioId}"` });
-      return undefined;
-    }
-
-    const room = registry.create(loaded);
-    app.log.info({ room: room.code, scenario: loaded.scenario.id }, 'Room created');
-
-    return {
-      code: room.code,
-      hostToken: room.hostToken,
-      displayToken: room.displayToken,
-      urls: linksFor(room, baseUrlFor(request)),
-    };
-  });
-
   // ---------------------------------------------------------------------------
-  // Session control
+  // Status
   // ---------------------------------------------------------------------------
 
   /**
-   * Every live session, with its links.
+   * Every live room.
    *
-   * Admin-only, and not merely for tidiness: the response carries host and
-   * display tokens, which exist nowhere else once the creating tab is gone.
-   * That is the point — it is what makes a lost host console recoverable — but
-   * it means this endpoint hands over full control of every running show.
+   * **It must not carry the room token.** The list this replaces did, and said
+   * why: a host link lost to a closed tab stranded a live show, and the tokens
+   * existed nowhere else. There is no host link any more — the client holds its
+   * own token and resumes with it — so the field goes, and with it this
+   * endpoint's ability to hand a reader full control of every running show.
+   * The absence is deliberate; do not add it back for convenience.
    */
-  app.get('/api/rooms', async (request, reply): Promise<SessionListResponse | undefined> => {
+  app.get('/api/rooms', async (request, reply): Promise<RelayStatusResponse | undefined> => {
     if (!isAuthed(request)) {
-      reply.code(401).send({ error: 'Sign in to view sessions' });
+      reply.code(401).send({ error: 'Sign in to view rooms' });
       return undefined;
     }
 
-    const base = baseUrlFor(request);
-    const sessions: LiveSession[] = registry
+    const base = baseUrlFor(config.publicUrl, request.headers, request.protocol);
+    const labels = new Map(store.listKeys().map((key) => [key.id, key.label]));
+
+    const rooms: RelayRoomView[] = registry
       .list()
       .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
-      .map((room) => ({
-        code: room.code,
-        scenario: { id: room.loaded.scenario.id, title: room.loaded.scenario.title },
-        phase: room.phase,
-        nodeId: room.state.nodeId,
-        beat: room.state.beat,
-        displayReady: room.displayReady,
-        ...(room.displayLoading ? { displayLoading: room.displayLoading } : {}),
-        presence: { displays: room.displayCount, players: room.playerCount },
-        pollEndsAt: room.state.phase === 'polling' ? room.state.poll?.endsAt : undefined,
-        createdAt: room.createdAt,
-        lastActivityAt: room.lastActivityAt,
-        urls: linksFor(room, base),
-      }));
+      .map((room) => {
+        const poll = room.openPoll();
+        return {
+          code: room.code,
+          ...(room.title !== undefined ? { title: room.title } : {}),
+          players: room.playerCount,
+          clientConnected: room.hasClient,
+          ...(room.keyId !== null ? { keyId: room.keyId } : {}),
+          ...(room.keyId !== null && labels.has(room.keyId)
+            ? { keyLabel: labels.get(room.keyId)! }
+            : {}),
+          ...(poll
+            ? { poll: { nodeId: poll.nodeId, endsAt: poll.endsAt, closed: poll.closed } }
+            : {}),
+          createdAt: room.createdAt,
+          lastActivityAt: room.lastActivityAt,
+          joinUrl: `${base}/join/${room.code}`,
+        };
+      });
 
-    return { sessions, serverNow: Date.now() };
+    return { rooms, serverNow: Date.now() };
   });
 
-  /** Ends a session for good. It will not come back after a restart. */
+  /**
+   * Ends a room for good.
+   *
+   * The escape for a room a crashed client left holding a code, and the
+   * deliberate way to stop a show whose key has been revoked — because
+   * revoking a key does not touch a room already running.
+   */
   app.post<{ Params: { code: string } }>('/api/rooms/:code/close', async (request, reply) => {
     if (!isAuthed(request)) {
-      reply.code(401).send({ error: 'Sign in to end a session' });
+      reply.code(401).send({ error: 'Sign in to end a room' });
       return undefined;
     }
     if (!registry.closeRoom(request.params.code)) {
       reply.code(404).send({ error: 'No such room' });
       return undefined;
     }
-    app.log.info({ room: request.params.code.toUpperCase() }, 'Room closed from admin');
+    app.log.info({ room: request.params.code.toUpperCase() }, 'Room ended from the console');
     return { ok: true };
   });
 
-  /**
-   * Rewinds a session to the top without ending it.
-   *
-   * The room code, tokens and connected clients all survive, so a rehearsal can
-   * be reset without asking a room full of people to rescan a new QR code.
-   */
-  app.post<{ Params: { code: string } }>('/api/rooms/:code/reset', async (request, reply) => {
-    if (!isAuthed(request)) {
-      reply.code(401).send({ error: 'Sign in to reset a session' });
-      return undefined;
-    }
-    const room = registry.get(request.params.code);
-    if (!room) {
-      reply.code(404).send({ error: 'No such room' });
-      return undefined;
-    }
-    room.handleCommand({ name: 'reset' });
-    app.log.info({ room: room.code }, 'Room reset from admin');
-    return { ok: true, phase: room.phase };
-  });
+  // ---------------------------------------------------------------------------
+  // Keys
+  // ---------------------------------------------------------------------------
 
-  /** Re-reads scenario folders without a restart, for authoring iteration. */
-  app.post('/api/reload', async (request, reply) => {
+  const roomsPerKey = (): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const room of registry.list()) {
+      if (room.keyId === null) continue;
+      counts.set(room.keyId, (counts.get(room.keyId) ?? 0) + 1);
+    }
+    return counts;
+  };
+
+  app.get('/api/keys', async (request, reply): Promise<RelayKeysResponse | undefined> => {
     if (!isAuthed(request)) {
-      reply.code(401).send({ error: 'Sign in to reload scenarios' });
+      reply.code(401).send({ error: 'Sign in to view keys' });
       return undefined;
     }
-    library = await loadLibrary(config.scenariosDir);
+    const open = roomsPerKey();
     return {
-      scenarios: library.scenarios.size,
-      failures: library.failures.map((f) => ({
-        dir: f.dir,
-        message: f.error.message,
-        problems: f.error.problems,
+      keys: store.listKeys().map((key) => ({
+        id: key.id,
+        label: key.label,
+        // Listed in the clear on purpose: a key you can only see once is a key
+        // that ends up on a sticky note. See `server/keys.ts`.
+        phrase: key.phrase,
+        createdAt: key.created_at,
+        ...(key.last_used_at !== null ? { lastUsedAt: key.last_used_at } : {}),
+        ...(key.revoked_at !== null ? { revokedAt: key.revoked_at } : {}),
+        openRooms: open.get(key.id) ?? 0,
       })),
     };
   });
 
-  // ---------------------------------------------------------------------------
-  // Static assets
-  // ---------------------------------------------------------------------------
+  app.post('/api/keys', async (request, reply) => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to issue a key' });
+      return undefined;
+    }
+    const body = request.body as { label?: unknown } | undefined;
+    const label = typeof body?.label === 'string' ? body.label.trim().slice(0, 80) : '';
+    // A list of five-word phrases with no note beside them is a list nobody
+    // dares revoke from, so the label is required rather than encouraged.
+    if (!label) {
+      reply.code(400).send({ error: 'Give the key a label — whose machine is it for?' });
+      return undefined;
+    }
 
-  await app.register(fastifyStatic, {
-    root: config.scenariosDir,
-    prefix: '/scenario-assets/',
-    decorateReply: false,
-    // Only serve files that live under a scenario's assets/ folder.
-    allowedPath: (pathname) => /^\/[A-Za-z0-9_-]+\/assets\//.test(pathname),
+    const key = {
+      id: randomUUID(),
+      label,
+      phrase: generatePhrase(),
+      created_at: Date.now(),
+      last_used_at: null,
+      revoked_at: null,
+    };
+    store.createKey(key);
+    app.log.info({ key: key.id, label }, 'Key issued');
+    return { id: key.id, label: key.label, phrase: key.phrase, createdAt: key.created_at };
   });
 
-  if (existsSync(config.clientDir)) {
+  app.post<{ Params: { id: string } }>('/api/keys/:id/revoke', async (request, reply) => {
+    if (!isAuthed(request)) {
+      reply.code(401).send({ error: 'Sign in to revoke a key' });
+      return undefined;
+    }
+    if (!store.revokeKey(request.params.id, Date.now())) {
+      reply.code(404).send({ error: 'No such key, or it is already revoked' });
+      return undefined;
+    }
+    app.log.info({ key: request.params.id }, 'Key revoked');
+    // Rooms already open under it keep running. Ending one is a decision
+    // somebody makes on the status page while looking at it.
+    return { ok: true, openRooms: roomsPerKey().get(request.params.id) ?? 0 };
+  });
+
+  // ---------------------------------------------------------------------------
+  // Static
+  // ---------------------------------------------------------------------------
+
+  if (existsSync(config.webDir)) {
     await app.register(fastifyStatic, {
-      root: config.clientDir,
+      root: config.webDir,
       prefix: '/',
       decorateReply: true,
     });
 
     // The root belongs to the audience. Almost everyone who reaches this
-    // server is here to join a session, not to run one, so the landing page
-    // is the join screen and the controls live at /admin behind the password.
+    // server is here to vote, so the landing page is the join screen.
     app.get('/', async (_request, reply) => reply.sendFile('player/index.html'));
 
     // /join/CODE is a client-side route; serve the player app for any code.
     app.get('/join/:code', async (_request, reply) => reply.sendFile('player/index.html'));
 
-    app.get('/admin', async (_request, reply) => reply.sendFile('admin/index.html'));
+    app.get('/status', async (_request, reply) => reply.sendFile('status/index.html'));
+    app.get('/keys', async (_request, reply) => reply.sendFile('keys/index.html'));
 
-    // /new was the original name. Kept as a redirect because it is written down
-    // in notes and browser histories that this rename cannot reach.
-    //
-    // 302 rather than 301 on purpose: a permanent redirect is cached by the
-    // browser indefinitely, so if /new ever needs to mean something else, every
-    // machine that visited it once would keep going to /admin regardless.
-    app.get('/new', async (_request, reply) => reply.redirect('/admin', 302));
+    // /admin was where the console lived when this server ran shows. Kept as a
+    // redirect because it is written down in notes and browser histories that
+    // a rename cannot reach. 302 rather than 301: a permanent redirect is
+    // cached indefinitely, so if /admin ever means something else again, every
+    // machine that visited it once would keep going to /status regardless.
+    app.get('/admin', async (_request, reply) => reply.redirect('/status', 302));
   } else {
-    app.log.warn(
-      `Client bundle not found at ${config.clientDir} — run "npm run build" to serve the UI`,
-    );
+    app.log.warn(`Web bundle not found at ${config.webDir} — run "npm run build" to serve it`);
     app.get('/', async () => ({
-      status: 'API only. Run "npm run build" to serve the client.',
+      status: 'API only. Run "npm run build" to serve the join page and console.',
     }));
   }
 
-  attachWebSocketServer(app.server, registry);
+  attachRelayWebSocketServer(app.server, {
+    registry,
+    store,
+    attempts,
+    publicUrl: config.publicUrl,
+    onRoomOpened: (room) => app.log.info({ room: room.code, key: room.keyId }, 'Room opened'),
+  });
 
   app.addHook('onClose', async () => {
     registry.stopSweeper();
-    // Shut down rather than close: the process is stopping, the shows are not.
-    // State is already persisted, so the next process resumes them.
+    // Shut down rather than close: the process is stopping, the rooms are not.
+    // They are already persisted, so the next process picks them back up.
     registry.shutdownAll();
     store.close();
   });
@@ -400,41 +316,12 @@ async function main(): Promise<void> {
 
   await app.listen({ port: config.port, host: config.host });
 
-  const lan = lanAddress();
-
-  if (config.local) {
-    // Fallback mode is used when the venue's internet is dead and there is no
-    // host console handy — so print everything needed to run a show from the
-    // terminal alone, including a QR the room can scan off the laptop screen.
-    const { default: QRCode } = await import('qrcode');
-    const url = config.publicUrl ?? `http://${lan ?? 'localhost'}:${config.port}`;
-
-    console.log('\n  LOCAL FALLBACK MODE\n');
-    console.log(`  Open this to start:  ${url}/admin`);
-    console.log(`  Audience joins at:   ${url}/join/<CODE>\n`);
-    console.log(await QRCode.toString(url, { type: 'terminal', small: true }));
-    console.log(`  Everyone must be on the same network as ${lan ?? 'this machine'}.`);
-
-    // Interface choice is a guess, and a wrong QR code is only discovered when
-    // a room of people cannot join. Show the alternatives so it can be
-    // corrected in seconds with PUBLIC_URL rather than debugged live.
-    const others = lanCandidates().filter((c) => c.address !== lan);
-    if (others.length > 0) {
-      console.log(`\n  Other addresses on this machine:`);
-      for (const candidate of others) {
-        console.log(`    http://${candidate.address}:${config.port}  (${candidate.iface})`);
-      }
-      console.log(`  If phones cannot reach the address above, restart with:`);
-      console.log(`    PUBLIC_URL=http://<the right one>:${config.port} npm run local`);
-    }
-    console.log();
-  } else {
-    const shown = config.publicUrl ?? `http://${lan ?? 'localhost'}:${config.port}`;
-    app.log.info(`Audience join page   ${shown}/`);
-    app.log.info(`Admin console at     ${shown}/admin`);
-    if (!config.publicUrl) {
-      app.log.info('PUBLIC_URL is not set; links are derived from each request');
-    }
+  const shown = config.publicUrl ?? `http://localhost:${config.port}`;
+  app.log.info(`Audience join page   ${shown}/`);
+  app.log.info(`Live rooms at        ${shown}/status`);
+  app.log.info(`Keys at              ${shown}/keys`);
+  if (!config.publicUrl) {
+    app.log.info('PUBLIC_URL is not set; join links are derived from each request');
   }
 
   // Printed rather than logged, so it is legible in `docker logs` even at a
@@ -442,7 +329,7 @@ async function main(): Promise<void> {
   if (config.adminPasswordGenerated) {
     console.log('\n  ADMIN PASSWORD (generated — set ADMIN_PASSWORD to choose your own)\n');
     console.log(`      ${config.adminPassword}\n`);
-    console.log('  Needed once, at /admin, to run sessions.\n');
+    console.log('  Needed once, at /keys, to issue the key a client signs in with.\n');
   }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -459,7 +346,7 @@ async function main(): Promise<void> {
 // Only run when executed directly, so tests can import buildServer.
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
   main().catch((err) => {
-    console.error('Server failed to start:', err);
+    console.error('Relay failed to start:', err);
     process.exit(1);
   });
 }

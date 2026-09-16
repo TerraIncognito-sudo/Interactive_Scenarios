@@ -8,21 +8,20 @@
  */
 
 import { z } from 'zod';
+import { RoomCodeSchema } from '../relay/protocol.ts';
+
+/**
+ * The phone's whole view of a poll.
+ *
+ * It is defined with the relay protocol, because the relay is what a phone
+ * talks to. It is re-exported here only until the show `Room` stops building
+ * one — the local show has no players, and the surface that does is a page
+ * served by the container.
+ */
+export type { PlayerState } from '../relay/protocol.ts';
 
 export const ROLES = ['host', 'display', 'player'] as const;
 export type Role = (typeof ROLES)[number];
-
-/**
- * Room codes avoid characters that misread off a projector: no O/0, I/1, S/5.
- * At six characters this is ~24 bits, which is ample given the code alone only
- * grants the ability to vote.
- */
-export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRTUVWXY2346789';
-export const ROOM_CODE_LENGTH = 6;
-export const RoomCodeSchema = z
-  .string()
-  .length(ROOM_CODE_LENGTH)
-  .regex(new RegExp(`^[${ROOM_CODE_ALPHABET}]+$`), 'invalid room code');
 
 // ---------------------------------------------------------------------------
 // Client -> server
@@ -376,22 +375,6 @@ export type DisplayLoading = {
   totalBytes?: number;
 };
 
-/** Sent to a player so their phone can restore its own selection. */
-export type PlayerState = {
-  type: 'playerState';
-  /** Undefined when no poll is open. */
-  poll?: {
-    nodeId: string;
-    question: string;
-    prompt?: string;
-    options: { key: string; label: string }[];
-    endsAt: number;
-  };
-  /** What this device currently has selected. */
-  choice?: string;
-  serverNow: number;
-};
-
 export type ServerError = {
   type: 'error';
   code: 'badRoom' | 'badToken' | 'badMessage' | 'rateLimited' | 'roomClosed' | 'internal';
@@ -402,59 +385,7 @@ export type ServerError = {
 
 export type Pong = { type: 'pong'; serverNow: number };
 
-export type ServerMessage = Snapshot | PlayerState | ServerError | Pong;
-
-// ---------------------------------------------------------------------------
-// REST payloads
-// ---------------------------------------------------------------------------
-
-export const CreateRoomSchema = z.object({
-  scenarioId: z.string().min(1).max(64),
-});
-
-export type CreateRoomResponse = {
-  code: string;
-  hostToken: string;
-  displayToken: string;
-  /** Ready-to-use links, already carrying tokens where needed. */
-  urls: { host: string; display: string; join: string };
-};
-
-export type ScenarioListResponse = {
-  scenarios: (PublicScenario & { nodes: number; polls: number })[];
-  /** Folders that failed to load, surfaced rather than hidden. */
-  failures: { dir: string; message: string; problems: string[] }[];
-};
-
-/**
- * One running session, as the admin page sees it.
- *
- * This carries the host and display tokens, which is the whole point: a host
- * link lost to a closed tab or a flat phone currently strands a live show, and
- * the tokens exist nowhere else. It is why the endpoint is admin-only.
- */
-export type LiveSession = {
-  code: string;
-  scenario: { id: string; title: string };
-  phase: 'lobby' | 'running' | 'paused' | 'finished';
-  /** Where the story currently stands, for recognising a session at a glance. */
-  nodeId: string;
-  beat: number;
-  displayReady: boolean;
-  /** How far its prefetch has got, while it has one. See `DisplayLoading`. */
-  displayLoading?: DisplayLoading;
-  presence: { displays: number; players: number };
-  /** Voting deadline in ms since epoch, when a poll is open. */
-  pollEndsAt?: number;
-  createdAt: number;
-  lastActivityAt: number;
-  urls: { host: string; display: string; join: string };
-};
-
-export type SessionListResponse = {
-  sessions: LiveSession[];
-  serverNow: number;
-};
+export type ServerMessage = Snapshot | ServerError | Pong;
 
 /** Safe JSON parse + validate for an inbound frame. */
 export function parseClientMessage(raw: string): ClientMessage | undefined {
