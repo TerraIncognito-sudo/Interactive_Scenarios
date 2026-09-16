@@ -29,7 +29,7 @@
 import { Room } from './room.ts';
 import { loadScenarioFile, type LoadedScenario } from '../../../shared/scenario/load.ts';
 import { ProjectError, type ProjectPaths } from '../project.ts';
-import { projectPaths } from '../projects.ts';
+import { projectPaths, projectRoomName } from '../projects.ts';
 
 export type ShowSession = {
   /** The project folder the show was started from. Also what the lock names. */
@@ -37,6 +37,15 @@ export type ShowSession = {
   room: Room;
   paths: ProjectPaths;
   loaded: LoadedScenario;
+  /**
+   * The room code this project asks the relay for, if it has chosen one.
+   *
+   * Read once, when the show starts, rather than at Go Live. Everything else
+   * about the show is fixed at that moment — the scenario was parsed into
+   * memory and nothing re-reads it — and a room name that could change under a
+   * running show would be a second code for a room already on a wall.
+   */
+  roomName?: string;
   startedAt: number;
 };
 
@@ -101,6 +110,7 @@ export async function startShow(name: string): Promise<ShowStatus> {
 
   const paths = await projectPaths(name);
   const loaded = await loadScenarioFile(paths.scenario, paths.dir);
+  const roomName = await projectRoomName(name);
 
   // One argument, and the shrinkage is the rebuild. A Room used to need a
   // code, two tokens, a store and a clock reading, because it was one of many
@@ -115,7 +125,14 @@ export async function startShow(name: string): Promise<ShowStatus> {
     console.error(`  The show stalled at "${nodeId}":`, error);
   };
 
-  current = { project: name, room, paths, loaded, startedAt: Date.now() };
+  current = {
+    project: name,
+    room,
+    paths,
+    loaded,
+    ...(roomName !== undefined ? { roomName } : {}),
+    startedAt: Date.now(),
+  };
   return showStatus();
 }
 

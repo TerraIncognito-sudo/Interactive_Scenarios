@@ -433,7 +433,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   // at a desk; this is what puts a code on a wall.
 
   if (path === '/api/show/link' && request.method === 'POST') {
-    const body = (await readBody(request)) as { relayUrl?: unknown; key?: unknown };
+    const body = (await readBody(request)) as {
+      relayUrl?: unknown;
+      key?: unknown;
+      name?: unknown;
+    };
     try {
       return sendJson(
         response,
@@ -441,6 +445,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         await goLive({
           ...(typeof body.relayUrl === 'string' ? { relayUrl: body.relayUrl } : {}),
           ...(typeof body.key === 'string' ? { key: body.key } : {}),
+          // An empty string is a value here and not an omission: it is the
+          // operator clearing the box, which means "mint me a code this time".
+          ...(typeof body.name === 'string' ? { name: body.name } : {}),
         }),
       );
     } catch (err) {

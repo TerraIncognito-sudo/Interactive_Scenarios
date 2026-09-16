@@ -25,12 +25,14 @@ import { WebSocket } from 'ws';
 import {
   PublishPollSchema,
   RELAY_PROTOCOL,
+  normalizeRoomName,
   parseRelayMessage,
   type RelayToClient,
 } from '../../../shared/relay/protocol.ts';
 import type { Room, Subscriber } from './room.ts';
 import type { Snapshot } from '../../../shared/show/protocol.ts';
 import { relayConfig, setRelay } from '../workspace.ts';
+import { setProjectRoomName } from '../projects.ts';
 import { currentShow } from './session.ts';
 
 export type LinkStatus = 'off' | 'connecting' | 'live' | 'retrying' | 'failed';
@@ -58,6 +60,31 @@ export type LinkView = {
    * only in a file.
    */
   hasKey?: boolean;
+  /**
+   * The code this show asks for, rather than letting the relay mint one.
+   *
+   * Reported even when nothing is linked, because the box on the Go Live form
+   * is prefilled from it: a name that is remembered but invisible is a name
+   * somebody types a second, different version of.
+   */
+  name?: string;
+  /**
+   * A live room already holds the name, and somebody else's key opened it.
+   *
+   * Its own flag for the same reason `needsKey` is one: it is a failure with a
+   * cure the operator can act on in the next ten seconds, so the form goes
+   * back on screen rather than a status pill that retries a name all evening.
+   */
+  needsName?: boolean;
+  /**
+   * Something true and worth saying about a link that is otherwise fine.
+   *
+   * Distinct from `message`, which explains a link that is *not* fine and is
+   * only ever shown while retrying or failed. A room that opened under a code
+   * the operator did not ask for is live, working, and not what they wanted —
+   * and with nowhere to say so, the wrong six characters go on the wall.
+   */
+  note?: string;
   since?: number;
 };
 
@@ -70,6 +97,8 @@ class ShowLink {
   private readonly relayUrl: string;
   private readonly key: string;
   private readonly title: string | undefined;
+  /** What was asked for, kept to compare against what came back. */
+  private readonly wantedName: string | undefined;
 
   private socket: WebSocket | undefined;
   private subscriber: Subscriber | undefined;
@@ -84,7 +113,9 @@ class ShowLink {
 
   private status: LinkStatus = 'off';
   private message: string | undefined;
+  private note: string | undefined;
   private needsKey = false;
+  private needsName = false;
   private since = Date.now();
   /** Set while `stop()` is unwinding, so the socket's own close is not a drop. */
   private stopping = false;
@@ -101,11 +132,23 @@ class ShowLink {
   /** What the relay currently believes is on the phones. See `onSnapshot`. */
   private published: { nodeId: string; endsAt: number; closed: boolean } | undefined;
 
-  constructor(options: { room: Room; relayUrl: string; key: string; title?: string }) {
+  constructor(options: {
+    room: Room;
+    relayUrl: string;
+    key: string;
+    title?: string;
+    name?: string;
+  }) {
     this.room = options.room;
     this.relayUrl = options.relayUrl;
     this.key = options.key;
     this.title = options.title;
+    this.wantedName = options.name;
+  }
+
+  /** Says something about a link that is working. See `LinkView.note`. */
+  setNote(text: string | undefined): void {
+    this.note = text;
   }
 
   view(): LinkView {
@@ -116,7 +159,10 @@ class ShowLink {
       ...(this.joinUrl !== undefined ? { joinUrl: this.joinUrl } : {}),
       ...(this.status === 'live' || this.status === 'retrying' ? { players: this.players } : {}),
       ...(this.message !== undefined ? { message: this.message } : {}),
+      ...(this.note !== undefined ? { note: this.note } : {}),
       ...(this.needsKey ? { needsKey: true } : {}),
+      ...(this.needsName ? { needsName: true } : {}),
+      ...(this.wantedName !== undefined ? { name: this.wantedName } : {}),
       since: this.since,
     };
   }
@@ -199,6 +245,7 @@ class ShowLink {
           protocol: RELAY_PROTOCOL,
           key: this.key,
           ...(this.title !== undefined ? { title: this.title } : {}),
+          ...(this.wantedName !== undefined ? { name: this.wantedName } : {}),
         });
       }
     });
@@ -274,6 +321,17 @@ class ShowLink {
         this.players = message.players;
         this.setStatus('live');
         this.needsKey = false;
+        this.needsName = false;
+        // A relay too old to understand a name parses the frame with the field
+        // dropped and mints a code as it always did — which is a room that
+        // works, under six characters nobody asked for. Said out loud, because
+        // the alternative is the operator writing ARCTIC-SENTINEL on a board
+        // while the projector shows KPQ4T7.
+        this.note =
+          this.wantedName !== undefined && message.room !== this.wantedName
+            ? `This relay is too old to name a room — it opened ${message.room} instead. ` +
+              `Update the relay, or read out the code on screen.`
+            : undefined;
         this.room.setJoin(message.room, message.joinUrl);
         this.room.setRelayPlayers(message.players);
         // Whatever the phones are showing is whatever was there before the
@@ -334,6 +392,18 @@ class ShowLink {
       // know in eight seconds, and a link that kept trying would bury the one
       // message the operator can do something about under a reconnect counter.
       this.needsKey = true;
+      this.setStatus('failed', message);
+      this.stopping = true;
+      this.socket?.close();
+      return;
+    }
+
+    if (code === 'nameTaken') {
+      // No retry, like a bad key and for the same reason: a name that belongs
+      // to somebody else's live room now belongs to it in eight seconds too,
+      // and a reconnect counter would bury the one sentence the operator can
+      // do something about.
+      this.needsName = true;
       this.setStatus('failed', message);
       this.stopping = true;
       this.socket?.close();
@@ -549,9 +619,13 @@ export function linkView(): LinkView {
   // Unlinked, but not uninformed: the board needs to know whether it is
   // offering a button or a form before anybody presses anything.
   const saved = relayConfig();
+  // The project's name, not the machine's: the form is about to offer it, and
+  // it is remembered per show rather than per computer.
+  const name = currentShow()?.roomName;
   return {
     status: 'off',
     ...(saved ? { relayUrl: saved.url, hasKey: true } : {}),
+    ...(name !== undefined ? { name } : {}),
   };
 }
 
@@ -594,7 +668,9 @@ function withScheme(raw: string): string {
  * year later, and a key that travelled with it would be a key handed to
  * whoever the folder was sent to.
  */
-export async function goLive(options: { relayUrl?: string; key?: string } = {}): Promise<LinkView> {
+export async function goLive(
+  options: { relayUrl?: string; key?: string; name?: string } = {},
+): Promise<LinkView> {
   const show = currentShow();
   if (!show) {
     throw new Error('No show is running. Press Play first, then go live.');
@@ -607,7 +683,20 @@ export async function goLive(options: { relayUrl?: string; key?: string } = {}):
   if (!relayUrl) throw new Error('No relay address. Enter the address of your relay.');
   if (!key) throw new Error('No relay key. Paste the phrase from the relay console at /keys.');
 
-  link = new ShowLink({ room: show.room, relayUrl, key, title: show.loaded.scenario.title });
+  // A name submitted with the form wins, including an empty one — clearing
+  // the box is a decision ("mint me a code this time"), and a blank that fell
+  // back to the remembered name would be a box that cannot be emptied.
+  // Unsubmitted, the project's own name stands.
+  const asked = options.name !== undefined;
+  const name = asked ? normalizeRoomName(options.name ?? '') : show.roomName;
+
+  link = new ShowLink({
+    room: show.room,
+    relayUrl,
+    key,
+    title: show.loaded.scenario.title,
+    ...(name !== undefined ? { name } : {}),
+  });
   let view: LinkView;
   try {
     view = await link.start();
@@ -631,7 +720,23 @@ export async function goLive(options: { relayUrl?: string; key?: string } = {}):
   }
 
   await setRelay(relayUrl, key);
-  return view;
+
+  // Written only now, after a relay actually opened a room under it — the same
+  // rule the key follows. A name saved on the way *in* would be a name that
+  // outlived the attempt that proved it was refused.
+  if (asked) {
+    try {
+      await setProjectRoomName(show.project, name ?? '');
+    } catch (error) {
+      // A folder with no `project.yaml` has nowhere to keep this. The show is
+      // live under the name regardless, so this is a note on a working link
+      // rather than a failure — but it is said, because a box that silently
+      // forgets what was typed is one somebody fills in again every week.
+      link.setNote((error as Error).message);
+    }
+  }
+
+  return link.view();
 }
 
 /** Closes the room. The show carries on without one, which is the normal state. */

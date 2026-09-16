@@ -25,7 +25,7 @@ import {
 import { baseUrlFor } from './config.ts';
 import { matchKey, type KeyAttempts } from './keys.ts';
 import type { Store } from './db.ts';
-import type { RelayRegistry } from './rooms.ts';
+import { RoomNameInUse, type RelayRegistry } from './rooms.ts';
 import type { ClientSink, PlayerSink, RelayRoom } from './relay.ts';
 
 /** Simple token bucket, so one phone cannot flood the room with votes. */
@@ -92,6 +92,30 @@ function send(socket: WebSocket, message: RelayToClient | RelayToPhone): void {
 function fail(socket: WebSocket, code: RelayErrorCode, message: string, fatal = true): void {
   send(socket, { type: 'error', code, message, fatal });
   if (fatal) socket.close(1008, code);
+}
+
+/**
+ * A client taking a room that already exists back over.
+ *
+ * One builder for the two ways in — resuming with a token, and opening by a
+ * name this key already holds — because the two must hand back the same thing.
+ * The open question and its ballots are the whole reason this frame is not a
+ * `roomOpened`, and a second copy of it would eventually be the one that
+ * forgot them.
+ */
+function resumedFrame(connection: Connection, room: RelayRoom): RelayToClient {
+  const open = room.openPoll();
+  return {
+    type: 'roomResumed',
+    room: room.code,
+    token: room.token,
+    joinUrl: `${connection.base}/join/${room.code}`,
+    players: room.playerCount,
+    serverNow: Date.now(),
+    ...(open
+      ? { open: { nodeId: open.nodeId, endsAt: open.endsAt, closed: open.closed, votes: open.votes } }
+      : {}),
+  };
 }
 
 /**
@@ -191,10 +215,56 @@ export function attachRelayWebSocketServer(
         }
         attempts.succeed(connection.address);
 
-        const room = registry.create({
-          keyId: key.id,
-          ...(message.title !== undefined ? { title: message.title } : {}),
-        });
+        // Walking back into a room this key already has open, which is the
+        // second thing a name is for and the more valuable one. The show's
+        // client died — a laptop that crashed, a process killed mid-vote — and
+        // there is no token left anywhere to resume with, because the token
+        // lived in the process that went. The key is what is left, and the key
+        // is what opened the room.
+        //
+        // What comes back is a `roomResumed` rather than a `roomOpened`: that
+        // is the frame carrying the open question and every ballot cast under
+        // it, so a show whose laptop died mid-vote picks the vote back up
+        // rather than asking forty people to do it again.
+        //
+        // Refused when a *different* key holds the name, and that is the whole
+        // of the authorisation here. A name is public — it is written on a
+        // wall — so without this check the second operator to type ARCTIC
+        // would be handed the first one's room and every phone on it.
+        if (message.name !== undefined) {
+          const existing = registry.get(message.name);
+          if (existing && !existing.closed) {
+            if (existing.keyId !== key.id) {
+              return fail(
+                socket,
+                'nameTaken',
+                `Room ${message.name} is open already and a different key opened it. Pick another name.`,
+              );
+            }
+            store.touchKey(key.id, Date.now());
+            attachClient(connection, existing);
+            send(socket, resumedFrame(connection, existing));
+            return;
+          }
+        }
+
+        let room: RelayRoom;
+        try {
+          room = registry.create({
+            keyId: key.id,
+            ...(message.title !== undefined ? { title: message.title } : {}),
+            ...(message.name !== undefined ? { name: message.name } : {}),
+          });
+        } catch (error) {
+          // The name was taken between the check above and here, which needs
+          // two clients opening one name in the same tick to happen at all.
+          // Reported rather than swallowed, because the alternative is an
+          // exception out of a message handler and a socket that simply stops.
+          if (error instanceof RoomNameInUse) {
+            return fail(socket, 'nameTaken', `Room ${error.code} is already open.`);
+          }
+          throw error;
+        }
         store.touchKey(key.id, Date.now());
         attachClient(connection, room);
         send(socket, {
@@ -227,25 +297,7 @@ export function attachRelayWebSocketServer(
         }
 
         attachClient(connection, room);
-        const open = room.openPoll();
-        send(socket, {
-          type: 'roomResumed',
-          room: room.code,
-          token: room.token,
-          joinUrl: `${connection.base}/join/${room.code}`,
-          players: room.playerCount,
-          serverNow: Date.now(),
-          ...(open
-            ? {
-                open: {
-                  nodeId: open.nodeId,
-                  endsAt: open.endsAt,
-                  closed: open.closed,
-                  votes: open.votes,
-                },
-              }
-            : {}),
-        });
+        send(socket, resumedFrame(connection, room));
         return;
       }
 

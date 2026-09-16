@@ -441,6 +441,10 @@ function linkPanel(snapshot) {
       // disagreed about the code, the wall is the one the audience is reading.
       h('p', { class: 'join-code' }, snapshot.room ?? link.room ?? ''),
       h('p', { class: 'join-url' }, snapshot.joinUrl ?? link.joinUrl ?? ''),
+      // True of a link that is working, which is why it is not in with the
+      // retry warning below: the room opened, and it is not the room that was
+      // asked for.
+      link.note && h('p', { class: 'show-warn' }, link.note),
       link.status === 'retrying' &&
         h(
           'p',
@@ -493,6 +497,9 @@ function linkPanel(snapshot) {
   // unlinked show reads as a broken one.
   const asking = state.keyForm || link.hasKey !== true;
 
+  // One form either way, rather than a form and a bare button. The room code
+  // has to be settable without re-entering a key that is already saved — it is
+  // the thing that changes between shows, where the key is typed once a year.
   return h(
     'section',
     { class: 'show-block' },
@@ -503,73 +510,86 @@ function linkPanel(snapshot) {
       'Nobody can join. The show runs fine like this \u2014 going live adds a code the room votes on.',
     ),
     link.status === 'failed' && link.message && h('p', { class: 'show-warn' }, link.message),
-    asking
-      ? h(
-          'form',
+    h(
+      'form',
+      {
+        class: 'link-form',
+        onsubmit: (event) => {
+          event.preventDefault();
+          const data = new FormData(event.target);
+          void goLive({
+            // Always sent, empty included: a blank box means "mint me a code
+            // this time", and a name that survived being cleared would be a
+            // box with no way out of it.
+            name: String(data.get('name') ?? '').trim(),
+            ...(asking
+              ? {
+                  relayUrl: String(data.get('relayUrl') ?? '').trim(),
+                  key: String(data.get('key') ?? '').trim(),
+                }
+              : {}),
+          });
+        },
+      },
+      asking && [
+        h('label', {}, 'Relay address'),
+        h('input', {
+          name: 'relayUrl',
+          type: 'text',
+          placeholder: 'https://relay.example.com',
+          value: link.relayUrl ?? '',
+        }),
+        h('label', {}, 'Key'),
+        h('input', {
+          name: 'key',
+          type: 'text',
+          placeholder: 'amber-kestrel-dusk-harbour-quill',
+          autocomplete: 'off',
+        }),
+        h(
+          'p',
+          { class: 'show-note' },
+          // Says where one comes from, because the answer is a page on a
+          // different machine that most people will never have seen.
+          'Generated in the relay\u2019s own console, at /keys. Typed once \u2014 this machine remembers it.',
+        ),
+      ],
+      h('label', {}, 'Room code'),
+      h('input', {
+        name: 'name',
+        type: 'text',
+        placeholder: 'leave empty and the relay picks six characters',
+        value: link.name ?? '',
+        autocomplete: 'off',
+        maxlength: '24',
+        spellcheck: 'false',
+      }),
+      h(
+        'p',
+        { class: 'show-note' },
+        'Remembered with this project. Worth setting: a named room can be walked back ' +
+          'into after a crash, with its open vote intact \u2014 a code the relay picked ' +
+          'cannot, because nothing can ask for it again.',
+      ),
+      h(
+        'button',
+        { type: 'submit', class: 'primary wide', disabled: state.linking },
+        state.linking ? 'Opening a room\u2026' : 'Go live',
+      ),
+      !asking &&
+        h(
+          'button',
           {
-            class: 'link-form',
-            onsubmit: (event) => {
-              event.preventDefault();
-              const data = new FormData(event.target);
-              void goLive({
-                relayUrl: String(data.get('relayUrl') ?? '').trim(),
-                key: String(data.get('key') ?? '').trim(),
-              });
+            type: 'button',
+            class: 'ghost',
+            onclick: () => {
+              state.keyForm = true;
+              render();
             },
           },
-          h('label', {}, 'Relay address'),
-          h('input', {
-            name: 'relayUrl',
-            type: 'text',
-            placeholder: 'https://relay.example.com',
-            value: link.relayUrl ?? '',
-          }),
-          h('label', {}, 'Key'),
-          h('input', {
-            name: 'key',
-            type: 'text',
-            placeholder: 'amber-kestrel-dusk-harbour-quill',
-            autocomplete: 'off',
-          }),
-          h(
-            'p',
-            { class: 'show-note' },
-            // Says where one comes from, because the answer is a page on a
-            // different machine that most people will never have seen.
-            'Generated in the relay\u2019s own console, at /keys. Typed once \u2014 this machine remembers it.',
-          ),
-          h(
-            'button',
-            { type: 'submit', class: 'primary wide', disabled: state.linking },
-            state.linking ? 'Opening a room\u2026' : 'Go live',
-          ),
-        )
-      : h(
-          'div',
-          { class: 'show-row' },
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'primary wide',
-              disabled: state.linking,
-              onclick: () => void goLive(),
-            },
-            state.linking ? 'Opening a room\u2026' : 'Go live',
-          ),
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'ghost',
-              onclick: () => {
-                state.keyForm = true;
-                render();
-              },
-            },
-            'Use a different key',
-          ),
+          'Use a different key',
         ),
+    ),
   );
 }
 

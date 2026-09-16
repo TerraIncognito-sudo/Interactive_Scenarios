@@ -192,6 +192,25 @@ export class Store {
     return this.db.prepare(`SELECT * FROM rooms WHERE code = ?`).get(code) as RoomRow | undefined;
   }
 
+  /**
+   * Erases every trace of one room.
+   *
+   * Only ever for a room that is over, and only when a new one is being opened
+   * under the same name. A minted code is never reused deliberately, so this
+   * did not exist; a *named* room is meant to be opened again next week, and
+   * `rooms.code` is a primary key — without this the second show under a name
+   * fails on a constraint violation the operator has no way to read.
+   *
+   * It takes the polls and the ballots with it, which is the point rather than
+   * tidiness: last week's votes left filed under this week's room are a tally
+   * that arrives out of nowhere the first time a client resumes.
+   */
+  forgetRoom(code: string): void {
+    this.db.prepare(`DELETE FROM votes WHERE room = ?`).run(code);
+    this.db.prepare(`DELETE FROM polls WHERE room = ?`).run(code);
+    this.db.prepare(`DELETE FROM rooms WHERE code = ?`).run(code);
+  }
+
   /** Open rooms touched since `since`, used to rebuild them after a restart. */
   liveRooms(since: number): RoomRow[] {
     return this.db

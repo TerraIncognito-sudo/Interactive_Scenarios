@@ -6,6 +6,23 @@ import { RelayRoom, type OpenPoll } from './relay.ts';
 import { generateRoomCode, generateRoomToken, type RecordedVote } from '../shared/relay/protocol.ts';
 import type { Store } from './db.ts';
 
+/**
+ * Thrown when a named room is asked for and a live one already holds the name.
+ *
+ * A type rather than a boolean return, because the caller that can do anything
+ * about it is two layers up: `ws.ts` knows which key is asking, and whether
+ * the room is that key's own to walk back into.
+ */
+export class RoomNameInUse extends Error {
+  readonly code: string;
+
+  constructor(code: string) {
+    super(`Room ${code} is already open.`);
+    this.name = 'RoomNameInUse';
+    this.code = code;
+  }
+}
+
 export class RelayRegistry {
   private readonly rooms = new Map<string, RelayRoom>();
   private readonly store: Store;
@@ -17,18 +34,9 @@ export class RelayRegistry {
     this.ttlMs = ttlMs;
   }
 
-  create(options: { keyId: string | null; title?: string }): RelayRoom {
+  create(options: { keyId: string | null; title?: string; name?: string }): RelayRoom {
     const now = Date.now();
-
-    // Collisions are vanishingly unlikely, but a duplicate code would hand a
-    // stranger someone else's room, so retry rather than assume. Checked
-    // against the database as well as the live map: a room that fell out of
-    // memory on a restart is still a code somebody has written on a wall.
-    let code = generateRoomCode();
-    for (let attempt = 0; attempt < 10; attempt++) {
-      if (!this.rooms.has(code) && !this.store.getRoom(code)) break;
-      code = generateRoomCode();
-    }
+    const code = options.name === undefined ? this.mintCode() : this.claimName(options.name);
 
     const room = new RelayRoom({
       code,
@@ -50,6 +58,38 @@ export class RelayRegistry {
 
     this.rooms.set(code, room);
     return room;
+  }
+
+  /**
+   * Six characters nothing else is using.
+   *
+   * Collisions are vanishingly unlikely, but a duplicate code would hand a
+   * stranger someone else's room, so this retries rather than assumes. Checked
+   * against the database as well as the live map: a room that fell out of
+   * memory on a restart is still a code somebody has written on a wall.
+   */
+  private mintCode(): string {
+    let code = generateRoomCode();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      if (!this.rooms.has(code) && !this.store.getRoom(code)) break;
+      code = generateRoomCode();
+    }
+    return code;
+  }
+
+  /**
+   * The name the operator asked for, if it is going spare.
+   *
+   * A *live* room under this name is never taken here. Whether it is the
+   * caller's own to walk back into depends on which key opened it, and this
+   * class does not know about keys — `ws.ts` does, and has already decided by
+   * the time this runs. What is cleared away is the other thing a name finds:
+   * the record of a show that is over.
+   */
+  private claimName(name: string): string {
+    if (this.rooms.has(name)) throw new RoomNameInUse(name);
+    if (this.store.getRoom(name)) this.store.forgetRoom(name);
+    return name;
   }
 
   get(code: string): RelayRoom | undefined {

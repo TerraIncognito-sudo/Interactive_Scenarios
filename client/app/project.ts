@@ -167,6 +167,25 @@ export type AssetRow = z.infer<typeof AssetRowSchema>;
 export const ProjectSchema = z.strictObject({
   project: z.string().min(1),
   title: z.string().min(1).optional(),
+  /**
+   * The code this project's shows open on the relay under.
+   *
+   * Here rather than in `scenario.yaml` because it is not content: the story
+   * is the same story whatever the room is called, and a scenario that
+   * travelled with a room name in it would be a scenario that fought over the
+   * name with whoever it was sent to. Here rather than in the machine config
+   * because it belongs to *this show* — ARCTIC-SENTINEL is this project's
+   * name, and a machine that runs four shows would otherwise open all four
+   * under one.
+   *
+   * What it buys is two things. A code somebody can read out, instead of six
+   * characters they have to spell — and a way back in: a named room is
+   * re-entered by the key that opened it, so a client that crashed mid-vote
+   * goes live again and finds its own room, its own question and its own
+   * ballots. A minted code cannot do that, because nothing can ask for it
+   * again.
+   */
+  room: z.string().min(1).optional(),
   /** All paths resolve relative to the project file, and may be absolute. */
   storyboard: z.string().min(1).optional(),
   scenario: z.string().min(1),

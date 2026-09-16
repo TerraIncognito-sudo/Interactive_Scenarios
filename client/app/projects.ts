@@ -83,6 +83,7 @@ import {
 } from './sprites.ts';
 import { planReconcile, type ReconcilePlan, type RowUpdate } from './reconcile.ts';
 import { retimeInto, type Retimed } from './timing.ts';
+import { normalizeRoomName } from '../../shared/relay/protocol.ts';
 import {
   addListItem,
   addNode,
@@ -314,6 +315,52 @@ export async function projectPaths(name: string): Promise<ProjectPaths> {
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));
   return pathsOf(file, project);
+}
+
+/**
+ * The room code this project's shows open under, if it has chosen one.
+ *
+ * Normalised on the way out rather than trusted, because it is a hand-editable
+ * field in a hand-edited file: `arctic sentinel` typed into `project.yaml`
+ * becomes the ARCTIC-SENTINEL the relay will actually be asked for, instead of
+ * a refusal at the one moment somebody is trying to go live.
+ */
+export async function projectRoomName(name: string): Promise<string | undefined> {
+  const file = join(projectDir(name), 'project.yaml');
+  const project = await loadProject(file).catch(() => undefined);
+  return project?.room === undefined ? undefined : normalizeRoomName(project.room);
+}
+
+/**
+ * Remembers the name the operator went live under. An empty value forgets it.
+ *
+ * Written only after the relay has actually opened a room under it, the same
+ * rule the key follows: the one thing somebody has to fix must not be the
+ * thing the file keeps handing back to them.
+ *
+ * Through the document API like every other field edit, so the comment an
+ * author wrote above `room:` survives being handed a new one.
+ */
+export async function setProjectRoomName(name: string, value: string): Promise<void> {
+  const file = join(projectDir(name), 'project.yaml');
+  const source = await readFile(file, 'utf8').catch(() => {
+    // A scenario folder that has never been near the asset pipeline has no
+    // project file, and creating one here would be this function inventing a
+    // project on somebody's disk to store a preference in. The show runs; it
+    // simply will not remember. `goLive` says so rather than swallowing it.
+    throw new ProjectError(
+      `"${name}" has no project.yaml, so there is nowhere to remember a room name. ` +
+        `The show is live under it either way.`,
+    );
+  });
+
+  const doc = parseDocument(source);
+  if (value === '') doc.deleteIn(['room']);
+  else doc.setIn(['room'], value);
+
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
 }
 
 export async function openProject(name: string): Promise<OpenProject> {

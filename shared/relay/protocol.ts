@@ -69,6 +69,65 @@ export function generateRoomCode(): string {
   return code;
 }
 
+/**
+ * A code the operator chose, instead of one the relay minted.
+ *
+ * Wider than `ROOM_CODE_ALPHABET` on purpose. That alphabet drops O/0, I/1,
+ * S/5 and Z because nobody proofreads six random characters — but a name is
+ * chosen and read back by the person who picked it, and a rule that outlawed
+ * SEPTEMBER would be a rule nobody uses twice.
+ *
+ * Capitals because the minted codes are, and because `RelayRegistry.get`
+ * upper-cases before it looks anything up: two cases of one name would be two
+ * rooms on the phone side and one in the database.
+ *
+ * It is also what makes a crash survivable. A show that loses its client
+ * leaves a code nobody can ask for again, because a code is minted and never
+ * chosen; a *named* room is re-entered by the key that opened it, with its
+ * open question and every ballot still in place. See `server/ws.ts`.
+ */
+export const ROOM_NAME_MIN = 3;
+export const ROOM_NAME_MAX = 24;
+export const RoomNameSchema = z
+  .string()
+  .min(ROOM_NAME_MIN)
+  .max(ROOM_NAME_MAX)
+  .regex(/^[A-Z0-9][A-Z0-9-]*[A-Z0-9]$/, 'capitals, digits and hyphens');
+
+/**
+ * A room as it travels on the wire: either sort of code.
+ *
+ * Every minted code satisfies the name pattern, so this *is* the name pattern
+ * — exported under its own name because the two are different promises.
+ * `RoomCodeSchema` is what `generateRoomCode` guarantees about what it makes;
+ * this is what a phone may be holding.
+ */
+export const RoomIdSchema = RoomNameSchema;
+
+/**
+ * What the operator typed, as a room name, or undefined if it cannot be one.
+ *
+ * Forgiving at the edges, because the box it comes from is filled in while a
+ * projector is warming up: `Arctic Sentinel` becomes `ARCTIC-SENTINEL` rather
+ * than an error message about capital letters. Length is the one thing it will
+ * not fix by guessing, because shortening a name somebody chose would open a
+ * room under a code they have never seen.
+ *
+ * Shared rather than written twice. The client normalises before it asks and
+ * the relay validates what arrived, and two spellings of that rule is a room
+ * whose name is not the one on the operator's screen.
+ */
+export function normalizeRoomName(raw: string): string | undefined {
+  const value = raw
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_.]+/g, '-')
+    .replace(/[^A-Z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return RoomNameSchema.safeParse(value).success ? value : undefined;
+}
+
 /** A room's own secret, proved on resume. See `ResumeRoomSchema`. */
 export function generateRoomToken(): string {
   return randomBytes(32).toString('base64url');
@@ -91,6 +150,20 @@ export const OpenRoomSchema = z.object({
   protocol: z.number().int().min(1).max(1000),
   key: z.string().min(1).max(200),
   title: z.string().max(120).optional(),
+  /**
+   * The code to open under, instead of a minted one.
+   *
+   * Absent is the ordinary case and mints six characters. Present, it does two
+   * jobs: it puts something readable on the wall, and it is the only way back
+   * into a show whose client died — a name already held by a live room that
+   * **this key** opened is handed back rather than refused, ballots intact.
+   *
+   * An older relay parses this frame with the field stripped and mints a code
+   * as it always did, so the client compares what came back against what it
+   * asked for. Refusing to carry a name and pretending to are different
+   * things, and only one of them is safe to leave unsaid.
+   */
+  name: RoomNameSchema.optional(),
 });
 
 /**
@@ -105,7 +178,7 @@ export const OpenRoomSchema = z.object({
 export const ResumeRoomSchema = z.object({
   type: z.literal('resumeRoom'),
   protocol: z.number().int().min(1).max(1000),
-  room: RoomCodeSchema,
+  room: RoomIdSchema,
   token: z.string().min(1).max(200),
 });
 
@@ -167,7 +240,7 @@ export const RelayPingSchema = z.object({ type: z.literal('ping') });
 export const PlayerHelloSchema = z.object({
   type: z.literal('hello'),
   role: z.literal('player'),
-  room: RoomCodeSchema,
+  room: RoomIdSchema,
   /** Opaque per-device id used only to dedupe votes. No personal data. */
   deviceId: z.string().min(8).max(128),
 });
@@ -231,7 +304,7 @@ export const RecordedVoteSchema = z.object({
 
 export const RoomOpenedSchema = z.object({
   type: z.literal('roomOpened'),
-  room: RoomCodeSchema,
+  room: RoomIdSchema,
   token: z.string().min(1).max(200),
   /**
    * The whole address a phone opens, built by the relay from the request that
@@ -246,7 +319,7 @@ export const RoomOpenedSchema = z.object({
 
 export const RoomResumedSchema = z.object({
   type: z.literal('roomResumed'),
-  room: RoomCodeSchema,
+  room: RoomIdSchema,
   token: z.string().min(1).max(200),
   joinUrl: z.string().min(1).max(500),
   players: z.number().int().nonnegative(),
@@ -296,6 +369,16 @@ export const RELAY_ERROR_CODES = [
   'badRoom',
   'badToken',
   'badMessage',
+  /**
+   * The requested name belongs to a live room somebody else's key opened.
+   *
+   * Its own code because the cure is the operator's and is nothing like any
+   * other failure's: pick another name, or find out who is using that one.
+   * Emphatically not `badRoom`, which means *the relay has lost the room we
+   * were in* and sends a client off to open a replacement — here there is a
+   * room and it is not ours to take.
+   */
+  'nameTaken',
   'rateLimited',
   'roomClosed',
   'internal',

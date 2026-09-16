@@ -26,9 +26,15 @@ function show(which: keyof typeof views): void {
   for (const [name, node] of Object.entries(views)) node.hidden = name !== which;
 }
 
-/** /join/CODE is the scanned form; ?room=CODE is the typed fallback. */
+/**
+ * /join/CODE is the scanned form; ?room=CODE is the typed fallback.
+ *
+ * Hyphens are in the pattern because a room may be named rather than minted —
+ * ARCTIC-SENTINEL is a legal room. Left out, the match stopped at the hyphen
+ * and forty phones scanning a QR code all joined a room called ARCTIC.
+ */
 function roomFromLocation(): string | undefined {
-  const fromPath = location.pathname.match(/\/join\/([A-Za-z0-9]+)/)?.[1];
+  const fromPath = location.pathname.match(/\/join\/([A-Za-z0-9-]+)/)?.[1];
   return (fromPath ?? queryParam('room'))?.toUpperCase();
 }
 
@@ -196,9 +202,20 @@ if (room) {
   show('join');
   el('join-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    const value = el<HTMLInputElement>('code-input').value.trim().toUpperCase();
-    if (value.length !== 6) {
-      el('join-error').textContent = 'Room codes are six characters.';
+    // Spaces to hyphens, because a code read off a wall as "arctic sentinel"
+    // is typed with the space that is in the word rather than the hyphen that
+    // is in the URL. Kept here and not shared with the relay's own
+    // `normalizeRoomName`: this page is the one thing in the system a stranger
+    // loads, and it borrows nothing.
+    const value = el<HTMLInputElement>('code-input')
+      .value.trim()
+      .toUpperCase()
+      .replace(/\s+/g, '-');
+    if (!/^[A-Z0-9][A-Z0-9-]{1,22}[A-Z0-9]$/.test(value)) {
+      // Not "six characters" any more: a room may be named, and telling
+      // somebody holding ARCTIC-SENTINEL that codes are six long sends them
+      // off to ask the room for a different code that does not exist.
+      el('join-error').textContent = 'That does not look like a room code.';
       return;
     }
     location.href = `/join/${value}`;

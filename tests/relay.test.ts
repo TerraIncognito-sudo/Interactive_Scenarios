@@ -21,7 +21,14 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { WebSocket } from 'ws';
 import { buildServer } from '../server/index.ts';
 import type { Config } from '../server/config.ts';
-import { RELAY_PROTOCOL, parseRelayMessage } from '../shared/relay/protocol.ts';
+import {
+  RELAY_PROTOCOL,
+  RoomCodeSchema,
+  RoomNameSchema,
+  generateRoomCode,
+  normalizeRoomName,
+  parseRelayMessage,
+} from '../shared/relay/protocol.ts';
 import type { PlayerState, RelayTally, RoomOpened } from '../shared/relay/protocol.ts';
 
 const TEST_PASSWORD = 'test-password';
@@ -167,7 +174,7 @@ async function issueKey(label: string): Promise<string> {
 /** A client with a room open, plus the code and token it was given. */
 async function openRoom(
   key: string,
-  options: { title?: string; headers?: Record<string, string> } = {},
+  options: { title?: string; name?: string; headers?: Record<string, string> } = {},
 ): Promise<{ client: Peer; opened: RoomOpened }> {
   const client = await connect(options.headers ?? {});
   client.send({
@@ -175,6 +182,7 @@ async function openRoom(
     protocol: RELAY_PROTOCOL,
     key,
     ...(options.title !== undefined ? { title: options.title } : {}),
+    ...(options.name !== undefined ? { name: options.name } : {}),
   });
   const opened = await client.next<RoomOpened>((m) => m.type === 'roomOpened');
   return { client, opened };
@@ -843,5 +851,148 @@ describe('the key phrase', () => {
     // And a key that works clears the record, so one typo costs nothing later.
     attempts.succeed('1.2.3.4');
     assert.equal(attempts.blocked('1.2.3.4'), false);
+  });
+});
+
+describe('a room can be asked for by name', () => {
+  test('a minted code is still a legal name, which is what lets one field carry both', () => {
+    // The wire has one room field, widened rather than made a union. That is
+    // only safe while every code the relay mints is also a legal name — check
+    // it rather than assume it, because the minted alphabet and the name
+    // pattern are two constants that could drift apart in one commit.
+    for (let i = 0; i < 50; i++) {
+      const code = generateRoomCode();
+      assert.equal(RoomCodeSchema.safeParse(code).success, true);
+      assert.equal(RoomNameSchema.safeParse(code).success, true);
+    }
+  });
+
+  test('what the operator types is tidied rather than refused', () => {
+    assert.equal(normalizeRoomName('Arctic Sentinel'), 'ARCTIC-SENTINEL');
+    assert.equal(normalizeRoomName('  team_union  '), 'TEAM-UNION');
+    assert.equal(normalizeRoomName('a--b'), 'A-B');
+    assert.equal(normalizeRoomName('-edges-'), 'EDGES');
+    // Length is the one thing it will not fix by guessing: shortening a name
+    // somebody chose opens a room under a code they have never seen.
+    assert.equal(normalizeRoomName('ab'), undefined);
+    assert.equal(normalizeRoomName('x'.repeat(25)), undefined);
+    assert.equal(normalizeRoomName('!!!'), undefined);
+  });
+
+  test('it opens under the name, and the join link carries it', async () => {
+    const key = await issueKey('naming laptop');
+    const { client, opened } = await openRoom(key, { name: 'HARBOUR-ONE' });
+
+    assert.equal(opened.room, 'HARBOUR-ONE');
+    assert.match(opened.joinUrl, /\/join\/HARBOUR-ONE$/);
+
+    client.send({ type: 'closeRoom' });
+    client.close();
+  });
+
+  test('a phone joins a named room exactly as it joins a code', async () => {
+    const key = await issueKey('naming laptop 2');
+    const { client, opened } = await openRoom(key, { name: 'HARBOUR-TWO' });
+    client.send(A_POLL);
+
+    const phone = await joinAs(opened.room, 'device-named-1');
+    phone.send({ type: 'vote', optionKey: 'left' });
+
+    const tally = await client.next<RelayTally>((m) => m.type === 'tally' && m.voters === 1);
+    assert.equal(tally.counts.left, 1);
+
+    phone.close();
+    client.send({ type: 'closeRoom' });
+    client.close();
+  });
+
+  test('a live room is not handed to a different key', async () => {
+    // A name is public — it is written on a wall and read out to a room — so
+    // the only thing standing between two operators who both like ARCTIC is
+    // this. Without it the second one is handed the first one's audience.
+    const mine = await issueKey('mine');
+    const theirs = await issueKey('theirs');
+    const { client } = await openRoom(mine, { name: 'CONTESTED' });
+
+    const intruder = await connect();
+    intruder.send({ type: 'openRoom', protocol: RELAY_PROTOCOL, key: theirs, name: 'CONTESTED' });
+    const error = await intruder.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'nameTaken');
+    assert.match(error.message, /CONTESTED/);
+    intruder.close();
+
+    client.send({ type: 'closeRoom' });
+    client.close();
+  });
+
+  test('the key that opened it walks back in, with the open vote intact', async () => {
+    // The whole reason a name is worth having. The operator's machine died
+    // mid-vote: the room token went with the process, so `resumeRoom` has
+    // nothing to prove itself with, and a fresh `openRoom` would mint a new
+    // code while forty people hold the old one. The key is what is left, and
+    // the key is what opened this room.
+    const key = await issueKey('the laptop that crashed');
+    const { client, opened } = await openRoom(key, { name: 'CRASH-TEST' });
+    client.send(A_POLL);
+
+    const phone = await joinAs(opened.room, 'device-crash-1');
+    phone.send({ type: 'vote', optionKey: 'right' });
+    await client.next<RelayTally>((m) => m.type === 'tally' && m.voters === 1);
+
+    // Not `close()`: a crash does not say goodbye.
+    client.socket.terminate();
+
+    const revived = await connect();
+    revived.send({ type: 'openRoom', protocol: RELAY_PROTOCOL, key, name: 'CRASH-TEST' });
+    const resumed = await revived.next<any>((m) => m.type === 'roomResumed');
+
+    assert.equal(resumed.room, 'CRASH-TEST');
+    assert.equal(resumed.token, opened.token, 'the room is the same room, not a new one');
+    assert.equal(resumed.open?.nodeId, 'choose');
+    assert.deepEqual(
+      resumed.open?.votes.map((v: { deviceId: string; optionKey: string }) => [
+        v.deviceId,
+        v.optionKey,
+      ]),
+      [['device-crash-1', 'right']],
+      'the ballot cast before the crash is still there',
+    );
+
+    // And the phone never noticed: it is still on the same room, holding its
+    // own choice, which is the part you cannot ask forty people to do again.
+    assert.equal(resumed.players, 1);
+
+    phone.close();
+    revived.send({ type: 'closeRoom' });
+    revived.close();
+  });
+
+  test('a name is free again once the show that used it is over', async () => {
+    // A named room is meant to be opened again next week. `rooms.code` is a
+    // primary key, so without `forgetRoom` the second show under a name fails
+    // on a constraint violation nobody can read.
+    const key = await issueKey('next week');
+    const first = await openRoom(key, { name: 'WEEKLY' });
+    first.client.send({ type: 'closeRoom' });
+    first.client.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const second = await openRoom(key, { name: 'WEEKLY' });
+    assert.equal(second.opened.room, 'WEEKLY');
+    assert.notEqual(second.opened.token, first.opened.token, 'a new show, so a new token');
+
+    second.client.send({ type: 'closeRoom' });
+    second.client.close();
+  });
+
+  test('a name the schema will not have never reaches the relay as one', async () => {
+    // The relay validates rather than trusts: the client normalises before it
+    // asks, and a frame that arrived with a bad name anyway is a bad frame.
+    const key = await issueKey('bad names');
+    const client = await connect();
+    client.send({ type: 'openRoom', protocol: RELAY_PROTOCOL, key, name: 'lower case' });
+    const error = await client.next<any>((m) => m.type === 'error');
+    assert.equal(error.code, 'badMessage');
+    client.close();
   });
 });
