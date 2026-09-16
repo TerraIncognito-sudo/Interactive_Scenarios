@@ -30,7 +30,7 @@ import QRCode from 'qrcode';
 import { Connection } from '../lib/connection.ts';
 import { pooled } from '../lib/pool.ts';
 import { fetchAsset } from '../lib/fetch-asset.ts';
-import type { DisplayLoading, HostCommand, Snapshot, SnapshotBeat } from '../../../shared/show/protocol.ts';
+import type { DisplayLoading, ShowCommand, Snapshot, SnapshotBeat } from '../../../shared/show/protocol.ts';
 import { type Scenario } from '../../../shared/scenario/schema.ts';
 import { beatOf, initialState, reduce, activeScene, type RunState } from '../../../shared/engine/engine.ts';
 
@@ -99,12 +99,12 @@ fitStage();
 let scenario: Scenario | undefined;
 let assetBase = '';
 let assetsLoaded = false;
-/** What never arrived, reported with readiness so the host hears about it. */
+/** What never arrived, reported with readiness so the board hears about it. */
 let assetsMissing = { failed: 0, total: 0 };
 /**
  * How far the prefetch has got, while it is still going.
  *
- * Kept rather than derived so the same numbers reach the screen and the host
+ * Kept rather than derived so the same numbers reach the screen and the board
  * console — two counters over one download would eventually disagree, and the
  * one on the far end of a socket is the one nobody could check.
  */
@@ -177,7 +177,7 @@ function describeLoading(at: DisplayLoading): string {
 }
 
 /**
- * How often to tell the server. Often enough that the host console reads as
+ * How often to tell the show. Often enough that the board reads as
  * live, rarely enough that a two-hundred-file show is not two hundred
  * broadcasts to every connected phone.
  */
@@ -300,7 +300,7 @@ async function loadScenario(): Promise<void> {
  * Readiness has to be re-announced on every connect, not sent once. Assets
  * often finish loading before the socket opens (and always do when a scenario
  * has none), and a send on a closed socket is silently dropped — which would
- * leave the host staring at "loading…" forever.
+ * leave the board staring at "loading…" forever.
  *
  * The same is true of progress, for the same reason: a projector that
  * reconnects halfway through its download would otherwise go back to being a
@@ -1094,7 +1094,7 @@ function updateLegend(): void {
  * be a second opinion about the state of the show, and the two would disagree
  * in front of a room the first time the server said no.
  */
-function control(command: HostCommand, note: string): void {
+function control(command: ShowCommand, note: string): void {
   if (!connection.isOpen) {
     // The local engine keeps the picture moving through a dropout, but it is a
     // continuity fallback and not an authority. Letting keys drive it would put

@@ -1,62 +1,66 @@
 /**
- * The wire protocol between the server and the three client surfaces.
+ * The wire between the show and the two windows that render it.
  *
- * Every inbound message is Zod-validated before it reaches the engine. The
- * server is public, so client messages are untrusted input: a malformed or
- * hostile frame must be rejected at the boundary, never partway through a
- * state transition.
+ * Both ends are on the operator's own machine: the board they work in and the
+ * stage they drag onto the projector. That is why nothing here authenticates
+ * anything, and it is a change rather than an omission — this protocol served
+ * a public server until the rebuild, and carried a room code, a token per role
+ * and a phone's whole view of a poll. All three have gone. The code and the
+ * poll moved to `../relay/protocol.ts`, which is the wire that still faces an
+ * audience; the tokens proved something nobody is being asked any more.
+ *
+ * Frames are still Zod-validated, and not as a defence. It is what keeps this
+ * socket and the relay's speaking one language, so the stage does not have to
+ * know which of the two it is plugged into.
  */
 
 import { z } from 'zod';
-import { RoomCodeSchema } from '../relay/protocol.ts';
 
 /**
- * The phone's whole view of a poll.
+ * Two surfaces, and there is no third.
  *
- * It is defined with the relay protocol, because the relay is what a phone
- * talks to. It is re-exported here only until the show `Room` stops building
- * one — the local show has no players, and the surface that does is a page
- * served by the container.
+ * `player` left with the phones: a phone talks to the relay, and a `hello`
+ * claiming to be one here is a surface that has misunderstood where it is.
+ * `host` became `board` because the console stopped being a link handed to
+ * somebody with a phone at the back of the room and became a tab in the window
+ * the show is authored in — and a role named for a device nobody uses is a
+ * role people reason about wrongly.
  */
-export type { PlayerState } from '../relay/protocol.ts';
-
-export const ROLES = ['host', 'display', 'player'] as const;
-export type Role = (typeof ROLES)[number];
+export const ROLES = ['board', 'display'] as const;
+type Role = (typeof ROLES)[number];
 
 // ---------------------------------------------------------------------------
 // Client -> server
 // ---------------------------------------------------------------------------
 
-/** Sent once on connect, before anything else is accepted. */
-export const HelloSchema = z.object({
+/**
+ * Sent once on connect, before anything else is accepted.
+ *
+ * A role and nothing else. There was a room code here, and a token, and a
+ * device id; this process runs one show, opened both windows itself and has no
+ * phones, so all three were fields every caller left empty.
+ */
+const HelloSchema = z.object({
   type: z.literal('hello'),
   role: z.enum(ROLES),
-  /**
-   * Which room to join. Optional, because the client's own loopback socket has
-   * exactly one room and no code for it until somebody links to a relay — and
-   * a surface that had to invent a code to connect to a show running on the
-   * same machine would be inventing it for nobody.
-   *
-   * A socket that faces an audience still requires one, and refuses the
-   * connection when it is absent; that check is the public server's, not this
-   * schema's, because the two sockets have different answers.
-   */
-  room: RoomCodeSchema.optional(),
-  /** Required for host and display; ignored for players. */
-  token: z.string().max(128).optional(),
-  /** Opaque per-device id used only to dedupe votes. Players only. */
-  deviceId: z.string().min(8).max(128).optional(),
-  /** Beat the client already has, so the server can tell if it is behind. */
-  beat: z.number().int().nonnegative().optional(),
 });
 
-export const CastVoteSchema = z.object({
+/**
+ * A phone's frame, on a socket no phone can reach.
+ *
+ * Kept parseable on purpose. Votes arrive from the relay, through the link,
+ * from inside this process — so one appearing here is either a bug or somebody
+ * who got to the port, and `client/app/show/ws.ts` refuses it by name. Dropped
+ * from the union it would come back as an unrecognised frame, which says
+ * nothing about which boundary it crossed.
+ */
+const CastVoteSchema = z.object({
   type: z.literal('vote'),
   optionKey: z.string().min(1).max(12),
 });
 
 /** Display reports that every asset for the scenario has loaded. */
-export const DisplayReadySchema = z.object({
+const DisplayReadySchema = z.object({
   type: z.literal('displayReady'),
   /**
    * How many never arrived, and out of how many.
@@ -81,7 +85,7 @@ export const DisplayReadySchema = z.object({
  * Bytes are optional because they are only known where the server could stat
  * the file; the count is always real.
  */
-export const DisplayProgressSchema = z.object({
+const DisplayProgressSchema = z.object({
   type: z.literal('displayProgress'),
   done: z.number().int().nonnegative().max(100_000),
   total: z.number().int().nonnegative().max(100_000),
@@ -107,7 +111,7 @@ export const DisplayProgressSchema = z.object({
  * board window, the stage may never have been clicked, and the first voice
  * line is silent with nothing anywhere saying why.
  */
-export const DisplayAudioSchema = z.object({
+const DisplayAudioSchema = z.object({
   type: z.literal('displayAudio'),
   unlocked: z.boolean(),
 });
@@ -123,7 +127,15 @@ export const DisplayAudioSchema = z.object({
  */
 export const MAX_SIMULATED_VOTERS = 200;
 
-export const HostCommandSchema = z.object({
+/**
+ * What either window may ask the show to do.
+ *
+ * Named for the show rather than for a surface. It was `HostCommand` while
+ * there was a host console, and the stage has been sending these since it grew
+ * a keyboard — so the old name described one of its two senders and implied
+ * the other was doing something irregular.
+ */
+export const ShowCommandSchema = z.object({
   type: z.literal('command'),
   command: z.discriminatedUnion('name', [
     z.object({ name: z.literal('start') }),
@@ -181,20 +193,20 @@ export const HostCommandSchema = z.object({
   ]),
 });
 
-export const PingSchema = z.object({ type: z.literal('ping') });
+const PingSchema = z.object({ type: z.literal('ping') });
 
-export const ClientMessageSchema = z.discriminatedUnion('type', [
+const ClientMessageSchema = z.discriminatedUnion('type', [
   HelloSchema,
   CastVoteSchema,
   DisplayReadySchema,
   DisplayProgressSchema,
   DisplayAudioSchema,
-  HostCommandSchema,
+  ShowCommandSchema,
   PingSchema,
 ]);
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
-export type HostCommand = z.infer<typeof HostCommandSchema>['command'];
+export type ShowCommand = z.infer<typeof ShowCommandSchema>['command'];
 
 /**
  * The commands a display may send on its own authority.
@@ -206,10 +218,16 @@ export type HostCommand = z.infer<typeof HostCommandSchema>['command'];
  *
  * What is deliberately absent is what a stray keystroke must never be able to
  * do in front of an audience. `reset` puts the show back to the beginning, and
- * on the console it sits behind a confirm dialog that a key press has no
+ * on the board it sits behind a confirm dialog that a key press has no
  * equivalent of. `jump` needs a node id, which the projector has no way to
- * offer and no way to check. Both stay with the host, whose link is handed to
- * a person rather than left open on a lectern all evening.
+ * offer and no way to check. Both stay on the board, where there is a pointer
+ * and a chance to read the question.
+ *
+ * This list stopped being a security boundary when both surfaces became
+ * windows on one machine, and `isDisplayCommand` went with it — a predicate
+ * nothing called, kept alive by the test that called it. What holds the
+ * decision up now is `tests/control.test.ts`, which reads every command
+ * literal out of the stage and checks it against this array.
  */
 export const DISPLAY_COMMANDS = [
   'start',
@@ -221,11 +239,6 @@ export const DISPLAY_COMMANDS = [
   'forceBranch',
 ] as const;
 
-/** Whether the projector may send this itself. See `DISPLAY_COMMANDS`. */
-export function isDisplayCommand(command: HostCommand): boolean {
-  return (DISPLAY_COMMANDS as readonly string[]).includes(command.name);
-}
-
 // ---------------------------------------------------------------------------
 // Server -> client
 // ---------------------------------------------------------------------------
@@ -236,7 +249,7 @@ export function isDisplayCommand(command: HostCommand): boolean {
  * every frame would cost more than it proves.
  */
 
-export type PublicScenario = {
+type PublicScenario = {
   id: string;
   title: string;
   description?: string;
@@ -258,7 +271,7 @@ export type SnapshotBeat =
     }
   | { kind: 'pause'; nodeId: string; text?: string; scene?: string; sfx?: string; durationMs: number }
   /**
-   * No `durationMs`, because nothing is counting. The host console keys its
+   * No `durationMs`, because nothing is counting. The board keys its
    * continue button off this kind, so the absence is what the moderator sees.
    */
   | { kind: 'gate'; nodeId: string; text?: string; label?: string; scene?: string; sfx?: string }
@@ -344,7 +357,7 @@ export type Snapshot = {
   };
   /** Server wall clock at send time, so clients can correct for drift. */
   serverNow: number;
-  /** Connected counts, shown on the host console. */
+  /** Connected counts, shown on the board. */
   presence: { displays: number; players: number };
   /** Whether the display has finished prefetching assets. */
   displayReady: boolean;
@@ -375,7 +388,7 @@ export type DisplayLoading = {
   totalBytes?: number;
 };
 
-export type ServerError = {
+type ServerError = {
   type: 'error';
   code: 'badRoom' | 'badToken' | 'badMessage' | 'rateLimited' | 'roomClosed' | 'internal';
   message: string;
@@ -383,7 +396,7 @@ export type ServerError = {
   fatal: boolean;
 };
 
-export type Pong = { type: 'pong'; serverNow: number };
+type Pong = { type: 'pong'; serverNow: number };
 
 export type ServerMessage = Snapshot | ServerError | Pong;
 

@@ -95,7 +95,7 @@ function connect() {
   state.socket = socket;
 
   socket.addEventListener('open', () => {
-    socket.send(JSON.stringify({ type: 'hello', role: 'host' }));
+    socket.send(JSON.stringify({ type: 'hello', role: 'board' }));
   });
 
   socket.addEventListener('message', (event) => {

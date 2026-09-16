@@ -28,7 +28,7 @@
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { Server } from 'node:http';
 import { parseClientMessage } from '../../../shared/show/protocol.ts';
-import type { Subscriber } from '../../../server/room.ts';
+import type { Subscriber } from './room.ts';
 import { currentShow } from './session.ts';
 
 type Connection = {
@@ -96,15 +96,10 @@ export function attachShowSocket(server: Server): ShowSocket {
           fail(socket, 'badRoom', 'No show is running.');
           return;
         }
-        // No player ever reaches this socket: phones talk to the relay, which
-        // talks to the link, which casts into the Room from inside this
-        // process. A `player` hello here is a surface that has misunderstood
-        // where it is.
-        if (message.role === 'player') {
-          fail(socket, 'badToken', 'Phones join through the relay, not here.');
-          return;
-        }
-
+        // Two roles reach this point and there is no third: `player` is not in
+        // `ROLES` any more, so a phone's hello does not parse. Phones talk to
+        // the relay, the relay talks to the link, and the link casts into the
+        // Room from inside this process.
         const subscriber: Subscriber = {
           role: message.role,
           send: (payload) => send(socket, payload),

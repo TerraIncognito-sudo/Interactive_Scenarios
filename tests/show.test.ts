@@ -149,7 +149,7 @@ async function joinStage(): Promise<Client> {
 /** The board window. Same socket, same snapshots, and it may command. */
 async function joinBoard(): Promise<Client> {
   const client = await connect();
-  client.send({ type: 'hello', role: 'host' });
+  client.send({ type: 'hello', role: 'board' });
   await client.next(isSnapshot);
   return client;
 }
@@ -350,12 +350,21 @@ describe('the surfaces on the loopback socket', () => {
     client.close();
   });
 
-  test('a phone has no business here and is told so', async () => {
+  test('a phone cannot announce itself here at all', async () => {
+    // Refused by the schema rather than by a branch, because `player` is no
+    // longer one of `ROLES`. That is the stronger of the two: a role the
+    // protocol does not have cannot be handled by accident somewhere the
+    // check was forgotten, which a third role sitting in the enum and refused
+    // in one file could be.
     await start('quick');
     const client = await connect();
     client.send({ type: 'hello', role: 'player', deviceId: 'device-aaaaaaaa' });
     const error = await client.next<any>((m) => m.type === 'error');
-    assert.match(error.message, /relay/);
+    assert.equal(error.code, 'badMessage');
+    // And no subscription was made: the next frame is still told to say hello.
+    client.send({ type: 'command', command: { name: 'start' } });
+    const second = await client.next<any>((m) => m.type === 'error' && m.code === 'badMessage' && /hello/i.test(m.message));
+    assert.match(second.message, /hello/i);
     client.close();
   });
 

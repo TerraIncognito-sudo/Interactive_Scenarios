@@ -26,7 +26,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DISPLAY_COMMANDS, HostCommandSchema, isDisplayCommand } from '../shared/show/protocol.ts';
+import { DISPLAY_COMMANDS, ShowCommandSchema } from '../shared/show/protocol.ts';
 
 const root = join(import.meta.dirname, '..');
 const display = readFileSync(join(root, 'client', 'web', 'stage', 'main.ts'), 'utf8');
@@ -35,7 +35,7 @@ const ws = readFileSync(join(root, 'client', 'app', 'show', 'ws.ts'), 'utf8');
 const clientServer = readFileSync(join(root, 'client', 'app', 'server.ts'), 'utf8');
 
 /** Every command name the schema actually has, taken from the schema itself. */
-const ALL_COMMANDS = HostCommandSchema.shape.command.options.map(
+const ALL_COMMANDS = ShowCommandSchema.shape.command.options.map(
   (option) => option.shape.name.value as string,
 );
 
@@ -54,13 +54,17 @@ describe('what a display is allowed to send', () => {
     // from the same list this is checking would assert nothing at all, and the
     // point of writing them out is that adding a third one is a decision
     // somebody has to make here, on purpose.
-    assert.ok(!isDisplayCommand({ name: 'reset' }), 'a keystroke must not restart the show');
+    //
+    // Against the array itself, because `isDisplayCommand` is gone: it was a
+    // predicate nothing at runtime called, kept alive by this test calling it.
+    const allowed: readonly string[] = DISPLAY_COMMANDS;
+    assert.ok(!allowed.includes('reset'), 'a keystroke must not restart the show');
     assert.ok(
-      !isDisplayCommand({ name: 'jump', nodeId: 'anywhere' }),
+      !allowed.includes('jump'),
       'a projector cannot name a node, so it must not be able to go to one',
     );
     assert.ok(
-      !isDisplayCommand({ name: 'castVotes', optionKey: 'a', count: 1 }),
+      !allowed.includes('castVotes'),
       'a stray keystroke must never be able to put ballots in a box',
     );
   });

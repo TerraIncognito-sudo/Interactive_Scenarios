@@ -17,7 +17,7 @@
  * is anything but a vote.** That absence is the security property this file
  * exists to state: the relay faces the internet and the client does not, so a
  * compromised relay must not be able to drive somebody's presentation.
- * `HostCommandSchema` and `DISPLAY_COMMANDS` live in `shared/show/protocol.ts`
+ * `ShowCommandSchema` and `DISPLAY_COMMANDS` live in `shared/show/protocol.ts`
  * and must never appear here.
  *
  * Unlike the show protocol, **relay output is parsed at the client end**. The

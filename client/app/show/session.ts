@@ -26,11 +26,10 @@
  * merging the two cost and what it bought.
  */
 
-import { Room, generateRoomCode, generateToken } from '../../../server/room.ts';
+import { Room } from './room.ts';
 import { loadScenarioFile, type LoadedScenario } from '../../../shared/scenario/load.ts';
 import { ProjectError, type ProjectPaths } from '../project.ts';
 import { projectPaths } from '../projects.ts';
-import { MemoryStore } from './store.ts';
 
 export type ShowSession = {
   /** The project folder the show was started from. Also what the lock names. */
@@ -69,7 +68,7 @@ export function currentShow(): ShowSession | undefined {
  * is holding it — "team-union is on the projector" is actionable where
  * "locked" is a puzzle.
  */
-export function heldBy(name: string): string | undefined {
+function heldBy(name: string): string | undefined {
   return current?.project === name ? current.project : undefined;
 }
 
@@ -103,23 +102,16 @@ export async function startShow(name: string): Promise<ShowStatus> {
   const paths = await projectPaths(name);
   const loaded = await loadScenarioFile(paths.scenario, paths.dir);
 
-  const room = new Room({
-    // A key for the store and nothing else. Deliberately in the room-code
-    // alphabet anyway: it reaches the log, and a key that reads like a code is
-    // easier to match up with one than a base64 blob would be. `joinCode` is
-    // left unset, which is what keeps it off the lobby.
-    code: generateRoomCode(),
-    hostToken: generateToken(),
-    displayToken: generateToken(),
-    loaded,
-    store: new MemoryStore(),
-    now: Date.now(),
-  });
+  // One argument, and the shrinkage is the rebuild. A Room used to need a
+  // code, two tokens, a store and a clock reading, because it was one of many
+  // on a public server and had to survive that server restarting. This one is
+  // the show this process is running, and it needs the show.
+  const room = new Room({ loaded });
 
   // A stall is one room's rather than every room's here, but it is still a
   // show sitting still in front of people — so it reaches the terminal the
   // operator started this from, which is the only log there is.
-  room.onError = (error, _code, nodeId) => {
+  room.onError = (error, nodeId) => {
     console.error(`  The show stalled at "${nodeId}":`, error);
   };
 

@@ -1,12 +1,23 @@
 /**
- * A live session.
+ * The show, and the clock that drives it.
  *
- * The Room owns the authoritative story state and the clock that drives it.
- * Clients are renderers: they receive snapshots and send intents. Nothing a
- * client says is trusted beyond the point where it enters this file.
+ * The Room owns the authoritative story state; the two windows on the far end
+ * of the loopback socket are renderers that receive snapshots and send
+ * intents. It ran on a public server until this rebuild, and what it lost in
+ * moving here is the whole of what that server was for — a room code, two
+ * tokens, a database, a registry of other rooms, and an audience it could not
+ * trust. What is left is the part that was always the show.
+ *
+ * The clock stays in Node rather than moving into the projector page, and that
+ * is a decision rather than an inheritance. Chrome clamps timers in background
+ * and occluded tabs to a second or more and can suspend them outright, and the
+ * stage window will routinely be on a second display while the operator works
+ * in front of it — so a beat held for 4.2 seconds would last whatever the
+ * compositor felt like. The display's own local scheduling survives as what it
+ * always should have been: a fallback for a socket that has gone, reconciled
+ * against the next snapshot to arrive.
  */
 
-import { randomBytes } from 'node:crypto';
 import {
   beatOf,
   initialState,
@@ -15,92 +26,36 @@ import {
   sceneMediaOf,
   type Beat,
   type RunState,
-} from '../shared/engine/engine.ts';
-import { BallotBox, resolvePoll, type Counts, type PollResult } from '../shared/engine/votes.ts';
-import type { LoadedScenario } from '../shared/scenario/load.ts';
+} from '../../../shared/engine/engine.ts';
+import { BallotBox, resolvePoll, type Counts, type PollResult } from '../../../shared/engine/votes.ts';
+import type { LoadedScenario } from '../../../shared/scenario/load.ts';
 import type {
   DisplayLoading,
-  HostCommand,
+  ShowCommand,
   Snapshot,
   SnapshotBeat,
-  PlayerState,
-} from '../shared/show/protocol.ts';
-import { MAX_SIMULATED_VOTERS } from '../shared/show/protocol.ts';
+} from '../../../shared/show/protocol.ts';
+import { MAX_SIMULATED_VOTERS } from '../../../shared/show/protocol.ts';
+import { VoteLog } from './votes.ts';
+
+type RoomPhase = Snapshot['phase'];
+
 /**
- * A room's key is minted by the same generator the relay uses.
+ * A connected surface, kept narrow so Room stays transport-agnostic.
  *
- * The local show's code is never read off a wall — it is a key for the store,
- * the registry and the log — but two generators would be two answers to what
- * a room code is, and the first time they disagreed it would be about which
- * characters a person can be asked to type.
+ * Two roles, and there is no third. A phone is not on this socket and cannot
+ * be: it talks to the relay, the relay talks to the link, and the link casts
+ * into this Room from inside this process. That is what let `playerState` and
+ * every `role === 'player'` branch leave — a Room that could still build a
+ * phone's view would be a Room that could still send one down a socket bound
+ * to loopback, to nobody.
  */
-export { generateRoomCode } from '../shared/relay/protocol.ts';
-/**
- * What a Room needs from storage, and nothing else.
- *
- * Named as an interface rather than taken as the SQLite `Store` because the
- * same Room now runs in two places with two different reasons to persist. On
- * the public server the answer is a file, because a container restart must not
- * end a live show. In the operator's own process the show *is* the process —
- * it dies with the window that opened it — so a database would be a file left
- * behind on somebody's disk recording which way a rehearsal branched.
- *
- * Deliberately six methods wide. Anything Room could reach for beyond this is
- * something one of the two stores would have to answer dishonestly.
- */
-export type RoomStore = {
-  saveState(code: string, stateJson: string, now: number): void;
-  appendEvent(room: string, kind: string, payload: unknown, at: number): void;
-  recordVote(vote: {
-    room: string;
-    node_id: string;
-    device_id: string;
-    option_key: string;
-    at: number;
-  }): void;
-  recordPollResult(
-    room: string,
-    nodeId: string,
-    winner: string,
-    counts: Record<string, number>,
-    total: number,
-    usedDefault: boolean,
-    at: number,
-  ): void;
-  /** Votes already cast for a poll, so reopening after a restart is lossless. */
-  votesFor(room: string, nodeId: string): { device_id: string; option_key: string; at: number }[];
-  /**
-   * Removes one device's vote.
-   *
-   * Only a simulated voter is ever taken back out — see `BallotBox.withdraw`.
-   * It has to reach storage rather than only the box, or stepping back into a
-   * poll replays the ballots the operator just cleared.
-   */
-  forgetVote(room: string, nodeId: string, deviceId: string): void;
-  closeRoom(code: string, now: number): void;
-};
-
-export function generateToken(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-export type RoomPhase = Snapshot['phase'];
-
-/** A connected socket, kept deliberately narrow so Room stays transport-agnostic. */
 export type Subscriber = {
-  role: 'host' | 'display' | 'player';
-  deviceId?: string;
+  role: 'board' | 'display';
   send(message: unknown): void;
 };
 
 export class Room {
-  /**
-   * This room's own key — for the store, the registry and the log.
-   *
-   * Not the same thing as the code a phone types, and the two have come apart
-   * now that a show can run with no phones at all. See `joinCode`.
-   */
-  readonly code: string;
   /**
    * The code the audience joins at, while there is one.
    *
@@ -115,22 +70,17 @@ export class Room {
    *
    * Set by the link once a relay has opened a room, because only the relay
    * knows what a phone has to type: it is the thing facing the audience, and
-   * its join links follow the request that reached it. Left unset by the
-   * public server, whose own display is being served from that same address
-   * and can build the URL itself.
+   * its join links follow the request that reached it.
    */
   joinUrl: string | undefined;
-  readonly hostToken: string;
-  readonly displayToken: string;
   readonly loaded: LoadedScenario;
-  readonly createdAt: number;
 
   state: RunState;
   displayReady = false;
   /**
    * What the display last said about its prefetch.
    *
-   * Kept so the host console can show a number moving rather than a static
+   * Kept so the board can show a number moving rather than a static
    * "loading…", which for the minute or two a show's artwork takes to reach a
    * projector is the difference between waiting and assuming it has hung.
    */
@@ -152,7 +102,6 @@ export class Room {
    * next window to open is a window nobody has clicked.
    */
   audioUnlocked = false;
-  lastActivityAt: number;
   closed = false;
 
   private box: BallotBox | undefined;
@@ -186,47 +135,37 @@ export class Room {
   /** Milliseconds left when the show was paused. */
   private pausedRemaining = 0;
   private readonly subscribers = new Set<Subscriber>();
-  private readonly store: RoomStore;
+  /**
+   * The simulated ballots, which outlive the box that holds them.
+   *
+   * Owned rather than injected: there was an interface here while the same
+   * Room ran against SQLite on a public server, and with that gone a seam
+   * implying two implementations would imply a choice nobody has.
+   */
+  private readonly votes = new VoteLog();
 
-  constructor(options: {
-    code: string;
-    /** Omitted by a local show; the public server passes its own room code. */
-    joinCode?: string;
-    hostToken: string;
-    displayToken: string;
-    loaded: LoadedScenario;
-    store: RoomStore;
-    now: number;
-    state?: RunState;
-  }) {
-    this.code = options.code;
-    this.joinCode = options.joinCode;
+  constructor(options: { loaded: LoadedScenario }) {
+    this.joinCode = undefined;
     this.joinUrl = undefined;
-    this.hostToken = options.hostToken;
-    this.displayToken = options.displayToken;
     this.loaded = options.loaded;
-    this.store = options.store;
-    this.createdAt = options.now;
-    this.lastActivityAt = options.now;
-    this.state = options.state ?? initialState(options.loaded.scenario);
-
-    // A room restored from disk mid-poll has state but no ballot box. Without
-    // this, it would silently refuse every vote and then resolve to the
-    // default, discarding votes already recorded before the restart.
-    if (this.state.phase === 'polling') this.rehydrateBox(this.state.nodeId);
+    this.state = initialState(options.loaded.scenario);
   }
 
   /**
-   * Builds the ballot box for a poll node and replays any votes already stored,
-   * so opening a poll and recovering one take the same path.
+   * Builds the ballot box for a poll node and replays anything already cast
+   * into it, so opening a poll and stepping back into one take the same path.
+   *
+   * The replay is what makes Back work: leaving a poll drops the box, and a
+   * rehearsal that lost its split every time somebody stepped backwards would
+   * be a rehearsal nobody could repeat.
    */
   private rehydrateBox(nodeId: string): void {
     const node = this.loaded.scenario.nodes.find((n) => n.id === nodeId);
     if (node?.type !== 'poll') return;
 
     this.box = new BallotBox(node.options.map((o) => o.key));
-    for (const row of this.store.votesFor(this.code, node.id)) {
-      this.box.cast(row.device_id, row.option_key, row.at);
+    for (const row of this.votes.votesFor(node.id)) {
+      this.box.cast(row.deviceId, row.optionKey, row.at);
     }
   }
 
@@ -247,14 +186,15 @@ export class Room {
     }
   }
 
+  /**
+   * How many phones are in the room, which only the relay can know.
+   *
+   * Zero unless something has said otherwise, and that is the honest answer
+   * rather than a placeholder: an unlinked show has no audience, and nothing
+   * on this socket is ever a phone.
+   */
   get playerCount(): number {
-    // The relay's number wins when there is one. A local show has no players
-    // at all and a linked one has none on this socket, so the subscriber count
-    // is only ever right for the public server this class still serves.
-    if (this.relayPlayers !== undefined) return this.relayPlayers;
-    let count = 0;
-    for (const sub of this.subscribers) if (sub.role === 'player') count++;
-    return count;
+    return this.relayPlayers ?? 0;
   }
 
   get displayCount(): number {
@@ -269,15 +209,8 @@ export class Room {
 
   subscribe(sub: Subscriber): void {
     this.subscribers.add(sub);
-    this.touch();
-    // Players get only their own poll. A snapshot carries dialogue, scene and
-    // the pending result, so sending one to a phone would leak the story.
-    if (sub.role === 'player') {
-      sub.send(this.playerState(sub.deviceId));
-    } else {
-      sub.send(this.snapshot());
-    }
-    // Presence changed, so everyone else's host console should update too.
+    sub.send(this.snapshot());
+    // Presence changed, so the board should hear about it too.
     this.broadcast();
   }
 
@@ -296,10 +229,6 @@ export class Room {
       }
       this.broadcast();
     }
-  }
-
-  private touch(): void {
-    this.lastActivityAt = Date.now();
   }
 
   // -------------------------------------------------------------------------
@@ -380,42 +309,22 @@ export class Room {
     };
   }
 
-  playerState(deviceId: string | undefined): PlayerState {
-    const beat = beatOf(this.scenario, this.state);
-    if (beat.kind !== 'poll') {
-      return { type: 'playerState', serverNow: Date.now() };
-    }
-    return {
-      type: 'playerState',
-      poll: {
-        nodeId: beat.nodeId,
-        question: beat.question,
-        prompt: beat.prompt,
-        options: beat.options,
-        endsAt: beat.endsAt,
-      },
-      choice: deviceId ? this.box?.choiceOf(deviceId) : undefined,
-      serverNow: Date.now(),
-    };
-  }
-
   private broadcast(): void {
     const snapshot = this.snapshot();
-    for (const sub of this.subscribers) {
-      if (sub.role === 'player') {
-        sub.send(this.playerState(sub.deviceId));
-      } else {
-        sub.send(snapshot);
-      }
-    }
+    for (const sub of this.subscribers) sub.send(snapshot);
   }
 
-  /** Cheaper broadcast used while votes stream in: only tallies changed. */
+  /**
+   * Sends a snapshot because only the tally moved.
+   *
+   * It used to be the cheap one — it skipped the phones, and a room of forty
+   * would otherwise have been forty `playerState` messages to show a number
+   * none of them display. There are no phones on this socket any more, so it
+   * is now the same fan-out as `broadcast` and kept only for what its name
+   * says at the call sites: this transition did not move the beat.
+   */
   private broadcastTally(): void {
-    const snapshot = this.snapshot();
-    for (const sub of this.subscribers) {
-      if (sub.role !== 'player') sub.send(snapshot);
-    }
+    this.broadcast();
   }
 
   // -------------------------------------------------------------------------
@@ -478,16 +387,18 @@ export class Room {
    *
    * An exception thrown inside setTimeout is uncaught, and an uncaught
    * exception exits Node — so one malformed scenario node could kill every
-   * other room on the server mid-show. The room stalls instead, which the host
-   * can rescue with skip or an override.
+   * other room on the server mid-show. There is one room per process now, so
+   * what it kills is the show rather than everyone's — which is still a show
+   * sitting still in front of people. It stalls instead, and the board can
+   * rescue it with Skip or a Force.
    */
   private guard(work: () => void): void {
     try {
       work();
     } catch (error) {
-      this.onError?.(error, this.code, this.state.nodeId);
+      this.onError?.(error, this.state.nodeId);
       for (const sub of this.subscribers) {
-        if (sub.role === 'host') {
+        if (sub.role === 'board') {
           sub.send({
             type: 'error',
             code: 'internal',
@@ -499,8 +410,8 @@ export class Room {
     }
   }
 
-  /** Set by the server so stalls reach the log rather than vanishing. */
-  onError: ((error: unknown, room: string, nodeId: string) => void) | undefined;
+  /** Set by the session so a stall reaches the terminal as well as the board. */
+  onError: ((error: unknown, nodeId: string) => void) | undefined;
 
   private onBeatElapsed(): void {
     this.apply({ type: 'advance' });
@@ -510,7 +421,7 @@ export class Room {
   // Transitions
   // -------------------------------------------------------------------------
 
-  /** Applies an engine event, persists, opens polls, reschedules, broadcasts. */
+  /** Applies an engine event, opens polls, reschedules and broadcasts. */
   private apply(event: Parameters<typeof reduce>[2]): void {
     const before = this.state;
     let next = reduce(this.scenario, before, event);
@@ -537,28 +448,13 @@ export class Room {
     }
 
     this.state = next;
-    this.touch();
-    this.persist(event);
     this.schedule();
     this.broadcast();
-  }
-
-  private persist(event: { type: string }): void {
-    const now = Date.now();
-    this.store.saveState(this.code, JSON.stringify(this.state), now);
-    this.store.appendEvent(this.code, event.type, { nodeId: this.state.nodeId }, now);
   }
 
   start(): void {
     if (this.state.phase !== 'idle') return;
     this.apply({ type: 'start' });
-  }
-
-  /** Restores the clock after a process restart. */
-  resumeClock(): void {
-    if (this.state.phase !== 'idle' && this.state.phase !== 'paused' && this.state.phase !== 'finished') {
-      this.schedule();
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -578,14 +474,7 @@ export class Room {
     const now = Date.now();
     if (!this.box.cast(deviceId, optionKey, now)) return false;
 
-    this.store.recordVote({
-      room: this.code,
-      node_id: this.state.nodeId,
-      device_id: deviceId,
-      option_key: optionKey,
-      at: now,
-    });
-    this.touch();
+    this.votes.record(this.state.nodeId, deviceId, optionKey, now);
     return true;
   }
 
@@ -593,7 +482,7 @@ export class Room {
   private withdrawVote(deviceId: string): boolean {
     if (this.state.phase !== 'polling' || !this.box) return false;
     if (!this.box.withdraw(deviceId)) return false;
-    this.store.forgetVote(this.code, this.state.nodeId, deviceId);
+    this.votes.forget(this.state.nodeId, deviceId);
     return true;
   }
 
@@ -646,7 +535,6 @@ export class Room {
       this.relayPlayers = undefined;
       this.relayTally = undefined;
     }
-    this.touch();
     this.broadcast();
   }
 
@@ -670,7 +558,6 @@ export class Room {
     const seeded: Counts = {};
     for (const option of node.options) seeded[option.key] = counts[option.key] ?? 0;
     this.relayTally = { nodeId, counts: seeded, voters };
-    this.touch();
     this.broadcastTally();
   }
 
@@ -691,17 +578,6 @@ export class Room {
     // the room would land on the `default:` while the bar chart said otherwise.
     const counts = this.tally()?.counts ?? {};
     const decided = result ?? resolvePoll(node, counts);
-
-    this.store.recordPollResult(
-      this.code,
-      node.id,
-      decided.winner,
-      decided.counts,
-      decided.total,
-      decided.usedDefault,
-      Date.now(),
-    );
-
     this.apply({ type: 'pollClosed', result: decided });
   }
 
@@ -709,7 +585,7 @@ export class Room {
   // Host commands
   // -------------------------------------------------------------------------
 
-  handleCommand(command: HostCommand): void {
+  handleCommand(command: ShowCommand): void {
     switch (command.name) {
       case 'start':
         this.start();
@@ -720,8 +596,6 @@ export class Room {
         this.pausedRemaining = Math.max(0, this.beatDeadline - Date.now());
         this.clearTimer();
         this.state = reduce(this.scenario, this.state, { type: 'pause' });
-        this.touch();
-        this.persist({ type: 'pause' });
         this.broadcast();
         return;
       }
@@ -729,8 +603,6 @@ export class Room {
       case 'resume': {
         if (this.state.phase !== 'paused') return;
         this.state = reduce(this.scenario, this.state, { type: 'resume' });
-        this.touch();
-        this.persist({ type: 'resume' });
         // Resume the remainder of the interrupted beat rather than restarting it.
         this.clearTimer();
         const remaining = this.pausedRemaining;
@@ -780,8 +652,6 @@ export class Room {
           type: 'extendPoll',
           seconds: command.seconds,
         });
-        this.touch();
-        this.persist({ type: 'extendPoll' });
         this.schedule();
         this.broadcast();
         return;
@@ -847,8 +717,6 @@ export class Room {
         this.clearTimer();
         this.box = undefined;
         this.state = initialState(this.scenario);
-        this.touch();
-        this.persist({ type: 'reset' });
         this.broadcast();
         return;
       }
@@ -866,18 +734,14 @@ export class Room {
     this.displayReady = true;
     // Ready and a progress bar at once is two answers to one question.
     this.displayLoading = undefined;
-    this.touch();
     this.broadcast();
   }
 
   /**
    * Notes how far the display has got.
    *
-   * Deliberately not a `touch()`: a room whose projector is still downloading
-   * is not a room somebody is using, and letting a progress report hold a
-   * session open would keep an abandoned one alive for as long as its assets
-   * take. Ignored once ready, because a late report arriving after the last
-   * one would put the console back to loading.
+   * Ignored once ready, because a late report arriving after the last one
+   * would put the board back to loading for a projector that is finished.
    */
   noteDisplayProgress(progress: DisplayLoading): void {
     if (this.displayReady) return;
@@ -903,7 +767,6 @@ export class Room {
   close(): void {
     this.closed = true;
     this.clearTimer();
-    this.store.closeRoom(this.code, Date.now());
     for (const sub of this.subscribers) {
       sub.send({ type: 'error', code: 'roomClosed', message: 'This room has closed.', fatal: true });
     }

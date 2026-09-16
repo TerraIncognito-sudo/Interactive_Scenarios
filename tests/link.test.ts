@@ -198,7 +198,7 @@ const isSnapshot = (m: any): m is Snapshot => m?.type === 'snapshot';
 /** The board window: the same loopback socket the operator's UI holds. */
 async function joinBoard(): Promise<Peer> {
   const board = await connect(clientWs);
-  board.send({ type: 'hello', role: 'host' });
+  board.send({ type: 'hello', role: 'board' });
   await board.next(isSnapshot);
   return board;
 }

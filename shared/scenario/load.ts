@@ -97,21 +97,26 @@ export async function loadScenarioFile(file: string, dir: string): Promise<Loade
 }
 
 /** Loads the scenario in a given folder (expects scenario.yaml inside). */
-export async function loadScenarioDir(dir: string): Promise<LoadedScenario> {
+async function loadScenarioDir(dir: string): Promise<LoadedScenario> {
   return loadScenarioFile(join(dir, 'scenario.yaml'), dir);
 }
 
-export type ScenarioLibrary = {
+type ScenarioLibrary = {
   scenarios: Map<string, LoadedScenario>;
-  /** Folders that failed to load, so the server can report them without dying. */
+  /** Folders that failed to load, so one bad file cannot stop the report. */
   failures: { dir: string; error: ScenarioLoadError }[];
 };
 
 /**
  * Loads every scenario folder under `root`.
  *
+ * One caller, and it is `validate`: a pre-show check over a whole workspace,
+ * where the point is to see every problem at once. Nothing holds a library in
+ * memory any more — the client opens one project, and the relay could not read
+ * a scenario if you handed it one.
+ *
  * A broken scenario is collected as a failure rather than thrown, so one bad
- * file cannot stop the server from serving the others.
+ * file cannot stop the others being reported.
  */
 export async function loadLibrary(root: string): Promise<ScenarioLibrary> {
   const scenarios = new Map<string, LoadedScenario>();

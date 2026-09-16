@@ -409,7 +409,7 @@ describe('the relay decides nothing', () => {
     // Named in the header as the two that must never appear. The header is
     // where somebody would read that; this is what makes it true.
     const body = source.slice(source.indexOf('*/') + 2);
-    assert.ok(!body.includes('HostCommandSchema'), 'the relay protocol must carry no commands');
+    assert.ok(!body.includes('ShowCommandSchema'), 'the relay protocol must carry no commands');
     assert.ok(!body.includes('DISPLAY_COMMANDS'), 'the relay protocol must carry no key list');
   });
 
@@ -646,6 +646,21 @@ describe('the relay cannot understand a show', () => {
     }
   });
 
+  test('the whole of what it borrows is one file', async () => {
+    // Stronger than the two exclusions above, and cheap now that it is true:
+    // the relay's entire reach outside its own folder is the protocol it
+    // speaks. It does not even load `shared/show/protocol.ts` any more — the
+    // show's wire went with `Room` when that moved into the client, and the
+    // two halves now share a vocabulary rather than a program.
+    //
+    // Written as an equality rather than a set of bans so that *adding* a
+    // dependency is what fails, rather than only adding one somebody thought
+    // of in advance.
+    const files = await reachableFrom('server/index.ts');
+    const borrowed = files.filter((file) => !file.startsWith('server/')).sort();
+    assert.deepEqual(borrowed, ['shared/relay/protocol.ts']);
+  });
+
   test('nothing it loads knows what a command is', async () => {
     const files = await reachableFrom('server/index.ts');
     for (const file of files) {
@@ -668,11 +683,35 @@ describe('the relay cannot understand a show', () => {
   });
 
   test('nothing is left in server/web that the relay does not serve', async () => {
-    // The host console and the old admin page were deleted here, not merely
+    // The host console and the old admin page were deleted rather than merely
     // unrouted. A page that still builds and no longer works is one somebody
     // opens from a bookmark in front of a room.
     const pages = await readdir(join(ROOT, 'server', 'web'));
     assert.deepEqual(pages.sort(), ['console', 'keys', 'lib', 'player', 'status']);
+  });
+
+  test('every file under server/ is one the relay actually loads', async () => {
+    // The other direction, and the one that catches the opposite mistake. The
+    // walk above proves nothing forbidden is reachable; this proves nothing
+    // unreachable is lying around. `room.ts` sat here for two commits after
+    // the show moved out — reachable from nothing, deleted by nobody, and
+    // still the first file anyone would read to find out what the relay does.
+    const reachable = new Set(await reachableFrom('server/index.ts'));
+    for (const page of ['player', 'status', 'keys']) {
+      for (const file of await reachableFrom(`server/web/${page}/main.ts`)) reachable.add(file);
+    }
+
+    const onDisk: string[] = [];
+    const sweep = async (dir: string): Promise<void> => {
+      for (const entry of await readdir(join(ROOT, dir), { withFileTypes: true })) {
+        if (entry.isDirectory()) await sweep(`${dir}/${entry.name}`);
+        else if (entry.name.endsWith('.ts')) onDisk.push(`${dir}/${entry.name}`);
+      }
+    };
+    await sweep('server');
+
+    const orphans = onDisk.filter((file) => !reachable.has(file));
+    assert.deepEqual(orphans, [], `nothing loads these: ${orphans.join(', ')}`);
   });
 });
 

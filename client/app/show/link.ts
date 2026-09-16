@@ -28,7 +28,7 @@ import {
   parseRelayMessage,
   type RelayToClient,
 } from '../../../shared/relay/protocol.ts';
-import type { Room, Subscriber } from '../../../server/room.ts';
+import type { Room, Subscriber } from './room.ts';
 import type { Snapshot } from '../../../shared/show/protocol.ts';
 import { relayConfig, setRelay } from '../workspace.ts';
 import { currentShow } from './session.ts';
@@ -368,7 +368,7 @@ class ShowLink {
    */
   private watch(): void {
     const subscriber: Subscriber = {
-      role: 'host',
+      role: 'board',
       send: (payload) => {
         const message = payload as { type?: string };
         if (message.type === 'snapshot') this.onSnapshot(payload as Snapshot);

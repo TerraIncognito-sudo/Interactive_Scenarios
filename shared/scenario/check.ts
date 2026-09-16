@@ -256,15 +256,3 @@ export function checkScenario(scenario: Scenario): CheckResult {
 
   return { errors, warnings };
 }
-
-/** Formats a check result for terminal output. */
-export function formatProblems(result: CheckResult): string {
-  const lines: string[] = [];
-  for (const e of result.errors) {
-    lines.push(`  ERROR  ${e.nodeId ? `[${e.nodeId}] ` : ''}${e.message}`);
-  }
-  for (const w of result.warnings) {
-    lines.push(`  warn   ${w.nodeId ? `[${w.nodeId}] ` : ''}${w.message}`);
-  }
-  return lines.join('\n');
-}
