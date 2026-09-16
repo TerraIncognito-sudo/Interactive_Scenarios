@@ -155,7 +155,26 @@ class ShowLink {
   private connect(): void {
     this.setStatus(this.code === undefined ? 'connecting' : 'retrying', this.message);
     const url = `${this.relayUrl.replace(/\/+$/, '').replace(/^http/, 'ws')}/ws`;
-    const socket = new WebSocket(url, { handshakeTimeout: 10_000 });
+
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(url, { handshakeTimeout: 10_000 });
+    } catch {
+      // `new WebSocket` throws *synchronously* for an address that is not an
+      // address, which is the one failure in this file that never reached the
+      // board. It happened inside `start()`'s promise executor, so it came
+      // back as a rejection rather than as a view — and the rejection left
+      // `link` assigned to a link that had never connected, which every later
+      // attempt then returned instead of trying. The operator saw a blank
+      // refusal, fixed their typo, and saw the same blank refusal.
+      //
+      // Said plainly rather than by echoing the constructor's complaint about
+      // permitted protocols: the address is the thing to look at.
+      this.socket = undefined;
+      this.setStatus('failed', `Not a relay address: ${this.relayUrl}`);
+      this.stopping = true;
+      return this.finish();
+    }
     this.socket = socket;
 
     socket.on('open', () => {
@@ -537,6 +556,35 @@ export function linkView(): LinkView {
 }
 
 /**
+ * Supplies the scheme somebody left off.
+ *
+ * `interact.scurrycat.ca` is what an operator types, because it is what is
+ * written on the relay's own console and in the address bar they copied it
+ * from. It is not a URL, and without this it reached `new WebSocket` and threw
+ * before any of this file's failure handling had a chance to say so.
+ *
+ * The relay makes exactly this allowance for `PUBLIC_URL`, for exactly this
+ * reason — `normalizePublicUrl` in `server/config.ts`, which this mirrors
+ * rather than imports, because the two halves deploy separately and neither
+ * may reach into the other.
+ *
+ * https for a hostname and http for something plainly local, which is not
+ * timidity about certificates: the offline fallback is the relay brought up on
+ * the operator's own laptop for the night the venue's internet is dead, and
+ * that one has no certificate and never will.
+ */
+function withScheme(raw: string): string {
+  const value = raw.trim().replace(/\/+$/, '');
+  if (!value) return '';
+  if (/^(https?|wss?):\/\//i.test(value)) return value;
+
+  const local =
+    /^(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?$/i.test(value) ||
+    /^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(value);
+  return `${local ? 'http' : 'https'}://${value}`;
+}
+
+/**
  * Opens a room for the show that is running.
  *
  * With no arguments it uses the relay and key already in the machine config,
@@ -554,13 +602,25 @@ export async function goLive(options: { relayUrl?: string; key?: string } = {}):
   if (link) return link.view();
 
   const saved = relayConfig();
-  const relayUrl = (options.relayUrl ?? saved?.url ?? '').trim();
+  const relayUrl = withScheme(options.relayUrl ?? saved?.url ?? '');
   const key = (options.key ?? saved?.key ?? '').trim();
   if (!relayUrl) throw new Error('No relay address. Enter the address of your relay.');
   if (!key) throw new Error('No relay key. Paste the phrase from the relay console at /keys.');
 
   link = new ShowLink({ room: show.room, relayUrl, key, title: show.loaded.scenario.title });
-  const view = await link.start();
+  let view: LinkView;
+  try {
+    view = await link.start();
+  } catch (error) {
+    // `start()` is not supposed to reject — every failure it knows about comes
+    // back as a view with a message on it. This is here because the one that
+    // did cost an evening: a link left assigned after a throw is returned by
+    // every later `goLive` in place of trying, so the operator's fix has no
+    // way of reaching the relay. Whatever goes wrong, the process must be able
+    // to try again.
+    link = undefined;
+    throw error;
+  }
 
   if (view.status === 'failed') {
     link.stop();

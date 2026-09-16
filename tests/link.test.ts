@@ -459,6 +459,44 @@ describe('what the operator is told when it will not link', () => {
     assert.equal(refused.status, 400);
     assert.match(refused.body.error, /show/i);
   });
+
+  test('an address with the scheme left off is an address', async () => {
+    // What the operator types is what the relay's console shows them and what
+    // they copied out of an address bar: `interact.scurrycat.ca`. That is not
+    // a URL, and it used to reach `new WebSocket` and throw.
+    const key = await issueKey('no scheme');
+    await post('/api/show/start', { project: 'slowpoll' });
+    const linked = await post('/api/show/link', {
+      relayUrl: relayHttp.replace('http://', ''),
+      key,
+    });
+    assert.equal(linked.body.status, 'live', JSON.stringify(linked.body));
+    // http rather than https, because a bare loopback address is the offline
+    // fallback, and that relay has no certificate.
+    assert.equal(linked.body.relayUrl, relayHttp);
+  });
+
+  test('an address that is not one leaves the next attempt able to work', async () => {
+    // The bug this is here for cost an evening of a real deploy. A throw out
+    // of `new WebSocket` rejected `start()` instead of producing a view, and
+    // left `link` assigned to something that had never connected — so every
+    // later attempt returned that object rather than trying, and the operator
+    // fixed their typo and got the identical blank refusal. Two assertions,
+    // because either half alone would have let it through: the failure has to
+    // say something, and it must not poison what comes after it.
+    const key = await issueKey('malformed address');
+    await post('/api/show/start', { project: 'slowpoll' });
+
+    const refused = await post('/api/show/link', { relayUrl: ':::', key });
+    assert.equal(refused.status, 200, JSON.stringify(refused.body));
+    assert.equal(refused.body.status, 'failed');
+    assert.ok(refused.body.message, 'a failure with no message is a blank refusal');
+
+    // No unlink in between: pressing Go Live again is the whole of what an
+    // operator does after fixing the box.
+    const linked = await post('/api/show/link', { relayUrl: relayHttp, key });
+    assert.equal(linked.body.status, 'live', JSON.stringify(linked.body));
+  });
 });
 
 describe('the key the operator only types once', () => {
