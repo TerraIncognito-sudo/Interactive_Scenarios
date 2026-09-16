@@ -86,6 +86,18 @@ async function saveConfig(): Promise<void> {
   await rename(temp, CONFIG_FILE);
 }
 
+/**
+ * Where this machine's own answers live.
+ *
+ * Exported because the walkthrough keeps a file beside this one, and a second
+ * copy of the `EDITOR_CONFIG_DIR` rule would be a second thing to remember
+ * when a test wants a config directory of its own — the one rule that exists
+ * so a test run never changes which folder the editor opens next.
+ */
+export function configDir(): string {
+  return CONFIG_DIR;
+}
+
 /** The folder projects are read from, or undefined until one is chosen. */
 export function workspace(): string | undefined {
   return config.workspace;

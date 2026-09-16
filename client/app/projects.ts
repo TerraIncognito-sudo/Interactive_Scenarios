@@ -363,6 +363,76 @@ export async function setProjectRoomName(name: string, value: string): Promise<v
   await writeAtomic(file, next);
 }
 
+/**
+ * Folder names this program will make.
+ *
+ * Narrower than what `projectDir` will *open*, and deliberately: opening has to
+ * cope with whatever is already on somebody's disk, while creating is a name
+ * being invented right now and is the last moment it is cheap to keep it sane.
+ * No dots, so nothing can be `..` or a hidden folder; no slashes, so nothing
+ * can be a path.
+ */
+const NEW_PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{1,60}$/;
+
+export type CreatedProject = { name: string; scenario: string; storyboard?: string };
+
+/**
+ * Makes a new project folder out of a scenario somebody has in their hand.
+ *
+ * The one thing the editor could not do. A project was made by a command-line
+ * script from a storyboard that already existed, so the very first step of
+ * using this program happened outside it — and the walkthrough that now covers
+ * that step would otherwise end with "open a terminal", which is where a
+ * walkthrough loses the person it was written for.
+ *
+ * The scenario is parsed before anything is written. A folder holding a file
+ * that will not load is a project the picker offers and the editor then refuses
+ * to open, and the first thing anybody would do about it is delete the folder
+ * and lose the paste.
+ */
+export async function createProject(options: {
+  name: string;
+  scenario: string;
+  storyboard?: string;
+}): Promise<CreatedProject> {
+  const name = options.name.trim();
+  if (!NEW_PROJECT_NAME.test(name)) {
+    throw new ProjectError(
+      `"${name}" will not do as a folder name — letters, numbers, spaces, hyphens and ` +
+        `underscores, two characters or more.`,
+    );
+  }
+
+  const parsed = parseScenarioSource(options.scenario);
+  if (!parsed.ok) {
+    // The problems and not merely the headline: "does not match the expected
+    // format" is not something anybody can act on, and the list underneath it
+    // names the key and the node.
+    throw new ProjectError(
+      [parsed.message, ...parsed.problems.slice(0, 12)].join('\n'),
+    );
+  }
+
+  const dir = projectDir(name);
+  if (await stat(join(dir, 'scenario.yaml')).catch(() => null)) {
+    throw new ProjectError(`"${name}" already exists and has a scenario in it.`);
+  }
+
+  await mkdir(dir, { recursive: true });
+  await writeAtomic(join(dir, 'scenario.yaml'), options.scenario);
+
+  // The storyboard travels with it when there is one. It is not required —
+  // a scenario written by hand is a whole project — but it is what the asset
+  // rows are seeded from later, and it is the document that explains the file.
+  let storyboard: string | undefined;
+  if (options.storyboard && options.storyboard.trim()) {
+    storyboard = 'storyboard.md';
+    await writeAtomic(join(dir, storyboard), options.storyboard);
+  }
+
+  return { name, scenario: 'scenario.yaml', ...(storyboard ? { storyboard } : {}) };
+}
+
 export async function openProject(name: string): Promise<OpenProject> {
   const dir = projectDir(name);
   const projectFile = join(dir, 'project.yaml');

@@ -147,6 +147,31 @@ export function spareAssets() {
   return found;
 }
 
+/**
+ * What the board can already see, for the walkthrough to report.
+ *
+ * Read off the board's own data rather than fetched again, because the board is
+ * the answer: a second walk would be a second opinion about what is finished,
+ * and the disagreement would be invisible — both would look like a full list.
+ * Returns null when no project is open, which is a state the walkthrough has
+ * something specific to say about.
+ */
+export function boardFacts() {
+  const data = state.data;
+  if (!data) return null;
+  const counts = data.overview?.counts ?? {};
+  const voice = (data.overview?.sections ?? []).find((section) => section.section === 'voice');
+  return {
+    name: data.name,
+    hasProjectFile: typeof data.projectSource === 'string',
+    hasStoryboard: typeof data.storyboardSource === 'string',
+    assets: Object.values(counts).reduce((sum, n) => sum + n, 0),
+    ready: counts.ready ?? 0,
+    voiceAssets: voice?.assets?.length ?? 0,
+    outstanding: data.outstanding?.total ?? 0,
+  };
+}
+
 /** Re-reads the board without touching the source pane. */
 export async function refreshAssets() {
   if (!state.name) return;

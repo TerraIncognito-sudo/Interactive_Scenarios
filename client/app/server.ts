@@ -41,6 +41,7 @@ import {
   editVoiceField,
   generate,
   publish,
+  createProject,
   initProject,
   listProjects,
   migrateShots,
@@ -90,6 +91,14 @@ import {
   startShow,
   stopShow,
 } from './show/session.ts';
+import {
+  brief,
+  clearDraft,
+  isBriefName,
+  loadGuide,
+  saveDraft,
+  setStep,
+} from './guide.ts';
 import { writeRecord } from './show/record.ts';
 import { dropLink, goLive, goOffline, linkView, relinkNow } from './show/link.ts';
 import { attachShowSocket, type ShowSocket } from './show/ws.ts';
@@ -612,8 +621,90 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return sendJson(response, 200, { sidecars: sidecarStatuses() });
   }
 
+  // --- the walkthrough -----------------------------------------------------
+  //
+  // The step before everything else in this file assumes. Each of these routes
+  // exists because the alternative was a sentence in a document telling
+  // somebody to open a terminal.
+
+  if (path === '/api/guide' && request.method === 'GET') {
+    return sendJson(response, 200, await loadGuide());
+  }
+
+  const briefMatch = /^\/api\/guide\/brief\/([a-z]+)$/.exec(path);
+  if (briefMatch && request.method === 'GET') {
+    const name = briefMatch[1]!;
+    if (!isBriefName(name)) return sendJson(response, 404, { error: 'No such brief' });
+    // Plain text, because what happens to it next is a paste into a chat
+    // window. JSON would put it through an escape and back for no reader.
+    const body = await brief(name);
+    response.writeHead(200, {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    return void response.end(body);
+  }
+
+  if (path === '/api/guide/draft' && request.method === 'PUT') {
+    const body = (await readBody(request)) as Record<string, unknown>;
+    const patch: Record<string, string> = {};
+    for (const field of ['name', 'description', 'storyboard', 'scenario']) {
+      if (typeof body[field] === 'string') patch[field] = body[field];
+    }
+    return sendJson(response, 200, await saveDraft(patch));
+  }
+
+  if (path === '/api/guide/step' && request.method === 'POST') {
+    const body = (await readBody(request)) as {
+      project?: unknown;
+      step?: unknown;
+      done?: unknown;
+    };
+    if (typeof body.step !== 'string') {
+      return sendJson(response, 400, { error: 'Expected { project, step, done }' });
+    }
+    return sendJson(
+      response,
+      200,
+      await setStep(
+        typeof body.project === 'string' ? body.project : '',
+        body.step,
+        body.done === true,
+      ),
+    );
+  }
+
+  if (path === '/api/guide/draft' && request.method === 'DELETE') {
+    return sendJson(response, 200, await clearDraft());
+  }
+
   if (path === '/api/projects' && request.method === 'GET') {
     return sendJson(response, 200, { projects: await listProjects(), dir: workspace() });
+  }
+
+  if (path === '/api/projects' && request.method === 'POST') {
+    const body = (await readBody(request)) as {
+      name?: unknown;
+      scenario?: unknown;
+      storyboard?: unknown;
+    };
+    if (typeof body.name !== 'string' || typeof body.scenario !== 'string') {
+      return sendJson(response, 400, { error: 'Expected { name, scenario, storyboard? }' });
+    }
+    try {
+      const created = await createProject({
+        name: body.name,
+        scenario: body.scenario,
+        ...(typeof body.storyboard === 'string' ? { storyboard: body.storyboard } : {}),
+      });
+      return sendJson(response, 200, {
+        ...created,
+        projects: await listProjects(),
+        dir: workspace(),
+      });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
   }
 
   // `[a-z-]` rather than `[a-z]`: a two-word action is a route that 404s while

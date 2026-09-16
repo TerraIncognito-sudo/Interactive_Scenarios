@@ -241,6 +241,9 @@ select {
   color: var(--text-faint);
   padding: 0.4rem 0.7rem;
   font-size: 0.85rem;
+  /* A two-word tab wraps in a narrow window and takes the whole row's height
+     with it, which moves every other tab down by half a line. */
+  white-space: nowrap;
 }
 
 .tab[aria-selected='true'] {
@@ -2454,4 +2457,138 @@ button.danger-quiet {
   margin: 0;
   font-size: 0.8rem;
   color: var(--accent-warm);
+}
+
+/* The walkthrough. A numbered list somebody reads top to bottom once and then
+   comes back to in the middle of, so one step is open at a time and the heads
+   stay readable when they are all shut. */
+.guide {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 54rem;
+}
+
+.guide-step {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.guide-step.open {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.guide-tick {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--good);
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* The head is the toggle, so the whole row is a target rather than a caret
+   somebody has to aim at. */
+.guide-title {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.guide-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.guide-step.done .guide-title {
+  color: var(--text-dim);
+}
+
+.guide-step.done .guide-number {
+  background: rgba(94, 201, 138, 0.25);
+}
+
+/* What the program can see, which is never the same claim as the tick beside
+   it: one is a fact about disk, the other is somebody's judgement about their
+   own work. */
+.guide-seen {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.guide-body {
+  padding: 0.2rem 0.8rem 0.9rem 3.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border-top: 1px solid var(--line);
+  margin-top: 0.1rem;
+  padding-top: 0.8rem;
+}
+
+.guide-body p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.guide-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Monospace, because two of the three hold a file. Resizable, because a
+   storyboard is longer than any height this could pick for it. */
+.guide-box {
+  width: 100%;
+  resize: vertical;
+  font: 0.82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+}
+
+.guide-name {
+  flex: 0 1 18rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
 }

@@ -24,7 +24,9 @@ import {
   pruneOrphans,
   refreshModels,
   stopModels,
+  boardFacts,
 } from './assets.js';
+import { initGuide, renderGuide } from './guide.js';
 import { initPicker, openPicker } from './picker.js';
 import { initNodes, initNodesBar, renderNodes, describeWork } from './nodes.js';
 import { initScenes, renderScenes } from './scenes.js';
@@ -804,6 +806,30 @@ async function boot() {
     onTab: (name) => showTab(name),
   });
 
+  initGuide({
+    getProject: () => state.projectName,
+    // The board's own data, not a second walk of the project. A walkthrough
+    // that disagreed with the Assets tab about what is finished would be a
+    // walkthrough nobody believed twice.
+    getFacts: () => boardFacts(),
+    onStatus: (kind, text) => setStatus(kind === 'error' ? 'bad' : kind, text),
+    onTab: (name) => showTab(name),
+    // Creating a project is the one action on that tab that changes what the
+    // rest of the window is about, so the picker, the source pane and the board
+    // all have to catch up before it reports success.
+    onCreated: async (name) => {
+      const next = await fetch('/api/projects').then((r) => r.json());
+      state.projects = next.projects;
+      setProjects(next.projects, next.workspace);
+      renderPicker();
+      markSelected(name);
+      // `openProject` calls back into `onScenario`, which is what fills the
+      // source pane and sets `state.projectName` — so the rest of the window
+      // is about the new project by the time this resolves.
+      await openProject(name);
+    },
+  });
+
   initAssets({
     onStatus: (kind, text) => setStatus(kind, text),
     // So a section that has given its rows away can hand somebody to where
@@ -827,6 +853,10 @@ async function boot() {
       // first thing anybody wants to see is the cast.
       if (tab !== null) showTab(tab);
       void refreshShow();
+      // The walkthrough reports what the board can see, so it has to be redrawn
+      // when the board changes underneath it — otherwise step five goes on
+      // saying "no project.yaml yet" for the rest of the session.
+      renderGuide();
       return analyze();
     },
     onStoryboard: (source, path) => {
@@ -860,6 +890,11 @@ async function boot() {
 
   if (!workspaceState.workspace) {
     openPicker({ mode: 'workspace', label: 'Where do your scenarios live?' });
+  } else if (state.projects.length === 0) {
+    // A folder with nothing in it. Every other tab is about a project, so the
+    // default view would be an empty Characters panel and no clue what to do —
+    // which is precisely the state the walkthrough exists for.
+    showTab('guide');
   }
 }
 

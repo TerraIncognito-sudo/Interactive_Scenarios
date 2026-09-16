@@ -56,9 +56,18 @@
     <main class="pane">
         <div class="tabs" role="tablist">
           <!--
-            First, because a show is people. Everything a part needs — the
-            voice it is read in, the face it wears, and every line of it — is
-            one sheet, and the two halves of that are made at a desk weeks
+            First, and first for a different reason than the rest of the order:
+            it is the only tab that works before there is a project. Everything
+            else here assumes one, and the step before that — an idea, and no
+            notion of what shape the file should be — used to happen in a
+            terminal, out of a script, with the two formats it needs written
+            down in a markdown parser and a Zod schema.
+          -->
+          <button class="tab" data-tab="guide" role="tab" aria-selected="false">Start here</button>
+          <!--
+            Then the cast, because a show is people. Everything a part needs —
+            the voice it is read in, the face it wears, and every line of it —
+            is one sheet, and the two halves of that are made at a desk weeks
             apart by different models. The rest of the tabs are the machinery.
           -->
           <button class="tab" data-tab="cast" role="tab" aria-selected="true">Characters</button>
@@ -92,6 +101,15 @@
 
         <div class="tab-body">
           <div class="problems" id="problems" hidden></div>
+
+          <div class="tab-panel" id="panel-guide" hidden>
+            <p class="hint">
+              From an idea to a room full of people voting, in order. Steps you tick yourself —
+              whether a storyboard is <em>good enough</em> is not something this program can
+              know. What it does know is written beside each one.
+            </p>
+            <ol class="guide" id="guide-list"></ol>
+          </div>
 
           <div class="tab-panel" id="panel-cast">
             <p class="hint" id="cast-hint">
