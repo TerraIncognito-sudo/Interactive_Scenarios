@@ -90,6 +90,7 @@ import {
   startShow,
   stopShow,
 } from './show/session.ts';
+import { dropLink, goLive, goOffline, linkView, relinkNow } from './show/link.ts';
 import { attachShowSocket, type ShowSocket } from './show/ws.ts';
 import {
   browse,
@@ -341,7 +342,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   }
 
   if (path === '/api/show' && request.method === 'GET') {
-    return sendJson(response, 200, showStatus());
+    return sendJson(response, 200, { ...showStatus(), link: linkView() });
   }
 
   if (path === '/api/show/scenario' && request.method === 'GET') {
@@ -371,12 +372,52 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
   if (path === '/api/show/stop' && request.method === 'POST') {
     const was = currentShow()?.project;
+    // The room goes before the show does. A relay left holding a code for a
+    // show that has ended is a code that still answers, and the phones on it
+    // wait for a question nothing is going to ask.
+    await goOffline();
     const stopped = stopShow();
     // Every surface goes, so the stage window's own reconnect brings it back
     // against whatever runs next rather than sitting on the last frame of
     // something that has ended.
     if (stopped) showSocket?.dropAll();
     return sendJson(response, 200, { stopped, ...(was ? { project: was } : {}), ...showStatus() });
+  }
+
+  // --- the link ------------------------------------------------------------
+  //
+  // Three buttons on the board, and between them the entire audience-facing
+  // half of this program. Everything else here runs on loopback for one person
+  // at a desk; this is what puts a code on a wall.
+
+  if (path === '/api/show/link' && request.method === 'POST') {
+    const body = (await readBody(request)) as { relayUrl?: unknown; key?: unknown };
+    try {
+      return sendJson(
+        response,
+        200,
+        await goLive({
+          ...(typeof body.relayUrl === 'string' ? { relayUrl: body.relayUrl } : {}),
+          ...(typeof body.key === 'string' ? { key: body.key } : {}),
+        }),
+      );
+    } catch (err) {
+      // 400 for "there is nothing to link" and its like. A relay that refused
+      // the key is *not* an error here — it comes back 200 with a failed view
+      // and a message, because the show is still running and the operator has
+      // something to do about it.
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  if (path === '/api/show/unlink' && request.method === 'POST') {
+    return sendJson(response, 200, await goOffline());
+  }
+
+  if (path === '/api/show/link/reconnect' && request.method === 'POST') {
+    // The cure for a socket that has gone quiet without closing. The room
+    // stays open on the relay and the phones never notice.
+    return sendJson(response, 200, relinkNow());
   }
 
   if (path === '/stage' && request.method === 'GET') {
@@ -1086,6 +1127,10 @@ async function main(): Promise<void> {
       // Shutdown rather than close: the process is stopping, and telling the
       // stage window the show ended would be a claim about the show rather
       // than about the machine. What happens next is somebody's own terminal.
+      // Drop rather than unlink, for the same reason: the room on the relay is
+      // not over, and a client that closed it on the way out would have thrown
+      // away the one thing that makes a Ctrl-C survivable mid-show.
+      dropLink();
       shutdownShow();
       server.close(() => process.exit(0));
     });

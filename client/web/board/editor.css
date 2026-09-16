@@ -2313,6 +2313,50 @@ button.small {
   font-variant-numeric: tabular-nums;
 }
 
+/* The room code, at the size it is meant to be read at.
+
+   This number is read off a wall by somebody at the back of a room and typed
+   into a phone, so it is the one string in this window that is set for a
+   stranger rather than for the operator. Monospaced and letter-spaced because
+   the room-code alphabet already drops the characters that misread, and
+   spacing is what stops the remaining ones running together. */
+.join-code {
+  margin: 0;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 2.6rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.join-url {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+/* Two boxes and a button, typed once on this machine and then never again. */
+.link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.link-form label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.link-form input {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
 /* Force is not dangerous the way Reset is — it is an ordinary override — but
    it discards a real tally, so it should not look like the button beside it. */
 button.danger-quiet {

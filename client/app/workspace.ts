@@ -41,6 +41,27 @@ const ConfigSchema = z.strictObject({
    * place the two are joined, and it is per-machine by construction.
    */
   models: z.string().min(1).optional(),
+  /**
+   * The relay this machine goes live through, and the key it was given.
+   *
+   * Here for the same reason the models root is here, and it matters more.
+   * `project.yaml` travels to other machines and is opened a year later, so a
+   * key living there would be a key handed to whoever the folder was sent to —
+   * and the point of the key being revocable is that it belongs to one person
+   * and one machine. Typed once, then every later show just links.
+   *
+   * In the clear, because it is a file in the operator's own home directory on
+   * the machine that runs their shows, and because the alternative is an
+   * encryption key stored beside it. What it buys is the ability to open a
+   * room and publish a poll to some phones: no command travels back toward a
+   * client, which is what makes that a small thing to lose.
+   */
+  relay: z
+    .strictObject({
+      url: z.string().min(1),
+      key: z.string().min(1),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -113,6 +134,24 @@ export async function setModelsRoot(path: string): Promise<string> {
   config.models = resolved;
   await saveConfig();
   return resolved;
+}
+
+/** The relay and key this machine links with, or undefined until one works. */
+export function relayConfig(): { url: string; key: string } | undefined {
+  return config.relay;
+}
+
+/**
+ * Remembers a relay and key that were actually accepted.
+ *
+ * Only ever called after the relay has opened a room with them. Saving a
+ * phrase that was refused would make the one thing the operator has to fix
+ * the one thing the config keeps handing back to them.
+ */
+export async function setRelay(url: string, key: string): Promise<void> {
+  if (config.relay?.url === url && config.relay.key === key) return;
+  config.relay = { url, key };
+  await saveConfig();
 }
 
 /** Cloud-sync folders a multi-gigabyte takes tree must not land in. */

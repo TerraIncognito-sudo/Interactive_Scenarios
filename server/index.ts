@@ -291,12 +291,26 @@ export async function buildServer(config: Config) {
     }));
   }
 
-  attachRelayWebSocketServer(app.server, {
+  const wss = attachRelayWebSocketServer(app.server, {
     registry,
     store,
     attempts,
     publicUrl: config.publicUrl,
     onRoomOpened: (room) => app.log.info({ room: room.code, key: room.keyId }, 'Room opened'),
+  });
+
+  // `preClose` rather than `onClose`, and the difference is the whole point:
+  // it runs *before* Fastify closes the HTTP server, and Fastify's close waits
+  // for open connections to end. A WebSocket holds its connection open forever
+  // by design, so with a single phone attached that wait never finished and
+  // the SIGTERM handler below became a promise that never settled — every
+  // redeploy sat for the whole of Docker's grace period and then took a kill,
+  // which reads in the logs as a relay that crashed on shutdown rather than
+  // one that was never told how to stop. Dropping the sockets is not rude:
+  // every surface on the far end has its own backoff and is about to use it.
+  app.addHook('preClose', async () => {
+    for (const socket of wss.clients) socket.terminate();
+    wss.close();
   });
 
   app.addHook('onClose', async () => {

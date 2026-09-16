@@ -62,6 +62,12 @@ const state = {
   stage: null,
   /** How many simulated voters the next Cast sends. */
   simCount: 12,
+  /** What `/api/show` last said about the relay. See `linkPanel`. */
+  link: { status: 'off' },
+  /** Set while Go Live is in flight, so the button cannot be pressed twice. */
+  linking: false,
+  /** Open when the operator is entering a relay address and key. */
+  keyForm: false,
   socket: null,
   retry: null,
   getProject: () => null,
@@ -371,6 +377,202 @@ function pollPanel(snapshot) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Going live
+// ---------------------------------------------------------------------------
+
+/**
+ * Asks the relay for a room, and reports what it said.
+ *
+ * Three outcomes worth telling apart, which is why this is not a boolean. It
+ * worked; the relay would not take the key, which is a thing to fix and puts
+ * the form back; or the relay could not be reached at all, which is a thing to
+ * wait out. A single "could not go live" would send somebody off to retype a
+ * key that was never the problem.
+ */
+async function goLive(body) {
+  state.linking = true;
+  render();
+  try {
+    state.link = await api('/api/show/link', {
+      method: 'POST',
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    state.keyForm = state.link.needsKey === true;
+    if (state.link.status === 'live') {
+      state.onStatus('ok', `Live at ${state.link.room} \u2014 phones can join now.`);
+    } else {
+      state.onStatus('error', state.link.message ?? 'Could not go live.');
+    }
+  } catch (err) {
+    state.onStatus('error', err.message);
+  } finally {
+    state.linking = false;
+    render();
+  }
+}
+
+/**
+ * The audience-facing half of this window, and the only part of it that anyone
+ * outside the room the operator is sitting in is ever affected by.
+ *
+ * Deliberately near the top and deliberately large. The room code exists to be
+ * read off a wall and typed into forty phones; a code in small grey text
+ * beside a status pill is a code somebody reads out wrong.
+ */
+function linkPanel(snapshot) {
+  const link = state.link ?? { status: 'off' };
+  const live = link.status === 'live' || link.status === 'retrying';
+
+  const head = h(
+    'div',
+    { class: 'show-block-head' },
+    h('p', { class: 'eyebrow' }, 'The audience'),
+    live && h('span', { class: 'show-note' }, `${snapshot.presence.players} on the code`),
+  );
+
+  if (live) {
+    return h(
+      'section',
+      { class: 'show-block' },
+      head,
+      // The code out of the snapshot rather than out of the link view: the
+      // snapshot is what the projector is showing, and if the two ever
+      // disagreed about the code, the wall is the one the audience is reading.
+      h('p', { class: 'join-code' }, snapshot.room ?? link.room ?? ''),
+      h('p', { class: 'join-url' }, snapshot.joinUrl ?? link.joinUrl ?? ''),
+      link.status === 'retrying' &&
+        h(
+          'p',
+          { class: 'show-warn' },
+          link.message ??
+            'Lost the relay. The room is still open and still taking votes \u2014 trying again.',
+        ),
+      h(
+        'div',
+        { class: 'show-row' },
+        h(
+          'button',
+          {
+            type: 'button',
+            title: 'Drop the connection and pick the same room back up',
+            onclick: async () => {
+              state.link = await api('/api/show/link/reconnect', { method: 'POST' });
+              render();
+            },
+          },
+          'Reconnect',
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'danger-quiet',
+            onclick: async () => {
+              // Behind a confirm, because it is the one control on this tab
+              // that ends something for other people: the code stops working
+              // and every phone on it is left holding nothing.
+              const code = snapshot.room ?? link.room ?? '';
+              if (!confirm(`Close room ${code}? Every phone on it is dropped.`)) return;
+              state.link = await api('/api/show/unlink', { method: 'POST' });
+              state.onStatus('ok', 'Room closed. The show is still running.');
+              render();
+            },
+          },
+          'Close the room',
+        ),
+      ),
+    );
+  }
+
+  // --- not live ----------------------------------------------------------
+  //
+  // The absence of a code is the ordinary state and has to look deliberate. A
+  // show can now run start to finish with nobody watching from a phone, and
+  // the old system could not \u2014 so without a sentence saying so, an
+  // unlinked show reads as a broken one.
+  const asking = state.keyForm || link.hasKey !== true;
+
+  return h(
+    'section',
+    { class: 'show-block' },
+    head,
+    h(
+      'p',
+      { class: 'show-note' },
+      'Nobody can join. The show runs fine like this \u2014 going live adds a code the room votes on.',
+    ),
+    link.status === 'failed' && link.message && h('p', { class: 'show-warn' }, link.message),
+    asking
+      ? h(
+          'form',
+          {
+            class: 'link-form',
+            onsubmit: (event) => {
+              event.preventDefault();
+              const data = new FormData(event.target);
+              void goLive({
+                relayUrl: String(data.get('relayUrl') ?? '').trim(),
+                key: String(data.get('key') ?? '').trim(),
+              });
+            },
+          },
+          h('label', {}, 'Relay address'),
+          h('input', {
+            name: 'relayUrl',
+            type: 'text',
+            placeholder: 'https://relay.example.com',
+            value: link.relayUrl ?? '',
+          }),
+          h('label', {}, 'Key'),
+          h('input', {
+            name: 'key',
+            type: 'text',
+            placeholder: 'amber-kestrel-dusk-harbour-quill',
+            autocomplete: 'off',
+          }),
+          h(
+            'p',
+            { class: 'show-note' },
+            // Says where one comes from, because the answer is a page on a
+            // different machine that most people will never have seen.
+            'Generated in the relay\u2019s own console, at /keys. Typed once \u2014 this machine remembers it.',
+          ),
+          h(
+            'button',
+            { type: 'submit', class: 'primary wide', disabled: state.linking },
+            state.linking ? 'Opening a room\u2026' : 'Go live',
+          ),
+        )
+      : h(
+          'div',
+          { class: 'show-row' },
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'primary wide',
+              disabled: state.linking,
+              onclick: () => void goLive(),
+            },
+            state.linking ? 'Opening a room\u2026' : 'Go live',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'ghost',
+              onclick: () => {
+                state.keyForm = true;
+                render();
+              },
+            },
+            'Use a different key',
+          ),
+        ),
+  );
+}
+
 function render() {
   renderHeader();
 
@@ -456,6 +658,8 @@ function render() {
       h('p', { class: 'show-now' }, text),
       h('p', { class: 'show-meta' }, meta),
     ),
+
+    linkPanel(snapshot),
 
     pollPanel(snapshot),
 
@@ -563,12 +767,41 @@ function render() {
 export async function refreshShow() {
   try {
     state.status = await api('/api/show');
+    state.link = state.status.link ?? { status: 'off' };
   } catch {
     // These routes live in this same process, so a failure means the process
     // is gone and every other control is about to fail too. Nothing useful to
     // say that the next click will not say better.
     state.status = null;
   }
+  render();
+}
+
+/**
+ * Keeps the link panel honest between clicks.
+ *
+ * Polled rather than pushed, and the reason is the same one the relay's own
+ * status page gives: the thing being reported on is a connection, and a second
+ * connection carrying the report is a second thing that can be broken at the
+ * moment somebody is using it to find out what is broken. A retrying link has
+ * to be able to say so, and it cannot say so down the wire it has lost.
+ *
+ * Only the diagnostics come from here. The room code, the phone count and the
+ * tally all arrive on the snapshot, because they belong to the show.
+ */
+async function pollLink() {
+  if (!state.status?.running) return;
+  let next;
+  try {
+    next = (await api('/api/show')).link ?? { status: 'off' };
+  } catch {
+    return;
+  }
+  // Compared before rendering: this runs every couple of seconds for the whole
+  // of a show, and a console that repaints on a timer loses a half-typed
+  // number out of the Cast box.
+  if (JSON.stringify(next) === JSON.stringify(state.link)) return;
+  state.link = next;
   render();
 }
 
@@ -638,4 +871,6 @@ export function initShow({ getProject, onStatus, onTab }) {
   setInterval(() => {
     if (state.snapshot?.beatInfo.kind === 'poll') render();
   }, 1000);
+
+  setInterval(() => void pollLink(), 2000);
 }

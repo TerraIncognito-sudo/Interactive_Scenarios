@@ -16,7 +16,7 @@ import {
   type Beat,
   type RunState,
 } from '../shared/engine/engine.ts';
-import { BallotBox, resolvePoll, type PollResult } from '../shared/engine/votes.ts';
+import { BallotBox, resolvePoll, type Counts, type PollResult } from '../shared/engine/votes.ts';
 import type { LoadedScenario } from '../shared/scenario/load.ts';
 import type {
   DisplayLoading,
@@ -156,6 +156,30 @@ export class Room {
   closed = false;
 
   private box: BallotBox | undefined;
+  /**
+   * The counts the relay is carrying, while one is.
+   *
+   * A second place a tally can come from, which needs an argument. The
+   * ballots for a live show are in the relay's database and nowhere else —
+   * that is what lets forty phones keep voting through a client that has
+   * dropped, and forty phones are the part you cannot ask to do it again. So
+   * the box is deliberately empty while linked, and this mirrors what the
+   * relay says.
+   *
+   * A *state* rather than a stream of events, and that is the whole reason
+   * the wire carries a tally instead of individual votes: one dropped frame
+   * in a stream of deltas leaves a bar chart permanently wrong with nothing
+   * anywhere saying so, where a lost tally is corrected by the next one.
+   */
+  private relayTally: { nodeId: string; counts: Counts; voters: number } | undefined;
+  /**
+   * How many phones the relay has, while there is a relay.
+   *
+   * Not a subscriber count, because no phone is ever on this Room's socket:
+   * they are on the relay, several hops away. Undefined means nobody has told
+   * us, which is the unlinked case and correctly reads as zero.
+   */
+  private relayPlayers: number | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** Wall-clock deadline for the current beat. */
   private beatDeadline = 0;
@@ -224,6 +248,10 @@ export class Room {
   }
 
   get playerCount(): number {
+    // The relay's number wins when there is one. A local show has no players
+    // at all and a linked one has none on this socket, so the subscriber count
+    // is only ever right for the public server this class still serves.
+    if (this.relayPlayers !== undefined) return this.relayPlayers;
     let count = 0;
     for (const sub of this.subscribers) if (sub.role === 'player') count++;
     return count;
@@ -339,9 +367,7 @@ export class Room {
       },
       beatInfo: this.describeBeat(beat),
       scene,
-      tally: this.box
-        ? { counts: this.box.counts(), voters: this.box.voterCount }
-        : undefined,
+      tally: this.tally(),
       lastResult: this.state.lastPoll
         ? { nodeId: this.state.lastPoll.nodeId, ...this.state.lastPoll.result }
         : undefined,
@@ -501,6 +527,15 @@ export class Room {
       this.box = undefined;
     }
 
+    // The relay's counts belong to the poll that was open when they arrived.
+    // Carried into the next node they would be last question's answers under
+    // this question's labels, which is a bar chart that is wrong and looks
+    // right — so they go the moment the poll they describe is not the one on
+    // screen. The link republishes on entering a poll, so a fresh set follows.
+    if (this.relayTally && this.relayTally.nodeId !== next.nodeId) {
+      this.relayTally = undefined;
+    }
+
     this.state = next;
     this.touch();
     this.persist(event);
@@ -569,12 +604,92 @@ export class Room {
     return true;
   }
 
+  /**
+   * The one answer to "how did the room vote".
+   *
+   * Two sources, never both: while a relay is carrying the ballots the box is
+   * empty by design, and while it is not there is no relay to ask. Written as
+   * one method rather than two reads so the screen and the resolution cannot
+   * come from different places — a bar chart that disagrees with the branch
+   * the show then takes is the worst failure this system has available.
+   */
+  private tally(): { counts: Counts; voters: number } | undefined {
+    if (this.relayTally) {
+      return { counts: this.relayTally.counts, voters: this.relayTally.voters };
+    }
+    return this.box ? { counts: this.box.counts(), voters: this.box.voterCount } : undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // The relay
+  //
+  // Everything below is set from outside by `client/app/show/link.ts` and by
+  // nothing else. None of it is a command: the relay reports a code, a count
+  // of phones and a count of votes, and the Room decides what any of that
+  // means. That is the one-way design stated in `shared/relay/protocol.ts`,
+  // and this is the end of the wire it has to hold at.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Publishes — or withdraws — the code an audience joins at.
+   *
+   * A method rather than two assignable fields because setting them has to
+   * broadcast: the code's whole job is to be on the lobby screen, and a code
+   * the Room knew but had not told anybody is a room nobody can be invited to.
+   * Passing `undefined` is unlinking, and it must take the URL with it — a
+   * projector still showing a dead code is a room of people typing it in.
+   */
+  setJoin(code: string | undefined, url?: string): void {
+    this.joinCode = code;
+    this.joinUrl = code === undefined ? undefined : url;
+    if (code === undefined) {
+      this.relayPlayers = undefined;
+      this.relayTally = undefined;
+    }
+    this.touch();
+    this.broadcast();
+  }
+
+  /**
+   * Takes the relay's counts for a poll.
+   *
+   * Ignored unless it is about the poll that is actually open. A tally can
+   * overtake the show — the operator presses Skip while a vote is in flight —
+   * and applying a stale one would put the previous question's answers under
+   * this question's labels.
+   */
+  receiveTally(nodeId: string, counts: Counts, voters: number): void {
+    if (this.state.phase !== 'polling' || this.state.nodeId !== nodeId) return;
+    const node = this.scenario.nodes.find((n) => n.id === nodeId);
+    if (node?.type !== 'poll') return;
+
+    // Zeroes for the options nobody picked, seeded here rather than trusted
+    // from the wire, so a tally and a set of recovered ballots reduce to the
+    // same shape. An option missing from a bar chart is an option the room
+    // reads as not having been offered.
+    const seeded: Counts = {};
+    for (const option of node.options) seeded[option.key] = counts[option.key] ?? 0;
+    this.relayTally = { nodeId, counts: seeded, voters };
+    this.touch();
+    this.broadcastTally();
+  }
+
+  /** How many phones the relay is holding. Presence, and nothing more. */
+  setRelayPlayers(players: number): void {
+    if (this.relayPlayers === players) return;
+    this.relayPlayers = players;
+    this.broadcast();
+  }
+
   closePoll(result?: PollResult): void {
     if (this.state.phase !== 'polling') return;
     const node = this.scenario.nodes.find((n) => n.id === this.state.nodeId);
     if (node?.type !== 'poll') return;
 
-    const counts = this.box?.counts() ?? {};
+    // The same answer the board has been showing. Reading the box directly
+    // here would resolve a live poll on an empty one, so every real vote in
+    // the room would land on the `default:` while the bar chart said otherwise.
+    const counts = this.tally()?.counts ?? {};
     const decided = result ?? resolvePoll(node, counts);
 
     this.store.recordPollResult(
