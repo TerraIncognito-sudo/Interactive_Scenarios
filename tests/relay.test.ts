@@ -715,6 +715,105 @@ describe('the relay cannot understand a show', () => {
   });
 });
 
+describe('the image the relay ships in', () => {
+  // The block above proves the relay's own dependency list has no parser in
+  // it; these prove the build does not put one back. That is a separate
+  // failure, and the mechanism is not the one anybody would guess -- see the
+  // second test. A file nothing imports is still a file somebody can read,
+  // and the Dockerfile's claim is about the container rather than about the
+  // call graph.
+  //
+  // What they cannot prove is that `docker build` produced what the lines
+  // say. That was checked against a real container: 62 packages, no `yaml`,
+  // no `qrcode`, one file under `shared/`, and the whole key lifecycle run
+  // through it. These are what stop the lines drifting away from it after.
+
+  /**
+   * A build file's lines, minus every comment.
+   *
+   * Dropping the comments is what lets these assertions be written as "the
+   * word does not appear", when the files deliberately explain in prose why
+   * `RELAY_KEY` and the scenario mount are absent.
+   *
+   * Carriage returns go too. These three files are checked out with whatever
+   * endings the machine's git prefers, and an assertion that passes on one
+   * developer's clone and fails on another's is worse than no assertion.
+   */
+  async function lines(name: string): Promise<string[]> {
+    const text = await readFile(join(ROOT, name), 'utf8');
+    return text.split('\n').map((line) => line.replace('\r', ''));
+  }
+
+  async function withoutComments(name: string): Promise<string> {
+    return (await lines(name)).filter((line) => !line.trimStart().startsWith('#')).join('\n');
+  }
+
+  test('only the workspace with no parser in it is described to npm', async () => {
+    // Subtle and worth a test, because the mechanism is not the flag anybody
+    // would reach for first. `--workspace server` does not keep `yaml` out on
+    // its own: with `shared/package.json` present npm hoists it and leaves it
+    // *extraneous*, where `npm prune` will not remove it either. What works is
+    // not copying the manifest, because npm skips a workspace whose folder
+    // holds none.
+    const dockerfile = await withoutComments('Dockerfile');
+    assert.ok(
+      !dockerfile.includes('shared/package.json'),
+      'copying shared/package.json puts yaml back in the image',
+    );
+    assert.ok(
+      !dockerfile.includes('client/package.json'),
+      'copying client/package.json puts qrcode back in the image',
+    );
+  });
+
+  test('one folder of shared travels, and it is the protocol', async () => {
+    const dockerfile = await withoutComments('Dockerfile');
+    for (const line of dockerfile.split('\n')) {
+      if (!line.startsWith('COPY ')) continue;
+      const source = line.split(/\s+/)[1] ?? '';
+      if (!source.startsWith('shared')) continue;
+      assert.equal(source, 'shared/relay', `${line.trim()} would ship the engine or the loader`);
+    }
+  });
+
+  test('no scenario reaches the container by any of the three routes', async () => {
+    // It used to arrive twice: copied at build time and mounted at run time,
+    // the mount so a scenario could be edited without a rebuild. There is
+    // nothing left in here to reload it into.
+    const dockerfile = await withoutComments('Dockerfile');
+    const compose = await withoutComments('docker-compose.yml');
+    const ignored = await lines('.dockerignore');
+
+    assert.ok(!dockerfile.includes('scenarios'), 'the image copies a scenario in');
+    assert.ok(!compose.includes('scenarios'), 'compose mounts a scenario in');
+    assert.ok(
+      ignored.includes('scenarios'),
+      'the build context still offers scenarios to a COPY somebody adds later',
+    );
+  });
+
+  test('the database is the only thing mounted', async () => {
+    const compose = await withoutComments('docker-compose.yml');
+    const mounts = compose
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('- ') && line.includes(':/'));
+    assert.deepEqual(mounts, ['- scenario-data:/data']);
+  });
+
+  test('nothing hands the relay a key through its environment', async () => {
+    // A secret in compose is one phrase shared by everyone who has ever been
+    // told it: it cannot be withdrawn from one person, and changing it locks
+    // out every client at once. Keys are rows in the database, issued and
+    // revoked one at a time. The comment in compose says so; this is what
+    // stops somebody helpfully acting on the name it mentions.
+    const compose = await withoutComments('docker-compose.yml');
+    const dockerfile = await withoutComments('Dockerfile');
+    assert.ok(!compose.includes('RELAY_KEY'), 'compose sets a relay key');
+    assert.ok(!dockerfile.includes('RELAY_KEY'), 'the image bakes in a relay key');
+  });
+});
+
 describe('the key phrase', () => {
   test('the word list is exactly the size the arithmetic assumes', async () => {
     const { WORDS, PHRASE_WORDS, generatePhrase } = await import('../server/keys.ts');
