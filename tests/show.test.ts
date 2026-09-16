@@ -18,10 +18,10 @@
 
 import { test, describe, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Server } from 'node:http';
+import { request as httpRequest, type Server } from 'node:http';
 import { WebSocket } from 'ws';
 import type { Snapshot } from '../shared/show/protocol.ts';
 
@@ -295,6 +295,54 @@ describe('the projector is handed the show', () => {
     const response = await fetch(`${baseUrl}/project-assets/scenario.yaml`);
     assert.equal(response.status, 404);
     await response.arrayBuffer();
+  });
+
+  test('a projector that stops reading does not take the client with it', async () => {
+    // This crashed the process, and it is the worst shape a bug can have: the
+    // client dies, so the show dies, and the thing that killed it is a browser
+    // doing something entirely ordinary. The projector prefetches a few
+    // hundred assets in the seconds after a show starts, so reloading the
+    // stage window cancels most of them at once — and at a desk, every clip
+    // the board stops or scrubs is another one.
+    //
+    // The mechanism was three mistakes stacked: `pipeline` rejected when the
+    // socket went, `return sendFile(...)` inside a `try` meant the route's own
+    // `catch` never saw it, and the last-resort handler then wrote a 500 over
+    // headers that had gone out long ago — throwing from inside a `.catch`,
+    // where nothing was left to catch it.
+    //
+    // `harbour.jpg` is declared by the fixture and deliberately absent from
+    // disk, which is what lets this test make one big enough to matter. It has
+    // to be: a file small enough to fit in the socket buffer is written before
+    // anyone can abort it, and the test would pass against the broken code.
+    const heavy = join(fixtures, 'media', 'assets', 'images', 'harbour.jpg');
+    writeFileSync(heavy, Buffer.alloc(8 * 1024 * 1024));
+    try {
+      await start('media');
+
+      await new Promise<void>((resolve) => {
+        const request = httpRequest(`${baseUrl}/project-assets/images/harbour.jpg`, (response) => {
+          // Headers are out and the body is mid-flight. Walk away from it,
+          // which is all a closing tab does.
+          response.destroy();
+          request.destroy();
+          resolve();
+        });
+        request.on('error', () => resolve());
+        request.end();
+      });
+
+      // The real assertion is that this line is reached at all: the server is
+      // in this process, so the old failure ended the test run rather than
+      // failing a test. Asking it for something afterwards is what proves it
+      // is still answering rather than merely still resident.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const still = await fetch(`${baseUrl}/api/show`);
+      assert.equal(still.status, 200);
+      assert.equal(((await still.json()) as { running: boolean }).running, true);
+    } finally {
+      rmSync(heavy, { force: true });
+    }
   });
 });
 

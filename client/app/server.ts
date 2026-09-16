@@ -214,7 +214,24 @@ async function sendFile(
   });
 
   if (request.method === 'HEAD') return void response.end();
-  await pipeline(createReadStream(file, { start, end }), response);
+
+  try {
+    await pipeline(createReadStream(file, { start, end }), response);
+  } catch (error) {
+    // A reader that stopped reading is not a failure, and treating it as one
+    // killed the whole process: the rejection escaped to the last-resort
+    // handler, which tried to write a 500 over a reply whose headers had gone
+    // out minutes earlier, and threw `ERR_HTTP_HEADERS_SENT` from inside a
+    // `.catch` — an unhandled rejection, which is a dead client in the middle
+    // of a show. One aborted download did that, reliably.
+    //
+    // They are not rare. The projector prefetches a few hundred assets in the
+    // seconds after a show starts, so a reloaded stage window cancels most of
+    // them at once; and at a desk, every `<audio>` the board stops or scrubs
+    // is another. Nothing can be said to a socket that has gone anyway — the
+    // status line left with the first byte.
+    if (!request.destroyed && !response.destroyed) throw error;
+  }
 }
 
 async function serveStatic(pathname: string, response: ServerResponse): Promise<void> {
@@ -307,7 +324,24 @@ export async function buildEditorServer() {
 
   const server = createServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
-      sendJson(response, 500, { error: (error as Error).message });
+      // The last resort, and it must not be able to throw. It used to: a reply
+      // already half-sent has no room for a 500, and `writeHead` says so by
+      // throwing — from inside a `.catch`, where there is nothing left to
+      // catch it, so the process exited. A route failing is a request failing;
+      // it is never grounds for taking a running show down with it.
+      //
+      // Logged rather than only answered, because the reply goes to whichever
+      // surface asked and the operator is looking at the other one. The method
+      // and path are here for the same reason: the crash this replaces named
+      // only this line, which is the one place in the file that knows nothing
+      // about what was being served.
+      console.error(`${request.method} ${request.url} failed`, error);
+      try {
+        if (response.headersSent || response.writableEnded) response.destroy();
+        else sendJson(response, 500, { error: (error as Error).message });
+      } catch {
+        response.destroy();
+      }
     });
   });
 
@@ -331,8 +365,16 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     }
     try {
       const asset = await showAsset(decodeURIComponent(path.slice('/project-assets/'.length)));
-      return sendFile(request, response, asset.path, asset.type);
+      // `return await`, not `return`. A returned promise leaves the `try`
+      // without being awaited, so this `catch` never saw anything `sendFile`
+      // did -- which is how a cancelled download reached the last-resort
+      // handler instead of this one.
+      return await sendFile(request, response, asset.path, asset.type);
     } catch (err) {
+      // Nothing to say once the file has started going out. Reaching here with
+      // headers sent means a real read error mid-stream, and the reply it
+      // would have to be written over is already a partial asset.
+      if (response.headersSent || response.writableEnded) return void response.destroy();
       // 404 rather than 400 even for a malformed name: this is the display's
       // hot path, and every failure here already reaches the operator as a
       // number on the readiness report. A distinction nobody reads is a
@@ -643,7 +685,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
           take: url.searchParams.get('take') ?? undefined,
           reference: url.searchParams.get('reference') ?? undefined,
         });
-        return sendFile(request, response, media.path, media.type);
+        // `return await` for the same reason as `/project-assets/` above: a
+        // returned promise escapes this `try` unawaited, and a difference in
+        // spelling between the file's two stream routes is a difference
+        // somebody will read as meaning something.
+        return await sendFile(request, response, media.path, media.type);
       }
 
       if (action === 'folders' && request.method === 'POST') {
