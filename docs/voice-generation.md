@@ -4,6 +4,10 @@ How to go from a scenario full of `voice:` declarations to a folder of clips the
 actually plays. Read [asset-pipeline.md](asset-pipeline.md) first if you have not — this
 picks up where the asset board leaves off.
 
+"The editor" throughout means the client — `npm run editor`, the board window on
+`localhost:8890`. Voice is the one section of the pipeline with a generator behind it;
+everything else is made elsewhere and brought in.
+
 The short version: the editor keeps a **models root** on this machine, starts a small
 Python **sidecar** when you press Generate, and writes each attempt into the project's
 takes folder as a numbered **take**. You listen, pick one, and **publish** it to the name
@@ -143,7 +147,7 @@ npm run voice:install -- chatterbox
 Several minutes and about 3 GB, all of it prebuilt wheels. It pulls PyTorch from the
 CUDA 12.8 index rather than PyPI, which matters more than it sounds like: the default
 Windows wheel is CPU-only, and on a 50-series card the older CUDA builds have no kernels at
-all. `tools/voice/uv.lock` pins the combination that works.
+all. `client/voice/uv.lock` pins the combination that works.
 
 Use the npm script rather than `uv sync` directly — it is what points uv at the
 environment outside the repo.
@@ -375,14 +379,14 @@ this means something overrode it. Check `nvidia-smi` reports a driver of 570 or 
 npm run voice:install
 ```
 
-If that does not lift it, `soundfile` is pinned too low in `tools/voice/uv.lock`; raise the
+If that does not lift it, `soundfile` is pinned too low in `client/voice/uv.lock`; raise the
 floor in `pyproject.toml` and re-lock.
 
 **`Microsoft Visual C++ 14.0 or greater is required`** — something in the tree has no
 prebuilt wheel for the Python being used, so uv fell back to compiling it. Do not install
 the build tools; the fix is the Python version. `spacy-pkuseg`, which chatterbox pulls in
 for Chinese word segmentation, publishes wheels only up to cp313, which is why
-`tools/voice/pyproject.toml` pins `>=3.13,<3.14`. If you see this, that pin has been
+`client/voice/pyproject.toml` pins `>=3.13,<3.14`. If you see this, that pin has been
 widened or uv is being run against a different interpreter.
 
 **The generator stopped (exit 1)** — the Python traceback is printed in the terminal the
@@ -399,7 +403,7 @@ also does it: the sidecar talks over a pipe, so it cannot outlive its parent.
 
 ## Why Python 3.13
 
-The version is pinned in `tools/voice/pyproject.toml`, and it is wedged between two
+The version is pinned in `client/voice/pyproject.toml`, and it is wedged between two
 failures that both look like something else.
 
 `chatterbox-tts` pins `torch==2.6.0` on Python below 3.14, and `torch>=2.9` on 3.14.
@@ -430,9 +434,9 @@ rather than silence.
 
 Three places, and the tests will tell you if you miss one:
 
-1. `tools/voice/voice/backends/<name>.py` — a class with `info()` and `speak()`.
-2. A line in `tools/voice/voice/backends/__init__.py`.
-3. An entry in `MODELS` in `tools/editor/models.ts`, with its uv extra, and either an HF
+1. `client/voice/voice/backends/<name>.py` — a class with `info()` and `speak()`.
+2. A line in `client/voice/voice/backends/__init__.py`.
+3. An entry in `MODELS` in `client/app/models.ts`, with its uv extra, and either an HF
    repo (fetches itself) or a `files:` list (the editor fetches it).
 
 A model that does not clone lists its `voices:` there too. That list is what the cast panel

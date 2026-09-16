@@ -18,30 +18,58 @@ offline.
 
 ## How it fits together
 
-One server holds authoritative state; three browser surfaces render it.
+Two programs. One of them is optional.
 
-| Surface | Who | Needs |
-|---|---|---|
-| `/` | the audience | nothing — it's the join screen |
-| `/admin` | whoever runs the session | host password |
-| `/display` | the projector | display token |
-| `/host` | whoever runs the session | host token |
-| `/join/CODE` | the audience, on phones | room code only |
+**The client** is the program: a local process on your own machine plus two browser
+windows. The **board** is where you write a scenario, make its artwork and voice clips,
+rehearse it and drive it; the **stage** is the window you drag onto the projector. It
+holds the story, the engine and the clock, and it runs a whole show start to finish with
+no network at all.
 
-The server is the single source of truth. Any surface can crash, reload, and resync to
-the exact current beat. The display holds the whole scenario and renders forward on its
-own between server beats, so a brief dropout doesn't stutter the show.
+**The relay** is a small container that carries votes. It hands out a room code, phones
+join at that code, and the votes come back. It holds no scenario, no engine and not even a
+YAML parser — it could not read a story if you handed it one. The client connects
+**outbound** to it, which is the point: the laptop running the show sits behind a domestic
+router with nothing forwarded, and the relay is the thing with a hostname.
+
+| Surface | Where | Who | Needs |
+|---|---|---|---|
+| board | client, `localhost:8890` | you | nothing — it is your own machine |
+| stage | client, a popup window | the projector | nothing |
+| `/` and `/join/CODE` | relay | the audience, on phones | a room code |
+| `/status` | relay | you | console password |
+| `/keys` | relay | you | console password |
+
+Going live is an *addition* to a show that is already on the projector. You press Play,
+drag the stage across, rehearse with simulated votes, and only then ask for a code — and
+if the relay never answers, the show carries on without it.
 
 ## Requirements
 
-Node 24 or newer. The server runs TypeScript directly — Node strips the types natively,
-so there is no build step for server code.
+Node 24 or newer. Everything that runs in Node is TypeScript that Node executes directly
+by stripping the types, so there is no build step except for the two browser bundles.
 
 ## Getting started
 
 ```bash
 npm install
 ```
+
+Start the client:
+
+```bash
+npm run editor
+```
+
+It opens on `http://localhost:8890`, binds to loopback only, and asks for a **workspace**
+folder the first time — any folder whose subfolders contain `scenario.yaml` files.
+Pointing it at this repo's `scenarios/` is the usual answer.
+
+If you have never made a scenario before, the **Start here** tab is the whole route from
+an idea to a room full of people voting. It hands you two briefs to paste into a language
+model — one that turns a description into a storyboard, one that turns a storyboard into a
+`scenario.yaml` — creates the project folder for you, and then walks you through the asset
+board and out onto the projector.
 
 Check your scenarios before you rely on them:
 
@@ -63,14 +91,14 @@ npm run typecheck
 
 ## Writing a scenario
 
-A scenario is a folder under `scenarios/` containing `scenario.yaml` and an `assets/`
-directory. Adding a scenario means adding a folder — no code changes.
+A scenario is a folder containing `scenario.yaml` and an `assets/` directory. Adding a
+scenario means adding a folder — no code changes.
 
 ### Node types
 
 A scenario is a list of nodes and the pointers between them. There are six kinds, and the
-difference that matters most is **what ends the beat** — that is what lets one server, a
-projector and forty phones stay on the same moment with nobody holding a stopwatch.
+difference that matters most is **what ends the beat** — that is what lets the projector
+and forty phones stay on the same moment with nobody holding a stopwatch.
 
 | Type | What it is | The beat ends when |
 |---|---|---|
@@ -109,17 +137,17 @@ fiction notice, a title card — and no nameplate is drawn.
   next: a3_cell
 ```
 
-`hold` is seconds, and it is the beat's whole clock: **nothing on the server opens the
-audio file**, so a `hold` a second short of the clip cuts the reading off mid-word in front
-of a room. Leave it out and a reading-speed estimate decides. `npm run validate` warns
-about any voiced line that does, and the editor measures the real clips and offers to write
-the numbers for you.
+`hold` is seconds, and it is the beat's whole clock: **nothing opens the audio file to
+find out how long it is**, so a `hold` a second short of the clip cuts the reading off
+mid-word in front of a room. Leave it out and a reading-speed estimate decides.
+`npm run validate` warns about any voiced line that does, and the board measures the real
+clips and offers to write the numbers for you.
 
 #### gate
 
-A beat that ends when a person says so. The projector holds the screen, the host console
-grows a button labelled from `label:`, and **nothing counts down** — pressing it (or the
-spacebar) is the only way forward.
+A beat that ends when a person says so. The projector holds the screen, the board grows a
+button labelled from `label:`, and **nothing counts down** — pressing it (or the spacebar
+on the projector) is the only way forward.
 
 This is what makes a presentation possible rather than only a film. The room asks a
 question, somebody arrives late, the moderator wants the title card up until they have
@@ -189,8 +217,8 @@ what gives the story memory of earlier votes without the script exploding into a
 unmanageable tree. Values may be a literal, or one of `$winner`, `$winnerLabel`, `$total`.
 
 After the vote closes the display shows the result for a couple of seconds before the next
-beat starts — that reveal is a real beat the server clocks, so the line after a poll gets
-its full `hold`.
+beat starts — that reveal is a real beat the clock owns, so the line after a poll gets its
+full `hold`.
 
 ##### Tie-break modes
 
@@ -260,10 +288,11 @@ nodes:
     next: a2_absence
 ```
 
-Everything the scenario names is prefetched before the display reports ready, so nothing
-streams in live in front of the room. The host console shows the download as it runs — a
-count and the bytes — because a projector pulling a few hundred megabytes takes a minute or
-two, and a wait that says nothing is indistinguishable from a hang.
+Everything the scenario names is prefetched before the stage reports ready, so nothing
+streams in live in front of the room. The board shows the download as it runs — a count and
+the bytes — because a wait that says nothing is indistinguishable from a hang, and because
+project folders usually live in a synced drive where a file can be present, zero bytes, and
+still on its way down.
 
 Assets are filed by media type — `assets/voice/`, `assets/images/` — and the name in
 `scenario.yaml` is the name on disk. A flat name still works, because every scenario written
@@ -288,50 +317,50 @@ The scene's `music:` and `ambience:` keep playing throughout — they belong to 
 place, not the shot — and the next node without an override falls back to the
 scene's still.
 
-**Give every voiced line a `hold`.** Nothing on the server opens the audio file, so
-the beat still ends when `hold` — or failing that, the reading-speed estimate — says
-it does. Get it wrong and the narrator is cut off, or the room watches a still frame
-in silence. `npm run validate` warns about any voiced line that leaves it to the
-estimate.
+Scene video is muted, which is what lets it autoplay. Voice is not, and browsers refuse
+audible playback until the page has been interacted with — so **click the stage window once
+after you open it**. The board will not let you press Start until you have, and says so.
 
-Scene video is muted, which is what lets it autoplay. Voice is not, and browsers
-refuse audible playback until the page has been interacted with — so the display
-shows a **Click to enable sound** button the first time a clip is blocked. Click it
-once when you open the projector window.
+## The client
 
-### The editor
+`npm run editor` starts it. It is a row of tabs: **Start here**, **Characters**, **Nodes**,
+**Scenes**, **Variables**, **Simulate**, **Assets**, **Storyboard**, **scenario.yaml**,
+**Show**, and a command centre listing everything still standing between the project and a
+night.
 
-A separate local tool, deliberately not part of the game server:
+### Start here
 
-```bash
-npm run editor
-```
+The tab for the step everything else assumes. Four boxes and ten steps: describe the
+scenario in your own words, copy a brief into a language model to get a storyboard back,
+tidy the storyboard until you like it, copy a second brief to turn it into a
+`scenario.yaml`, and press a button to make the project folder. The remaining six steps
+walk from there to a live show — declare the voice clips, seed the images, make and publish
+the assets, rehearse, go live — each one linking to the tab that actually does the work.
 
-It opens on `http://localhost:8890` and reads the folders in your workspace straight off
-disk. It is a row of tabs rather than a text editor with a preview beside it —
-**Characters**, **Nodes**, **Variables**, **Simulate**, **Assets**, **Storyboard**,
-**scenario.yaml**, and a command centre that lists everything still standing between the
-project and a show.
+The ticks are yours. The program will not tick one for you: whether a storyboard is *good
+enough* is not a thing it can know. What it *can* see sits on its own line beside each
+step — "no `project.yaml` yet", "14 voice clips declared, 0 made" — read off the same board
+the Assets tab renders, so the two can never disagree.
 
-#### Building the story in the Nodes tab
+### Building the story in the Nodes tab
 
-The Nodes tab is where a scenario is built. Every control writes `scenario.yaml` the moment
-you use it, so there is no save step and nothing to keep in sync.
+Every control writes `scenario.yaml` the moment you use it, so there is no save step and
+nothing to keep in sync.
 
 - **Add a node.** Choose a type in the toolbar and press **Add at end**, or `+` on any node
-  to insert below that one. It arrives valid — a dialogue with a line, a poll with two options and a
-  default, a branch with a condition and an else — and threaded into the beat above and
-  below.
+  to insert below that one. It arrives valid — a dialogue with a line, a poll with two
+  options and a default, a branch with a condition and an else — and threaded into the beat
+  above and below.
 - **Delete a node.** `✕` mends the chain across the hole: whatever led here now leads to
   whatever this led to.
 - **Reorder by dragging.** The grip on a node's header moves it, and the list top to bottom
   is what the room sees first to last. Dragging rewrites the linear `next` pointers around
   the move and **never** touches a poll option or a branch condition — those are deliberate
   jumps somebody authored, and the ones it leaves alone are reported rather than guessed at.
-- **Change what a node is.** The `type` dropdown in a node's editor turns a dialogue into a
-  gate, a pause into a poll, and so on. Fields the new type cannot hold are dropped and the
-  status line says which; fields it insists on are supplied, so the node is valid the moment
-  it lands. One line's words carry across into a gate's or a pause's `text:` and back again.
+- **Change what a node is.** The `type` dropdown turns a dialogue into a gate, a pause into
+  a poll, and so on. Fields the new type cannot hold are dropped and the status line says
+  which; fields it insists on are supplied, so the node is valid the moment it lands. One
+  line's words carry across into a gate's or a pause's `text:` and back again.
 - **Edit every field.** `Edit` opens a form covering everything the schema allows for that
   type, including dialogue lines, poll options and their `set:` writes, and branch
   conditions — each with add and remove.
@@ -351,7 +380,7 @@ hand-wrapped folded scalars survive a drag or a retyped line — the file stays 
 Anything structural is parsed before it is written and refused, with the problems, if the
 result would not load.
 
-#### Checking it before the night
+### Checking it before the night
 
 Two questions worth asking before an event, and the tabs that answer them:
 
@@ -362,67 +391,38 @@ Two questions worth asking before an event, and the tabs that answer them:
   on *no votes* resolves through its `default`, which is the path hardest to rehearse and
   worst to discover live.
 
-The simulator runs the **real engine**, not a model of it — the same `reduce` the server
-uses on the night. Validation happens as you type, and it is the same check the server
-applies at load time, so the editor cannot bless a scenario the server would reject.
+The simulator runs the **real engine**, not a model of it — the same `reduce` the show uses
+on the night. Validation happens as you type, and it is the same check the show applies when
+it loads, so nothing can bless a scenario the show would reject.
 
-It binds to loopback only, and it **works only on projects in a workspace folder you
-choose**. A project is any folder with a `scenario.yaml`; the editor reads and writes
-nothing outside the workspace and has no path of its own into the repo. Point the workspace
-at `scenarios/` and you author the shows this server serves, in place — `.gitignore` keeps
-the editor's own files (`project.yaml`, `.ledger.json`, `generated/`, `voices/`) out of
-version control, so the folder is the show to git and the whole project to the editor. Point
-it somewhere else and nothing you build can disturb a server that may be mid-show, which is
-the safer arrangement while one is actually running.
+### Making the assets
 
-## Configuration
+The **Assets** and **Characters** tabs are the workshop. A part is the unit of work: a
+character's sheet carries their voice, every line they speak, and their portrait, because
+those halves are made weeks apart by different models and used to be joined only by an id
+you carried in your head.
 
-Everything that differs between a container host and a laptop is an environment
-variable, so the same process runs in both places.
+Voice clips are generated here — see
+[docs/voice-generation.md](docs/voice-generation.md) for setting that up. Everything else is
+made in whatever program you like and dropped into the takes folder; the board records what
+you brought in, checks its format, its dimensions and its runtime against what the row asks
+for, plays it back to you, and publishes the take you chose to the name the projector opens.
 
-| Variable | Default | Notes |
-|---|---|---|
-| `PORT` | `8880` | Rare enough to avoid collisions, still on Cloudflare's proxyable HTTP port list |
-| `HOST` | `0.0.0.0` | |
-| `PUBLIC_URL` | derived from the request | Only needed when the audience's address differs from the one the server sees |
-| `ADMIN_PASSWORD` | generated | Gates `/admin` and session creation |
-| `DATA_DIR` | `./data` | SQLite lives here |
-| `SCENARIOS_DIR` | `./scenarios` | |
-| `ROOM_TTL_MINUTES` | `240` | Idle rooms are swept after this |
+Generating never publishes and never steals a selection, so re-rolling a line is free. The
+command centre is the list of what is left, and it is a projection of the board rather than a
+second opinion about it: when it is empty, the show is ready.
 
-Links are derived from the address each request arrives on, so browsing to a LAN IP
-gives LAN links and a Cloudflare-proxied request gives public ones. `PUBLIC_URL` is
-an override for the rare case where those differ.
+## Running a show
 
-## Running it
+Open the **Show** tab and press **Play**. That loads the scenario, takes the project folder's
+lock, and opens the **stage** — a separate window, not a tab, so you can drag it onto the
+projector and put it into fullscreen. **Click it once** so the browser will let it make sound;
+the board will not let you press Start until you have. If it gets lost behind something, the
+**Stage** button brings it back.
 
-Build the client once, then start the server:
-
-```bash
-npm run build
-```
-
-```bash
-npm start
-```
-
-`http://localhost:8880/` is the audience join screen. To run a session, go to
-`/admin` — it asks for the host password, then hands you three links: the display for
-the projector, the host console for your phone, and a code the audience joins with.
-
-`/admin` also lists every session currently running, with its links, so a host console
-lost to a closed tab or a flat battery can be recovered — and lets you restart a session
-from the top or end it outright. If there is no second device to put the console on, the
-display drives the show from its own keyboard; see below.
-
-Set the password with `ADMIN_PASSWORD`. Leave it unset and a readable one is
-generated and printed at startup, so the server is never accidentally left open.
-
-### Running it from the projector
-
-The host console assumes a second device — a phone in your hand, a laptop beside the one
-driving the picture. When there isn't one, the display page takes keystrokes of its own, so
-a presenter can run the whole show from the machine it is already playing on.
+The board carries the beat readout, the phase, and Start / Pause / Resume / Back / Skip /
+Continue, plus Reset behind a confirm. The projector has its own keyboard for the night there
+is no second device:
 
 | Key | What it does |
 |---|---|
@@ -436,45 +436,87 @@ Pressing a key confirms itself in the bottom-left corner for a moment, and **Pau
 there until the show moves again — from the third row a held beat and a stopped one are the
 same picture. Both are deliberately small: this is a screen an audience is looking at.
 
-The display and the host console drive the same room and see the same state, so it is fine
-to use both, or to hand the console to someone else and keep the keyboard.
+Resetting to the top and jumping to a named node are **not** on the keyboard. A reset in
+front of an audience should cost more than one key, and there is nothing on a projector to
+pick a node with.
 
-Two commands are **not** on the keyboard and stay on the console: resetting the show to the
-top, and jumping to a named node. A reset in front of an audience should cost more than one
-key, and there is nothing on a projector to pick a node with.
+### Rehearsing a vote
 
-### Offline fallback
+Two ways to decide a poll, and they are not the same thing.
 
-If a venue's connection is dead, the same server runs on the presenting laptop and
-the audience joins over the room's wifi:
+**Cast** puts imaginary voters in the box and lets the poll close on its own clock. It is
+the only one that proves a poll's `default:`, its tie-break and the reveal beat before an
+audience is the thing testing them. The counts are targets rather than increments, so asking
+for five Left and two Right gives you exactly that, and asking for zero is how you watch a
+`default:` fire.
+
+**Force** ends the vote and declares a winner. It never runs the resolver and never draws a
+truthful bar chart — it is the override for the night a vote goes wrong.
+
+Casting is refused while you are linked to a relay, and the tab says which room is live.
+Otherwise the rehearsal control would stuff a live ballot, which would happen exactly once:
+in front of a room, five minutes after going live having simulated all afternoon.
+
+### Going live
+
+Press **Go live**. The first time, the board asks for the relay's address and a key; after
+that it remembers both and just links. You get a room code, a join URL and a QR on the
+projector's lobby, and the phones start arriving.
+
+You can name the room. Leave the box empty and the relay mints six characters from an
+alphabet with no `O/0`, `I/1`, `S/5` or `Z` in it, because those get read off a projector
+from the back of a room. Type something and you get `ARCTIC-SENTINEL` instead — which is
+worth doing for more than memorability: **if the client crashes, asking for the same name
+with the same key walks you back into the same room**, with the open question and every
+ballot under it intact. A minted code cannot do that, because nothing can ask for it again.
+A different key is refused: a name is written on a wall.
+
+The name is remembered in the project, so the next rehearsal of the same show goes live
+under the same code.
+
+The code can arrive mid-show. Going live is something that happens to a show already on the
+wall, so the lobby grows a QR without anybody reloading the projector — and a show with no
+relay at all is an ordinary state rather than a broken one.
+
+After a live poll, **Save this to the project** writes a dated markdown record of what the
+room decided — counts, shares, and a note where you overrode a vote — into the project's
+`records/` folder. Rehearsals do not get the button: a file per afternoon of imaginary voters
+is a folder of records nobody can cite.
+
+## The relay
 
 ```bash
-npm run local
+npm start
 ```
 
-It prints a QR code in the terminal and picks the LAN address phones are most likely
-to reach — virtual adapters from VPNs, WSL and Docker are ranked out of the way,
-since a QR pointing at one of those is unreachable from the room.
+Runs it locally on 8880 for development. In practice it lives in a container — see
+[DEPLOY.md](DEPLOY.md), which covers the first-run sequence and the offline fallback.
 
-### Deploying
+The short version: bring it up, sign into `/keys` with the console password, generate a key
+with a label saying which machine it is for, and paste it into the client once. A fresh
+relay has no keys and opens no rooms until you do — an empty value must never quietly mean
+the permissive thing.
 
-See [DEPLOY.md](DEPLOY.md).
+Keys are revoked one at a time from the same page. Revoking refuses the *next* room and
+never the running one, so it is safe to do during a show; `/status` lists every live room,
+which key opened it, and has an **End** button for the one a crashed client left holding a
+code.
 
 ## Status
 
-Working end to end: scenario authoring and validation, the story engine, the room
-server, all three client surfaces, live voting with automatic branching, host
-overrides, moderator-held `gate` beats for running a scenario as a presentation,
-keyboard control from the projector itself for presenting off a single screen, the
-password-gated admin console with live session control, recovery from a server restart
-mid-show, the offline fallback, and the scenario editor — its graph inspector, its
-simulator, its asset pipeline, and a Nodes tab that builds and reorders the story
-without opening the YAML. 535 tests, including a run with fifty simultaneous voters
-and a full restart with votes already cast.
+Working end to end: scenario authoring and validation, the story engine, the asset pipeline,
+voice generation, the walkthrough from an idea to a project folder, local playback with a
+projector window and keyboard control, simulated voting, live voting with automatic
+branching through a relay, operator overrides, moderator-held `gate` beats, a written record
+of what the room decided, revocable relay keys with a console to issue and end things from,
+named rooms that survive a client crash, and recovery from a relay restart mid-show. 635
+tests, including the whole product end to end — relay, client, two phone sockets and a real
+tally — a run with fifty simultaneous voters, and a full restart with votes already cast.
 
-Not built yet: creating a poll's first `set:` block still needs the `scenario.yaml`
-tab, and `scenarios/first-contact/` ships without artwork, so its scenes render as
-gradients.
+Not built yet: `scenarios/first-contact/` ships without artwork, so its scenes render as
+gradients. Image and video generation is deliberately absent — those are made in whatever
+program you like and brought in, and the board's job is to check them rather than to own an
+encoder.
 
 ## License
 
