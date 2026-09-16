@@ -16,7 +16,11 @@ export default defineConfig({
       input: {
         // No root index.html: the server routes / to the player app, so the
         // landing page is the audience join screen rather than the admin one.
-        display: web('display', 'index.html'),
+        //
+        // No display either — the projector moved to the client, which is the
+        // whole point of the rebuild, and builds through `client/vite.config.ts`.
+        // What is left here is the audience's page and two consoles that the
+        // relay is about to replace.
         host: web('host', 'index.html'),
         player: web('player', 'index.html'),
         admin: web('admin', 'index.html'),

@@ -101,7 +101,10 @@ export function attachWebSocketServer(server: Server, registry: RoomRegistry): W
           return;
         }
 
-        const room = registry.get(message.room);
+        // A room code is optional in the schema because the client's own
+        // loopback socket has one room and no code. This socket faces an
+        // audience, so here its absence is simply not a room.
+        const room = message.room ? registry.get(message.room) : undefined;
         if (!room || room.closed) {
           fail(socket, 'badRoom', 'No such room.');
           return;

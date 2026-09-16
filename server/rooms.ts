@@ -33,6 +33,9 @@ export class RoomRegistry {
 
     const room = new Room({
       code,
+      // The public server's room key is the code, because a phone joining is
+      // the only reason it exists.
+      joinCode: code,
       hostToken: generateToken(),
       displayToken: generateToken(),
       loaded,
@@ -116,6 +119,7 @@ export class RoomRegistry {
 
       const room = new Room({
         code: row.code,
+        joinCode: row.code,
         hostToken: row.host_token,
         displayToken: row.display_token,
         loaded,

@@ -1,26 +1,50 @@
 /**
- * The projector.
+ * The stage: a window dragged onto the projector.
  *
  * Two things make this more than a dumb renderer:
  *
  * 1. It prefetches every asset before reporting ready, so the show cannot open
  *    on a black screen while a background downloads.
- * 2. It holds the whole scenario and runs the same pure engine the server does.
- *    While the socket is up the server drives every transition; if the socket
- *    drops, the display keeps playing locally instead of freezing, and snaps
- *    back to the server's position the moment it reconnects.
+ * 2. It holds the whole scenario and runs the same pure engine the clock does.
+ *    While the socket is up the clock drives every transition; if the socket
+ *    drops, the stage keeps playing locally instead of freezing, and snaps
+ *    back the moment it reconnects.
+ *
+ * That second half used to be insurance against venue wifi. It still is, but
+ * it now earns its keep every night: the clock is a Node process on this same
+ * machine, and the *stage* is the tab a compositor is entitled to throttle.
+ * This window spends a whole show occluded behind the board window on another
+ * display, where Chrome clamps timers to a second and may suspend them — so
+ * keeping the authoritative clock outside the browser is what stops a beat
+ * held for 4.2 seconds lasting however long the compositor felt like.
+ *
+ * There is no token on this window's URL and there is no room code in it. Both
+ * existed because the server was public and this page was one of three
+ * surfaces a stranger could have guessed at. It is now a window opened by the
+ * process it talks to, over loopback, and there is exactly one show running:
+ * a token here would have proved only that the holder could reach a port on
+ * their own machine.
  */
 
 import QRCode from 'qrcode';
-import { Connection, queryParam } from '../lib/connection.ts';
+import { Connection } from '../lib/connection.ts';
 import { pooled } from '../lib/pool.ts';
 import { fetchAsset } from '../lib/fetch-asset.ts';
 import type { DisplayLoading, HostCommand, Snapshot, SnapshotBeat } from '../../../shared/show/protocol.ts';
 import { type Scenario } from '../../../shared/scenario/schema.ts';
 import { beatOf, initialState, reduce, activeScene, type RunState } from '../../../shared/engine/engine.ts';
 
-const room = queryParam('room')?.toUpperCase();
-const token = queryParam('token');
+/**
+ * The code phones join at, and the address they reach it on.
+ *
+ * Both arrive in the snapshot rather than in this window's URL, and both are
+ * routinely absent — a show with no relay behind it has nothing to join. They
+ * are `let` rather than `const` because linking to a relay happens *during* a
+ * show: the operator presses Go Live while the lobby is already on the wall,
+ * and the code has to appear there without anybody reloading the projector.
+ */
+let room: string | undefined;
+let joinUrl: string | undefined;
 
 const el = <T extends Element = HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -170,10 +194,6 @@ function reportProgress(force = false): void {
 
 async function loadScenario(): Promise<void> {
   const state = el('asset-state');
-  if (!room || !token) {
-    state.textContent = 'Missing room or token in the URL.';
-    return;
-  }
 
   // Said out loud because it is a real step with a real wait behind it: the
   // whole story, every branch, over the same link the artwork is about to come
@@ -181,11 +201,9 @@ async function loadScenario(): Promise<void> {
   // with nothing to say how much of that was even reachable yet.
   state.textContent = 'Fetching the story…';
 
-  const response = await fetch(
-    `/api/rooms/${encodeURIComponent(room)}/scenario?token=${encodeURIComponent(token)}`,
-  ).catch(() => undefined);
+  const response = await fetch('/api/show/scenario').catch(() => undefined);
   if (!response) {
-    state.textContent = 'Could not reach the server. Retrying when the connection returns.';
+    state.textContent = 'Could not reach the show. Retrying when the connection returns.';
     return;
   }
   if (!response.ok) {
@@ -848,6 +866,14 @@ function onSnapshot(snapshot: Snapshot): void {
   el('lobby-title').textContent = snapshot.scenario.title;
   el('lobby-sub').textContent = snapshot.scenario.description ?? '';
 
+  // The code can arrive mid-show, because going live is something that happens
+  // to a show already on the wall rather than a decision made before it starts.
+  if (snapshot.room !== room || snapshot.joinUrl !== joinUrl) {
+    room = snapshot.room;
+    joinUrl = snapshot.joinUrl;
+    void renderJoinInfo();
+  }
+
   latest = snapshot;
   // Ahead of the same-beat guard below, deliberately. Pausing does not move
   // the beat number, so a pause arrives as a snapshot for the beat already on
@@ -1139,8 +1165,9 @@ const connection = new Connection({
   hello: () => ({
     type: 'hello',
     role: 'display',
-    room: room ?? '',
-    token,
+    // No room and no token: there is one show in the process on the other end
+    // of this socket, and naming it would be naming it to itself.
+    //
     // Omitted until we have actually rendered something; -1 is not a beat.
     ...(lastRenderedBeat >= 0 ? { beat: lastRenderedBeat } : {}),
   }),
@@ -1169,9 +1196,32 @@ const connection = new Connection({
   },
 });
 
+/**
+ * Draws the join code, or says plainly that there is not one.
+ *
+ * The QR is redrawn only when the address actually changes: the alternative is
+ * re-encoding a 600px bitmap several times a second while a poll's tally
+ * streams in, on the machine that is also running the show's clock.
+ */
+let drawnFor: string | undefined;
+
 async function renderJoinInfo(): Promise<void> {
+  const linked = room !== undefined;
+  el('lobby-join').hidden = !linked;
+  el('poll-join').hidden = !linked;
+  el('lobby-unlinked').hidden = linked;
   if (!room) return;
-  const url = `${location.origin}/join/${room}`;
+
+  el('lobby-code').textContent = room;
+  el('poll-code').textContent = room;
+
+  // The relay's own address, because the relay is the thing facing the
+  // audience. Falling back to this window's origin is for the case where the
+  // two are the same machine, which is what the offline fallback is.
+  const url = joinUrl ?? `${location.origin}/join/${room}`;
+  if (drawnFor === url) return;
+  drawnFor = url;
+
   const dataUrl = await QRCode.toDataURL(url, {
     margin: 0,
     width: 600,
@@ -1182,8 +1232,6 @@ async function renderJoinInfo(): Promise<void> {
   el<HTMLImageElement>('poll-qr').src = dataUrl;
   el('lobby-url').textContent = url.replace(/^https?:\/\//, '');
   el('poll-url').textContent = url.replace(/^https?:\/\//, '');
-  el('lobby-code').textContent = room;
-  el('poll-code').textContent = room;
 }
 
 void renderJoinInfo();

@@ -28,6 +28,7 @@ import {
 import { initPicker, openPicker } from './picker.js';
 import { initNodes, initNodesBar, renderNodes, describeWork } from './nodes.js';
 import { initScenes, renderScenes } from './scenes.js';
+import { initShow, refreshShow } from './show.js';
 
 const state = {
   /** The open project. Null means nothing is open and Save has no target. */
@@ -796,6 +797,13 @@ async function boot() {
 
   initNodesBar();
 
+  initShow({
+    // Read at click time rather than captured, because the project changes
+    // under this control all day and a stale name would run the wrong show.
+    getProject: () => state.projectName,
+    onStatus: (kind, text) => setStatus(kind === 'error' ? 'bad' : kind, text),
+  });
+
   initAssets({
     onStatus: (kind, text) => setStatus(kind, text),
     // So a section that has given its rows away can hand somebody to where
@@ -818,6 +826,7 @@ async function boot() {
       // person who pressed the button. Opening a project *is* a move, and the
       // first thing anybody wants to see is the cast.
       if (tab !== null) showTab(tab);
+      void refreshShow();
       return analyze();
     },
     onStoryboard: (source, path) => {

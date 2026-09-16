@@ -1,18 +1,26 @@
 /**
- * The scenario editor's local server.
+ * The client: one program that authors a show and then presents it.
  *
- * Deliberately not part of the game server, and deliberately unable to reach
- * it. Authoring happens at a desk over weeks; the game server runs in front of
- * an audience. This process writes only inside the author's chosen workspace —
- * it cannot read or write `scenarios/`, and there is no route that would let
- * it. Deploying is a person copying a finished folder across, on purpose,
- * when they mean to.
+ * These were two processes that could not reach each other, and the boundary
+ * was load-bearing — an editor able to write into the folder a live show is
+ * served from will eventually do it by accident, in front of a room. What it
+ * cost was everything that needed both halves at once: a show could not be
+ * rehearsed without standing up a server and creating a room, the projector's
+ * asset server and the editor's media server were two implementations of one
+ * fact, and nothing at the desk could tell you anything about a running show.
  *
- * That is a hard boundary rather than a convention: an editor that can write
- * into the folder a live show is being served from will eventually do it by
- * accident, and the failure lands in front of a room.
+ * So the boundary moves rather than disappearing. The rule that was doing the
+ * real work is the one CLAUDE.md always stated —
  *
- * It binds to loopback only. It writes files and has no authentication.
+ *   do not author into a folder a show is being served from right now
+ *
+ * — and one program knowing both facts is what finally makes it enforceable
+ * instead of advisory. `assertNotShowing` in `show/session.ts` is that
+ * enforcement, and the destructive project routes below go through it.
+ *
+ * It binds to loopback only. It writes files and has no authentication, and
+ * now it also runs a show, which is one more reason it has no business being
+ * reachable from anywhere but the machine it runs on.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -73,6 +81,16 @@ import {
   migrateProjectRecipes,
 } from './projects.ts';
 import { SCENE_FIELDS, type SceneField } from './scenes.ts';
+import { showAsset, showManifest } from './show/assets.ts';
+import {
+  assertNotShowing,
+  currentShow,
+  showStatus,
+  shutdownShow,
+  startShow,
+  stopShow,
+} from './show/session.ts';
+import { attachShowSocket, type ShowSocket } from './show/ws.ts';
 import {
   browse,
   loadConfig,
@@ -86,6 +104,17 @@ import {
 
 const PUBLIC_DIR = join(import.meta.dirname, '..', 'web', 'board');
 
+/**
+ * The projector, built.
+ *
+ * The board is ten thousand lines of vanilla ES modules served raw, so an edit
+ * is one reload away. The stage cannot be: it imports the production engine
+ * and runs the same `reduce` this process does, which is what makes it a
+ * fallback when the socket drops rather than a renderer that freezes. That
+ * needs TypeScript, so it needs a bundler, so it has a dist folder.
+ */
+const STAGE_DIR = join(import.meta.dirname, '..', 'web', 'stage', 'dist');
+
 // Rare on purpose, and not the game server's 8880 — both can run at once.
 const PORT = Number(process.env.EDITOR_PORT ?? 8890);
 
@@ -93,6 +122,9 @@ const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
 };
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -202,15 +234,162 @@ async function serveStatic(pathname: string, response: ServerResponse): Promise<
   }
 }
 
-const server = createServer((request, response) => {
-  void handle(request, response).catch((error: unknown) => {
-    sendJson(response, 500, { error: (error as Error).message });
+/**
+ * Serves the stage bundle.
+ *
+ * A second branch rather than a relaxation of `serveStatic`'s allow-list,
+ * which is deliberate. That list is a set of flat filenames because the board
+ * is a set of flat filenames; Vite emits `assets/main-B7pK2x9f.js`, so
+ * widening the first check to admit a slash would quietly widen the board's
+ * too. Two narrow rules that each describe one folder, not one loose rule
+ * covering both.
+ */
+async function serveStage(pathname: string, response: ServerResponse): Promise<void> {
+  const rest = pathname.slice('/stage/'.length);
+  let file: string;
+
+  if (rest === '' || rest === 'index.html') {
+    file = join(STAGE_DIR, 'index.html');
+  } else {
+    const match = /^assets\/([A-Za-z0-9._-]+)$/.exec(rest);
+    if (!match || match[1]!.includes('..')) {
+      return sendJson(response, 404, { error: 'Not found' });
+    }
+    file = join(STAGE_DIR, 'assets', match[1]!);
+  }
+
+  try {
+    const body = await readFile(file);
+    response.writeHead(200, {
+      'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+      // Hashed filenames could be cached forever, but the operator reloads this
+      // window to recover from things and a stale projector is the one cache
+      // nobody can debug from the back of a room.
+      'cache-control': 'no-store',
+    });
+    response.end(body);
+  } catch {
+    if (rest === '' || rest === 'index.html') {
+      // Said in the window that was opened to show a projector, because that
+      // is where somebody is looking when it does not appear.
+      response.writeHead(200, { 'content-type': MIME['.html']! });
+      response.end(
+        '<!doctype html><meta charset="utf-8"><title>Stage not built</title>' +
+          '<body style="font:16px system-ui;background:#0b0d12;color:#e8ecf4;padding:3rem">' +
+          '<h1>The stage has not been built</h1>' +
+          '<p>Run <code>npm run build:stage</code> and reload this window.</p>',
+      );
+      return;
+    }
+    sendJson(response, 404, { error: 'Not found' });
+  }
+}
+
+/**
+ * The show's sockets, so ending a show can drop them.
+ *
+ * Module-level rather than passed around: there is one process, one show and
+ * one socket server, and threading a handle through forty route branches to
+ * reach the one that stops a show would be ceremony about a singleton.
+ */
+let showSocket: ShowSocket | undefined;
+
+/**
+ * Builds the server without listening.
+ *
+ * Split out so the tests can put it on an ephemeral port. They drive the real
+ * routes over a real socket, which is the discipline the server tests kept and
+ * the reason those caught what they caught.
+ */
+export async function buildEditorServer() {
+  await loadConfig();
+
+  const server = createServer((request, response) => {
+    void handle(request, response).catch((error: unknown) => {
+      sendJson(response, 500, { error: (error as Error).message });
+    });
   });
-});
+
+  showSocket = attachShowSocket(server);
+  return server;
+}
 
 async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? '/', `http://localhost:${PORT}`);
   const path = url.pathname;
+
+  // --- the show -----------------------------------------------------------
+  //
+  // First in the chain because the projector's prefetch comes through here a
+  // few hundred times in the seconds after a show starts, and every one of
+  // those would otherwise walk the whole router looking for itself.
+
+  if (path.startsWith('/project-assets/')) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return sendJson(response, 405, { error: 'Not allowed' });
+    }
+    try {
+      const asset = await showAsset(decodeURIComponent(path.slice('/project-assets/'.length)));
+      return sendFile(request, response, asset.path, asset.type);
+    } catch (err) {
+      // 404 rather than 400 even for a malformed name: this is the display's
+      // hot path, and every failure here already reaches the operator as a
+      // number on the readiness report. A distinction nobody reads is a
+      // distinction that costs a branch.
+      return sendJson(response, 404, { error: (err as Error).message });
+    }
+  }
+
+  if (path === '/api/show' && request.method === 'GET') {
+    return sendJson(response, 200, showStatus());
+  }
+
+  if (path === '/api/show/scenario' && request.method === 'GET') {
+    // Ungated, unlike the server's version of this, and the difference is the
+    // whole rebuild in one line: that endpoint needed a token because it
+    // carries every branch and ending and an audience member with the network
+    // tab open could have read the story ahead. There is no audience on
+    // loopback. The only reader is the window this process opened.
+    try {
+      return sendJson(response, 200, await showManifest());
+    } catch (err) {
+      return sendJson(response, 409, { error: (err as Error).message });
+    }
+  }
+
+  if (path === '/api/show/start' && request.method === 'POST') {
+    const body = (await readBody(request)) as { project?: unknown };
+    if (typeof body.project !== 'string') {
+      return sendJson(response, 400, { error: 'Expected { project }' });
+    }
+    try {
+      return sendJson(response, 200, await startShow(body.project));
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  if (path === '/api/show/stop' && request.method === 'POST') {
+    const was = currentShow()?.project;
+    const stopped = stopShow();
+    // Every surface goes, so the stage window's own reconnect brings it back
+    // against whatever runs next rather than sitting on the last frame of
+    // something that has ended.
+    if (stopped) showSocket?.dropAll();
+    return sendJson(response, 200, { stopped, ...(was ? { project: was } : {}), ...showStatus() });
+  }
+
+  if (path === '/stage' && request.method === 'GET') {
+    // The bundle's own asset URLs are relative, so a stage served without the
+    // trailing slash asks for /assets/… at the root and gets four 404s and a
+    // blank projector.
+    response.writeHead(302, { location: '/stage/' });
+    return void response.end();
+  }
+
+  if (path.startsWith('/stage/') && request.method === 'GET') {
+    return serveStage(path, response);
+  }
 
   // --- projects -----------------------------------------------------------
   //
@@ -332,6 +511,31 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   if (projectMatch) {
     const name = decodeURIComponent(projectMatch[1]!);
     const action = projectMatch[2];
+
+    // One place rather than six call sites, because the cost of forgetting one
+    // is a 404 on the projector halfway through an act. What is on the list is
+    // everything that moves, overwrites or deletes bytes the display will ask
+    // for by name while the show is running — the scenario itself is on it
+    // because saving one re-derives recipes and can rename a published file.
+    // Editing a prompt is not, and must not be: a show holds the scenario it
+    // was started with in memory, so authoring the next draft while the
+    // current one is on the wall is exactly the thing having one program makes
+    // safe.
+    const DESTRUCTIVE: Record<string, string> = {
+      publish: 'publishing',
+      folders: 'filing assets into folders',
+      extensions: 'renaming a file to match its format',
+      discard: 'discarding strays',
+      'delete-take': 'deleting a take',
+      scenario: 'saving the scenario',
+    };
+    if (action && action in DESTRUCTIVE && request.method !== 'GET') {
+      try {
+        assertNotShowing(name, DESTRUCTIVE[action]!);
+      } catch (err) {
+        return sendJson(response, 409, { error: (err as Error).message });
+      }
+    }
 
     try {
       if (!action && request.method === 'GET') {
@@ -859,22 +1063,37 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   sendJson(response, 404, { error: 'Not found' });
 }
 
-// Loopback only. This process writes files and has no authentication; it has no
-// business being reachable from anywhere but the machine it runs on.
-await loadConfig();
+// Loopback only. This process writes files, runs a show and has no
+// authentication; it has no business being reachable from anywhere but the
+// machine it runs on.
+async function main(): Promise<void> {
+  const server = await buildEditorServer();
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  Scenario editor   http://localhost:${PORT}`);
-  console.log(`  Workspace         ${workspace() ?? '(none chosen yet — pick one in the editor)'}`);
-  console.log('');
-});
-
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    // Before the server, because a model process outliving the editor holds
-    // the GPU with nothing left able to reach it — and the only cure anyone
-    // finds for that is a reboot.
-    stopAllSidecars();
-    server.close(() => process.exit(0));
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`\n  Interactive Scenario   http://localhost:${PORT}`);
+    console.log(
+      `  Workspace              ${workspace() ?? '(none chosen yet — pick one in the app)'}`,
+    );
+    console.log('');
   });
+
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      // Before the server, because a model process outliving this one holds
+      // the GPU with nothing left able to reach it — and the only cure anyone
+      // finds for that is a reboot.
+      stopAllSidecars();
+      // Shutdown rather than close: the process is stopping, and telling the
+      // stage window the show ended would be a claim about the show rather
+      // than about the machine. What happens next is somebody's own terminal.
+      shutdownShow();
+      server.close(() => process.exit(0));
+    });
+  }
+}
+
+// Only when run directly, so the tests can build a server without one of these
+// binding 8890 out from under the app the author already has open.
+if (process.argv[1] && import.meta.filename === process.argv[1]) {
+  await main();
 }

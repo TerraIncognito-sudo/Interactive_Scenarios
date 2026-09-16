@@ -26,7 +26,42 @@ import type {
   PlayerState,
 } from '../shared/show/protocol.ts';
 import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from '../shared/show/protocol.ts';
-import type { Store } from './db.ts';
+/**
+ * What a Room needs from storage, and nothing else.
+ *
+ * Named as an interface rather than taken as the SQLite `Store` because the
+ * same Room now runs in two places with two different reasons to persist. On
+ * the public server the answer is a file, because a container restart must not
+ * end a live show. In the operator's own process the show *is* the process —
+ * it dies with the window that opened it — so a database would be a file left
+ * behind on somebody's disk recording which way a rehearsal branched.
+ *
+ * Deliberately six methods wide. Anything Room could reach for beyond this is
+ * something one of the two stores would have to answer dishonestly.
+ */
+export type RoomStore = {
+  saveState(code: string, stateJson: string, now: number): void;
+  appendEvent(room: string, kind: string, payload: unknown, at: number): void;
+  recordVote(vote: {
+    room: string;
+    node_id: string;
+    device_id: string;
+    option_key: string;
+    at: number;
+  }): void;
+  recordPollResult(
+    room: string,
+    nodeId: string,
+    winner: string,
+    counts: Record<string, number>,
+    total: number,
+    usedDefault: boolean,
+    at: number,
+  ): void;
+  /** Votes already cast for a poll, so reopening after a restart is lossless. */
+  votesFor(room: string, nodeId: string): { device_id: string; option_key: string; at: number }[];
+  closeRoom(code: string, now: number): void;
+};
 
 export function generateRoomCode(): string {
   const bytes = randomBytes(ROOM_CODE_LENGTH);
@@ -51,7 +86,32 @@ export type Subscriber = {
 };
 
 export class Room {
+  /**
+   * This room's own key — for the store, the registry and the log.
+   *
+   * Not the same thing as the code a phone types, and the two have come apart
+   * now that a show can run with no phones at all. See `joinCode`.
+   */
   readonly code: string;
+  /**
+   * The code the audience joins at, while there is one.
+   *
+   * Undefined is the ordinary state for a show running on the operator's own
+   * machine: there is no relay behind it, so there is nothing for anybody to
+   * join, and the lobby says so. Inventing a code to fill the gap would put
+   * six characters on a projector that no phone in the room can use.
+   */
+  joinCode: string | undefined;
+  /**
+   * The address that code is reachable at, when somebody has told us.
+   *
+   * Set by the link once a relay has opened a room, because only the relay
+   * knows what a phone has to type: it is the thing facing the audience, and
+   * its join links follow the request that reached it. Left unset by the
+   * public server, whose own display is being served from that same address
+   * and can build the URL itself.
+   */
+  joinUrl: string | undefined;
   readonly hostToken: string;
   readonly displayToken: string;
   readonly loaded: LoadedScenario;
@@ -85,18 +145,22 @@ export class Room {
   /** Milliseconds left when the show was paused. */
   private pausedRemaining = 0;
   private readonly subscribers = new Set<Subscriber>();
-  private readonly store: Store;
+  private readonly store: RoomStore;
 
   constructor(options: {
     code: string;
+    /** Omitted by a local show; the public server passes its own room code. */
+    joinCode?: string;
     hostToken: string;
     displayToken: string;
     loaded: LoadedScenario;
-    store: Store;
+    store: RoomStore;
     now: number;
     state?: RunState;
   }) {
     this.code = options.code;
+    this.joinCode = options.joinCode;
+    this.joinUrl = undefined;
     this.hostToken = options.hostToken;
     this.displayToken = options.displayToken;
     this.loaded = options.loaded;
@@ -240,7 +304,11 @@ export class Room {
 
     return {
       type: 'snapshot',
-      room: this.code,
+      // The join code rather than the room key, and absent when there is none.
+      // A surface that showed the key would be showing the operator something
+      // no phone can be told.
+      ...(this.joinCode !== undefined ? { room: this.joinCode } : {}),
+      ...(this.joinUrl !== undefined ? { joinUrl: this.joinUrl } : {}),
       phase: this.phase,
       beat: this.state.beat,
       scenario: {

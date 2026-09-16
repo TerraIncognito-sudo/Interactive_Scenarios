@@ -20,8 +20,8 @@ import { join } from 'node:path';
 import { DISPLAY_COMMANDS, HostCommandSchema, isDisplayCommand } from '../shared/show/protocol.ts';
 
 const root = join(import.meta.dirname, '..');
-const display = readFileSync(join(root, 'server', 'web', 'display', 'main.ts'), 'utf8');
-const markup = readFileSync(join(root, 'server', 'web', 'display', 'index.html'), 'utf8');
+const display = readFileSync(join(root, 'client', 'web', 'stage', 'main.ts'), 'utf8');
+const markup = readFileSync(join(root, 'client', 'web', 'stage', 'index.html'), 'utf8');
 const ws = readFileSync(join(root, 'server', 'ws.ts'), 'utf8');
 
 /** Every command name the schema actually has, taken from the schema itself. */

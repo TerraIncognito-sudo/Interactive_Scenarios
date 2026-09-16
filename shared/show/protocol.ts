@@ -32,7 +32,17 @@ export const RoomCodeSchema = z
 export const HelloSchema = z.object({
   type: z.literal('hello'),
   role: z.enum(ROLES),
-  room: RoomCodeSchema,
+  /**
+   * Which room to join. Optional, because the client's own loopback socket has
+   * exactly one room and no code for it until somebody links to a relay — and
+   * a surface that had to invent a code to connect to a show running on the
+   * same machine would be inventing it for nobody.
+   *
+   * A socket that faces an audience still requires one, and refuses the
+   * connection when it is absent; that check is the public server's, not this
+   * schema's, because the two sockets have different answers.
+   */
+  room: RoomCodeSchema.optional(),
   /** Required for host and display; ignored for players. */
   token: z.string().max(128).optional(),
   /** Opaque per-device id used only to dedupe votes. Players only. */
@@ -224,7 +234,23 @@ export type SnapshotBeat =
  */
 export type Snapshot = {
   type: 'snapshot';
-  room: string;
+  /**
+   * The code phones join at, once there is one.
+   *
+   * Absent is the ordinary state now, not a failure: a show runs start to
+   * finish on the operator's machine with no relay behind it, and the lobby
+   * has to say so deliberately rather than showing a blank where a code goes.
+   */
+  room?: string;
+  /**
+   * The full address a phone opens, when there is one.
+   *
+   * Sent rather than assembled by the projector, because the projector is on
+   * the operator's machine and the room is on a relay somewhere else — a stage
+   * that built this out of its own `location.origin` would put a loopback
+   * address on a wall and ask forty people to type it in.
+   */
+  joinUrl?: string;
   phase: 'lobby' | 'running' | 'paused' | 'finished';
   /** Monotonic. A higher beat from the server always wins over local playback. */
   beat: number;

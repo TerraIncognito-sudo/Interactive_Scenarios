@@ -137,6 +137,28 @@ select {
   display: none;
 }
 
+/* A show on a projector, said in the header rather than on a tab: it is the
+   one fact that changes what every other control is allowed to do. */
+.show-state {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(94, 201, 138, 0.4);
+  color: var(--good);
+  white-space: nowrap;
+}
+
+/* Linked to a relay is a different thing from running locally, and the
+   difference matters most at exactly the moment nobody has time to read. */
+.show-state[data-linked='yes'] {
+  border-color: rgba(255, 138, 101, 0.5);
+  color: var(--accent-warm);
+}
+
+.show-state[hidden] {
+  display: none;
+}
+
 /* ------------------------------------------------------------------ pane -- */
 
 /* One pane fills the window. There is no second column any more: the source

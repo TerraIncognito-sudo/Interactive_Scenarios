@@ -184,7 +184,7 @@ function render(snapshot: Snapshot): void {
   latest = snapshot;
 
   el('show-title').textContent = snapshot.scenario.title;
-  el('room-code').textContent = snapshot.room;
+  el('room-code').textContent = snapshot.room ?? '';
 
   const phase = el('stat-phase');
   phase.textContent = snapshot.phase;

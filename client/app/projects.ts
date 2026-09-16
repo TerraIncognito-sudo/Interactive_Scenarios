@@ -296,6 +296,26 @@ export async function listProjects(): Promise<
   return found;
 }
 
+/**
+ * Just the paths, for a caller that has no business building the whole board.
+ *
+ * `openProject` walks every take on disk and reconciles it against the ledger,
+ * which is right for the thing that renders the board and absurd for the thing
+ * that wants to know where `scenario.yaml` is. Starting a show asks that
+ * question, and so does serving one asset out of the publish folder on every
+ * frame of a prefetch.
+ *
+ * Falls back to the defaults for a folder with no `project.yaml`, exactly as
+ * `resolveMedia` does — a scenario that has never been near the asset pipeline
+ * is still a scenario somebody can present.
+ */
+export async function projectPaths(name: string): Promise<ProjectPaths> {
+  const dir = projectDir(name);
+  const file = join(dir, 'project.yaml');
+  const project = await loadProject(file).catch(() => defaultProject(name, dir));
+  return pathsOf(file, project);
+}
+
 export async function openProject(name: string): Promise<OpenProject> {
   const dir = projectDir(name);
   const projectFile = join(dir, 'project.yaml');
@@ -1411,7 +1431,7 @@ export async function discardStrays(name: string, files?: string[]): Promise<Dis
  * a folder picker becomes a way to read the author's whole disk one file at a
  * time.
  */
-const MEDIA_TYPES: Record<string, string> = {
+export const MEDIA_TYPES: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',

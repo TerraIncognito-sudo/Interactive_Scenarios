@@ -11,9 +11,10 @@
       <span class="brand">Scenario editor</span>
 
       <!--
-        Projects only. The editor cannot reach the repo's scenarios/ folder —
-        that belongs to the live server, and this tool is not allowed to touch
-        a show that might be running.
+        Every folder in the workspace that has a scenario.yaml. This used to
+        say the editor could not reach the folder a show runs from; one program
+        does both jobs now, so what stops an edit landing under a live
+        projector is the show holding its own folder — see show/session.ts.
       -->
       <select id="picker" aria-label="Project"></select>
       <button id="change-workspace" type="button" class="ghost" title="Choose the folder your projects live in">
@@ -23,6 +24,20 @@
       <span class="status" id="status">…</span>
 
       <span class="spacer"></span>
+
+      <!--
+        Not a tab. Starting a show is something you do to whatever is open,
+        from wherever you happen to be, so it lives beside Save rather than
+        behind one more click.
+      -->
+      <span class="show-state" id="show-state" hidden></span>
+      <button id="show-stage" type="button" class="ghost" title="Bring the projector window forward" hidden>
+        Stage
+      </button>
+      <button id="show-stop" type="button" class="ghost" hidden>Stop show</button>
+      <button id="show-play" type="button" class="ghost" title="Run this project on a projector">
+        Play
+      </button>
 
       <span class="dirty" id="dirty" hidden>unsaved</span>
       <button id="revert" type="button" class="ghost">Revert</button>

@@ -1529,30 +1529,27 @@ describe('the voice of a line with no nameplate', () => {
   });
 });
 
-describe('the editor cannot reach the live server', () => {
-  /**
-   * The editor used to serve `/api/scenarios`, including a PUT that wrote
-   * straight into the repo's `scenarios/` folder — the one the game server
-   * reads, possibly mid-show. Authoring and running are weeks apart and must
-   * not share a filesystem path.
-   *
-   * Read as a file rather than started as a server, because the point is that
-   * the capability is absent from the source, not merely unreachable today.
-   */
-  const source = readFileSync(join(import.meta.dirname, '..', 'client', 'app', 'server.ts'), 'utf8');
-
-  test('serves no route into the scenarios folder', () => {
-    assert.doesNotMatch(source, /['"`]\/api\/scenarios/);
-    assert.doesNotMatch(source, /SCENARIOS_DIR/);
-  });
-
-  test('never writes a file outside the workspace', () => {
-    // Every write the editor performs goes through projects.ts, which resolves
-    // paths under the chosen workspace and refuses anything outside it.
-    assert.doesNotMatch(source, /\bwriteFile\b/);
-    assert.doesNotMatch(source, /\brename\b/);
-  });
-});
+/**
+ * `describe('the editor cannot reach the live server')` was here.
+ *
+ * It read this file as text and asserted that the capability was absent from
+ * the source — no route into `scenarios/`, no `writeFile`, no `rename` — and
+ * it was right to, for as long as the editor and the game server were two
+ * programs that could not see each other. They are one program now, and the
+ * capability is not absent: it is the point. A show is started from the same
+ * process that authors it.
+ *
+ * What the boundary was actually protecting is stated in CLAUDE.md and has
+ * not changed:
+ *
+ *   do not author into a folder a show is being served from right now
+ *
+ * That used to be advice, enforced by ignorance. It is now a refusal, because
+ * one program knows both facts — see `a show holds its own folder` in
+ * `tests/show.test.ts`, which is this test's replacement and covers the case
+ * this one only ever made unlikely: not "could the editor reach a live show"
+ * but "is it reaching *this* one, right now".
+ */
 
 describe('a shot that carries its own still', () => {
   test('takes its prompt from its own shot, not the establishing one', () => {

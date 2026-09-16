@@ -28,7 +28,7 @@ import {
 import { beatOf, initialState, reduce } from '../shared/engine/engine.ts';
 
 const display = readFileSync(
-  join(import.meta.dirname, '..', 'server', 'web', 'display', 'main.ts'),
+  join(import.meta.dirname, '..', 'client', 'web', 'stage', 'main.ts'),
   'utf8',
 );
 

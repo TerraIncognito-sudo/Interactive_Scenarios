@@ -72,7 +72,7 @@ test('the lobby is painted from both directions, not just the beat', () => {
   // correct it. Painting only from the beat gave a black lobby on every
   // projector that connected before its download finished, which is all of them.
   const source = readFileSync(
-    join(import.meta.dirname, '..', 'server', 'web', 'display', 'main.ts'),
+    join(import.meta.dirname, '..', 'client', 'web', 'stage', 'main.ts'),
     'utf8',
   );
   const calls = source.match(/paintLobby\(\)/g) ?? [];
@@ -91,7 +91,7 @@ test('the display paints the lobby scene rather than only showing the panel', ()
   // feature silently doing nothing — a `lobby:` the schema accepts, the board
   // tracks, and the projector never looks at.
   const source = readFileSync(
-    join(import.meta.dirname, '..', 'server', 'web', 'display', 'main.ts'),
+    join(import.meta.dirname, '..', 'client', 'web', 'stage', 'main.ts'),
     'utf8',
   );
   const idle = source.slice(source.indexOf("case 'idle':"));
@@ -109,7 +109,7 @@ test('the join block carries its own ground, so a bright lobby clip cannot hide 
   // it and throws away the picture that made anyone want a lobby scene, so the
   // ground belongs to this block alone.
   const css = readFileSync(
-    join(import.meta.dirname, '..', 'server', 'web', 'display', 'display.css'),
+    join(import.meta.dirname, '..', 'client', 'web', 'stage', 'display.css'),
     'utf8',
   );
   const block = css.slice(css.indexOf('.join-block {'));
