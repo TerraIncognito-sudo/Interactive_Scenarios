@@ -377,6 +377,99 @@ function pollPanel(snapshot) {
   );
 }
 
+/**
+ * Why a decision was not simply the most votes winning.
+ *
+ * A short tag rather than the sentence `record.ts` writes, and the difference
+ * is the register: this is a line in a list somebody scans during a show, that
+ * is a page somebody reads afterwards. Both exist because a forced branch and
+ * a landslide are indistinguishable in a table of counts.
+ */
+function decisionTag(poll) {
+  if (poll.forced) return 'decided by you, not by the vote';
+  if (poll.usedDefault) return 'nobody voted \u2014 the default was used';
+  if (poll.usedTiebreak) return 'tied \u2014 broken by the poll\u2019s rule';
+  return null;
+}
+
+/**
+ * Every poll this show has decided, oldest first.
+ *
+ * Off the snapshot rather than accumulated here, which is the same rule the
+ * tally follows: a board that built this out of the messages it happened to
+ * see would show a different history depending on when its window was opened,
+ * and the window opened halfway through a show is exactly the one somebody
+ * opens to find out what has happened so far.
+ */
+function recordPanel(snapshot) {
+  const polls = snapshot.polls;
+  if (!polls || polls.length === 0) return null;
+  const live = polls.some((poll) => poll.room !== undefined);
+
+  return h(
+    'section',
+    { class: 'show-block' },
+    h(
+      'div',
+      { class: 'show-block-head' },
+      h('p', { class: 'eyebrow' }, 'Decided so far'),
+      h('span', { class: 'show-note' }, `${polls.length} poll${polls.length === 1 ? '' : 's'}`),
+    ),
+    h(
+      'ol',
+      { class: 'record' },
+      polls.map((poll) => {
+        const tag = decisionTag(poll);
+        return h(
+          'li',
+          { class: 'record-row' },
+          h('p', { class: 'record-q' }, poll.question),
+          h(
+            'p',
+            { class: 'record-a' },
+            h('strong', {}, poll.winnerLabel),
+            ` \u00b7 ${poll.total} vote${poll.total === 1 ? '' : 's'}`,
+            // Which evidence this is. Simulated ballots and forty phones are
+            // not the same thing, and a row that did not say so would be a
+            // rehearsal quoted afterwards as a result.
+            poll.room !== undefined ? ` \u00b7 room ${poll.room}` : ' \u00b7 rehearsal',
+          ),
+          h(
+            'p',
+            { class: 'record-counts' },
+            poll.options
+              .map((option) => `${option.label} ${poll.counts[option.key] ?? 0}`)
+              .join('   \u00b7   '),
+          ),
+          tag && h('p', { class: 'record-tag' }, tag),
+        );
+      }),
+    ),
+    live
+      ? h(
+          'button',
+          {
+            type: 'button',
+            onclick: async () => {
+              try {
+                const written = await api('/api/show/record', { method: 'POST' });
+                state.onStatus('ok', `Saved to ${written.file}`);
+              } catch (err) {
+                state.onStatus('error', err.message);
+              }
+            },
+          },
+          'Save this to the project',
+        )
+      : h(
+          'p',
+          { class: 'show-note' },
+          'Rehearsed votes stay here and go when the show does. Once a room is linked, ' +
+            'this can be written into the project as a record of what the audience chose.',
+        ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Going live
 // ---------------------------------------------------------------------------
@@ -775,6 +868,11 @@ function render() {
         'Reset to the beginning',
       ),
     ),
+
+    // Last, and it grows as the show does. Above the transport it would push
+    // the buttons somebody reaches for mid-sentence further down the page with
+    // every question the room answers.
+    recordPanel(snapshot),
   ];
 
   console_.replaceChildren(...parts.filter(Boolean));

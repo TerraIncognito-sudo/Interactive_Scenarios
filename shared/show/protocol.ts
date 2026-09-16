@@ -308,6 +308,48 @@ export type SnapshotBeat =
   | { kind: 'end'; nodeId: string; text?: string; scene?: string };
 
 /**
+ * One poll, after it was decided.
+ *
+ * The show's own record of how the room voted. Nothing in the system kept
+ * this: `lastPoll` holds the most recent result because a branch may read it,
+ * and the moment the next question opens the previous one is gone — so an
+ * operator asked afterwards how the vote went had the projector's memory and
+ * their own, and a show with six polls in it produced no account of any of
+ * them.
+ *
+ * `counts` is what the board was showing when it closed, not what the decision
+ * was made from. Those differ exactly when somebody overrode a vote, and that
+ * is the case the record exists for: *the room said 31 to 9 and we went the
+ * other way* is the sentence, and a record that quietly showed the forced
+ * result as the tally could not say it.
+ */
+export type PollRecord = {
+  nodeId: string;
+  question: string;
+  options: { key: string; label: string }[];
+  /** Every option, zeros included, so a chart drawn from this is stable. */
+  counts: Record<string, number>;
+  total: number;
+  /** Distinct devices, which is not the total once anybody changed their mind. */
+  voters: number;
+  winner: string;
+  winnerLabel: string;
+  usedDefault: boolean;
+  usedTiebreak: boolean;
+  /** The operator decided it, whatever the counts said. */
+  forced: boolean;
+  /**
+   * The room code this was taken in, when there was one.
+   *
+   * Its absence is what makes a record honest about a rehearsal: simulated
+   * ballots and forty phones are not the same evidence, and a file that did
+   * not distinguish them would be a file nobody could cite.
+   */
+  room?: string;
+  at: number;
+};
+
+/**
  * The complete renderable state. Sent on connect and on every transition, so
  * a client that reloads mid-show resyncs from one message.
  */
@@ -346,6 +388,19 @@ export type Snapshot = {
   /** Live tally while a poll is open. */
   tally?: { counts: Record<string, number>; voters: number };
   /** Revealed once a poll closes, for the display's result animation. */
+  /**
+   * Every poll this show has decided, oldest first. Absent until the first.
+   *
+   * On the snapshot rather than fetched, because a board window opened halfway
+   * through a show is exactly the one somebody opens to find out what has
+   * happened so far — and a history each window accumulated from the messages
+   * it happened to see would be a different history in every window.
+   *
+   * The stage never reads it. It rides here anyway rather than on a route of
+   * its own, so there is one channel by which anything learns what the show is
+   * doing: a second one is a second thing to keep in step with `apply`.
+   */
+  polls?: PollRecord[];
   lastResult?: {
     nodeId: string;
     winner: string;

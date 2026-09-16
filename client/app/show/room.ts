@@ -31,10 +31,12 @@ import { BallotBox, resolvePoll, type Counts, type PollResult } from '../../../s
 import type { LoadedScenario } from '../../../shared/scenario/load.ts';
 import type {
   DisplayLoading,
+  PollRecord,
   ShowCommand,
   Snapshot,
   SnapshotBeat,
 } from '../../../shared/show/protocol.ts';
+import type { PollNode } from '../../../shared/scenario/schema.ts';
 import { MAX_SIMULATED_VOTERS } from '../../../shared/show/protocol.ts';
 import { VoteLog } from './votes.ts';
 
@@ -143,6 +145,16 @@ export class Room {
    * implying two implementations would imply a choice nobody has.
    */
   private readonly votes = new VoteLog();
+  /**
+   * Every poll this show has decided, oldest first.
+   *
+   * On the Room rather than accumulated by whoever is watching, and that is
+   * the same rule the tally follows. A board that built this out of the
+   * snapshots it happened to see would have a different history depending on
+   * when its window was opened, and the one opened halfway through a show is
+   * exactly the one somebody opens to find out what has happened so far.
+   */
+  private readonly decided: PollRecord[] = [];
 
   constructor(options: { loaded: LoadedScenario }) {
     this.joinCode = undefined;
@@ -297,6 +309,10 @@ export class Room {
       beatInfo: this.describeBeat(beat),
       scene,
       tally: this.tally(),
+      // Omitted while empty rather than sent as `[]`, so a show that has not
+      // reached a vote yet costs nothing on a wire that carries this on every
+      // beat.
+      ...(this.decided.length > 0 ? { polls: this.decided } : {}),
       lastResult: this.state.lastPoll
         ? { nodeId: this.state.lastPoll.nodeId, ...this.state.lastPoll.result }
         : undefined,
@@ -578,7 +594,51 @@ export class Room {
     // the room would land on the `default:` while the bar chart said otherwise.
     const counts = this.tally()?.counts ?? {};
     const decided = result ?? resolvePoll(node, counts);
+    this.remember(node, decided, result !== undefined);
     this.apply({ type: 'pollClosed', result: decided });
+  }
+
+  /**
+   * Files a decided poll, replacing any earlier decision on the same node.
+   *
+   * Replacing rather than appending, because stepping back into a poll and
+   * running it again is what rehearsing one *is* — three attempts at the
+   * harbour vote is the operator finding a split they like, not three things
+   * the room decided. What the record holds is the decision that stands.
+   *
+   * The counts come from the tally rather than from the result: they are what
+   * the board was showing, and when a decision was forced they are the only
+   * place the room's actual answer survives.
+   */
+  private remember(node: PollNode, result: PollResult, forced: boolean): void {
+    const tally = this.tally();
+    const counts: Counts = {};
+    for (const option of node.options) counts[option.key] = tally?.counts[option.key] ?? 0;
+
+    const record: PollRecord = {
+      nodeId: node.id,
+      question: node.question,
+      options: node.options.map((option) => ({ key: option.key, label: option.label })),
+      counts,
+      total: Object.values(counts).reduce((sum, n) => sum + n, 0),
+      voters: tally?.voters ?? 0,
+      winner: result.winner,
+      winnerLabel: result.winnerLabel,
+      usedDefault: result.usedDefault,
+      usedTiebreak: result.usedTiebreak,
+      forced,
+      ...(this.joinCode !== undefined ? { room: this.joinCode } : {}),
+      at: Date.now(),
+    };
+
+    const previous = this.decided.findIndex((entry) => entry.nodeId === node.id);
+    if (previous >= 0) this.decided.splice(previous, 1);
+    this.decided.push(record);
+  }
+
+  /** The polls this show has decided, oldest first. */
+  get polls(): readonly PollRecord[] {
+    return this.decided;
   }
 
   // -------------------------------------------------------------------------
@@ -716,6 +776,12 @@ export class Room {
       case 'reset': {
         this.clearTimer();
         this.box = undefined;
+        // The record goes with the show it describes. Reset puts the story
+        // back to the beginning in front of everyone, so what is left of the
+        // last run is a list of answers to questions nobody has been asked
+        // yet — and the first poll of the new run would arrive under a heading
+        // saying it had already been decided.
+        this.decided.length = 0;
         this.state = initialState(this.scenario);
         this.broadcast();
         return;

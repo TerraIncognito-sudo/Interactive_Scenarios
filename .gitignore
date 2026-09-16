@@ -39,3 +39,9 @@ scenarios/*/*storyboard.md
 # exists to catch -- its `finally` does not run and eight megabytes are left
 # in a checked-in fixture folder.
 tests/fixtures/scenarios/media/assets/images/harbour.jpg
+
+# The record a show writes of how its audience voted. The test that proves the
+# route works removes its own, the way the 8MB asset test does — and for the
+# same reason it is also named here: a `finally` does not run if a test ever
+# crashes the process again.
+tests/fixtures/scenarios/*/records/

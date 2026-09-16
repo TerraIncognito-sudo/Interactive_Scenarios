@@ -90,6 +90,7 @@ import {
   startShow,
   stopShow,
 } from './show/session.ts';
+import { writeRecord } from './show/record.ts';
 import { dropLink, goLive, goOffline, linkView, relinkNow } from './show/link.ts';
 import { attachShowSocket, type ShowSocket } from './show/ws.ts';
 import {
@@ -461,6 +462,27 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
   if (path === '/api/show/unlink' && request.method === 'POST') {
     return sendJson(response, 200, await goOffline());
+  }
+
+  if (path === '/api/show/record' && request.method === 'POST') {
+    // Deliberate, and with a button in front of it. The Room keeps the record
+    // while the show runs; writing one is an act, because a file per afternoon
+    // of rehearsal is a folder of records nobody can cite.
+    const show = currentShow();
+    if (!show) return sendJson(response, 409, { error: 'No show is running.' });
+    if (show.room.polls.length === 0) {
+      return sendJson(response, 409, { error: 'Nothing has been voted on yet.' });
+    }
+    return sendJson(
+      response,
+      200,
+      await writeRecord({
+        dir: show.paths.dir,
+        title: show.loaded.scenario.title,
+        project: show.project,
+        polls: show.room.polls,
+      }),
+    );
   }
 
   if (path === '/api/show/link/reconnect' && request.method === 'POST') {

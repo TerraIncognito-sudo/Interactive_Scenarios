@@ -2410,3 +2410,48 @@ button.danger-quiet {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* The show's own record of how the room voted. Reference rather than a
+   control, so it is quieter than the live tally above it — the numbers that
+   matter right now are in one place and the numbers that mattered earlier are
+   in another. */
+.show .record {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.show .record-row {
+  border-left: 2px solid var(--line);
+  padding: 0.1rem 0 0.1rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.show .record-q {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.show .record-a {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.show .record-counts {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.show .record-tag {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--accent-warm);
+}

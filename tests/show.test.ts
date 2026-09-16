@@ -853,6 +853,169 @@ describe('a show holds its own folder', () => {
   });
 });
 
+/**
+ * What the room decided, kept.
+ *
+ * Nothing in the system held this. `lastPoll` carries the most recent result
+ * because a branch may read it, and the moment the next question opens the
+ * previous one is gone — so an operator asked afterwards how the vote went had
+ * the projector's memory and their own.
+ */
+describe('the show keeps a record of what was decided', () => {
+  async function runToPoll(project = 'quick'): Promise<Client> {
+    await start(project);
+    const board = await joinBoard();
+    board.send({ type: 'command', command: { name: 'start' } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo.kind === 'poll');
+    return board;
+  }
+
+  test('a decided poll is filed with its counts and its winner', async () => {
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 5 } });
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'right', count: 2 } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 7);
+
+    board.send({ type: 'command', command: { name: 'closePoll' } });
+    const after = await board.next<Snapshot>((m) => isSnapshot(m) && m.polls !== undefined);
+
+    assert.equal(after.polls?.length, 1);
+    const [poll] = after.polls!;
+    assert.equal(poll!.winner, 'left');
+    assert.deepEqual(poll!.counts, { left: 5, right: 2 });
+    assert.equal(poll!.total, 7);
+    assert.equal(poll!.forced, false);
+    // No room, so this is a rehearsal — and the record says so rather than
+    // letting six simulated ballots be quoted later as an audience.
+    assert.equal(poll!.room, undefined);
+    board.close();
+  });
+
+  test('an overridden poll records what the room actually said', async () => {
+    // The case the record exists for, and it only bites when a relay is
+    // carrying the votes. `forceBranch` builds its result from the *ballot
+    // box*, which is deliberately empty while linked — the ballots for a live
+    // show are in the relay's database and nowhere else. So a record built
+    // from the result would report a room of forty people as having cast
+    // nothing, on precisely the night the numbers mattered.
+    const board = await runToPoll();
+    const room = currentShow()!.room;
+    room.joinCode = 'HARBOUR-ONE';
+    room.receiveTally('vote', { left: 31, right: 9 }, 40);
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 40);
+
+    board.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'right' } });
+    const after = await board.next<Snapshot>((m) => isSnapshot(m) && m.polls !== undefined);
+
+    const [poll] = after.polls!;
+    assert.equal(poll!.winner, 'right');
+    assert.equal(poll!.forced, true);
+    assert.deepEqual(poll!.counts, { left: 31, right: 9 }, 'the room survives being overridden');
+    assert.equal(poll!.voters, 40);
+    assert.equal(poll!.room, 'HARBOUR-ONE');
+    board.close();
+  });
+
+  test('stepping back and deciding again replaces, rather than files it twice', async () => {
+    // Three attempts at the harbour vote is the operator finding a split they
+    // like, not three things the room decided.
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'castVotes', optionKey: 'left', count: 4 } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.tally?.voters === 4);
+    board.send({ type: 'command', command: { name: 'closePoll' } });
+    const first = await board.next<Snapshot>((m) => isSnapshot(m) && m.polls !== undefined);
+    assert.equal(first.polls?.[0]?.winner, 'left');
+
+    board.send({ type: 'command', command: { name: 'back' } });
+    const again = await board.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beat > first.beat && m.beatInfo.kind === 'poll',
+    );
+    board.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'right' } });
+    const second = await board.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beat > again.beat && m.polls?.[0]?.winner === 'right',
+    );
+
+    assert.equal(second.polls?.length, 1, 'one poll, one entry');
+    board.close();
+  });
+
+  test('two polls are kept in the order they were answered', async () => {
+    const board = await runToPoll('twopolls');
+    board.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'back' } });
+    await board.next<Snapshot>(
+      (m) => isSnapshot(m) && m.beatInfo.kind === 'poll' && m.beatInfo.nodeId === 'second',
+    );
+    board.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'no' } });
+    const after = await board.next<Snapshot>((m) => isSnapshot(m) && (m.polls?.length ?? 0) === 2);
+
+    assert.deepEqual(
+      after.polls?.map((poll) => [poll.nodeId, poll.winner]),
+      [
+        ['first', 'back'],
+        ['second', 'no'],
+      ],
+    );
+    board.close();
+  });
+
+  test('reset takes the record with it', async () => {
+    // Reset puts the story back to the beginning in front of everyone, so what
+    // is left of the last run is a list of answers to questions nobody has
+    // been asked yet.
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'closePoll' } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.polls !== undefined);
+
+    board.send({ type: 'command', command: { name: 'reset' } });
+    const reset = await board.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'lobby');
+    assert.equal(reset.polls, undefined);
+    board.close();
+  });
+
+  test('a rehearsal is not written to disk, and says why', async () => {
+    const board = await runToPoll();
+    board.send({ type: 'command', command: { name: 'closePoll' } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.polls !== undefined);
+
+    // The board offers the button only when a poll was taken in a real room —
+    // a file per afternoon of rehearsal is a folder of records nobody can
+    // cite, in a directory that syncs to somebody's cloud drive.
+    const source = readBoard('show.js');
+    assert.ok(source.includes('Save this to the project'));
+    assert.ok(source.includes("poll.room !== undefined"));
+    board.close();
+  });
+
+  test('a record is written into the project the show came from', async () => {
+    const board = await runToPoll();
+    // What the link does for a live show. The record keys off it per poll, so
+    // a show linked halfway through is honest about which half was rehearsed.
+    currentShow()!.room.joinCode = 'HARBOUR-ONE';
+    board.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'left' } });
+    await board.next<Snapshot>((m) => isSnapshot(m) && m.polls !== undefined);
+
+    const response = await fetch(`${baseUrl}/api/show/record`, { method: 'POST' });
+    assert.equal(response.status, 200);
+    const written = (await response.json()) as { file: string; polls: number };
+    assert.equal(written.polls, 1);
+
+    const text = readFileSync(written.file, 'utf8');
+    assert.match(text, /room HARBOUR-ONE/);
+    assert.match(text, /Decided by the operator/);
+    // The counts are in it, so the numbers survive the prose.
+    assert.match(text, /\| Option \| Votes \| Share \|/);
+
+    rmSync(join(fixtures, 'quick', 'records'), { recursive: true, force: true });
+    board.close();
+  });
+
+  test('there is nothing to write before anybody has voted', async () => {
+    await start('quick');
+    const response = await fetch(`${baseUrl}/api/show/record`, { method: 'POST' });
+    assert.equal(response.status, 409);
+  });
+});
+
 function readBoard(file: string): string {
   return readFileSync(join(import.meta.dirname, '..', 'client', 'web', 'board', file), 'utf8');
 }
