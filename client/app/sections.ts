@@ -24,7 +24,7 @@ import {
   type AssetSection,
 } from '../../shared/scenario/load.ts';
 import type { Scenario } from '../../shared/scenario/schema.ts';
-import { asksForBackground, composePrompt } from './prompt.ts';
+import { asksForBackground } from './prompt.ts';
 import { defaultSizeFor, formatSize, isPortrait, parseSize, readImageInfo } from './size.ts';
 import { readDuration } from './duration.ts';
 import { extensionOf, misnamed, readFormat, renamedTo } from './format.ts';
@@ -66,17 +66,6 @@ export type AssetView = {
   row: AssetRow;
   /** Every place in the scenario that asks for this file. */
   origins: AssetOrigin[];
-  /**
-   * What a generator would actually be handed: the row's prompt with the
-   * storyboard's named blocks put back in, and the negative that goes with it.
-   *
-   * On the board rather than only inside the generator because a prompt nobody
-   * can read is a prompt nobody can fix. Every complaint about the art this
-   * pipeline produces starts with not being able to see what the model was
-   * given — and the row shows `STYLE. SHIP. Pre-dawn at a jetty…`, which is not
-   * what any model would receive.
-   */
-  composed?: { positive: string; negative: string; unresolved: string[] };
   /**
    * What this picture is supposed to be, what it suggests if nothing says, and
    * what the selected take on disk actually is.
@@ -705,10 +694,6 @@ export async function buildOverview(
         ? targetHoldFor(seconds, gap)
         : undefined;
       const size = await sizeReport(paths, section, file, row, info.origins, entry?.selected);
-      // Voice has no prompt in this sense — its text is the line — and running
-      // a composer over it would offer to expand words in the dialogue.
-      const composed = section === 'voice' ? undefined : composePrompt(recipe);
-
       // Generating never steals a selection, which is what keeps re-rolling
       // free — but it means a freshly regenerated clip sits there matching the
       // recipe perfectly while the board still reports the old one as stale.
@@ -752,9 +737,8 @@ export async function buildOverview(
         hash,
         frozen: row?.freeze ?? false,
         hasPrompt: Boolean(row?.prompt?.trim() || row?.text?.trim()),
-        row: row ?? ({ refs: [], params: {}, freeze: false } as AssetRow),
+        row: row ?? ({ params: {}, freeze: false } as AssetRow),
         origins: info.origins,
-        ...(composed ? { composed } : {}),
         ...(size ? { size } : {}),
         ...(format ? { format } : {}),
         takes,
@@ -793,29 +777,6 @@ export async function buildOverview(
     }
   }
 
-  // A prompt still carrying a name nothing defines reaches the model with
-  // `SHIP.` in it, which it reads as a word. The picture comes back without the
-  // ship, and nothing else on this board would ever mention it.
-  const undefinedTokens = new Map<string, string[]>();
-  for (const view of sections) {
-    for (const asset of view.assets) {
-      for (const name of asset.composed?.unresolved ?? []) {
-        const files = undefinedTokens.get(name);
-        if (files) files.push(asset.file);
-        else undefinedTokens.set(name, [asset.file]);
-      }
-    }
-  }
-  for (const [name, files] of [...undefinedTokens].sort(([a], [b]) => a.localeCompare(b))) {
-    problems.push({
-      level: 'warning',
-      message:
-        `${files.length} prompt${files.length === 1 ? '' : 's'} refer to "${name}", which ` +
-        `nothing defines — the model will read it as a word. Add it under \`tokens:\`, or ` +
-        `re-seed from the storyboard if it states one.`,
-    });
-  }
-
   for (const view of sections) {
     for (const asset of view.assets) {
       if (asset.size?.mismatched) {
@@ -837,15 +798,15 @@ export async function buildOverview(
       }
       // The storyboard writes a character sheet as a *reference* image, and a
       // reference wants a neutral field behind it. The same file is what floats
-      // over the harbour. Reported rather than reworded: the composed prompt is
-      // already asking for the cutout, and two instructions pulling opposite
-      // ways is a picture nobody can predict.
+      // over the harbour. Reported rather than reworded, because a machine that
+      // rewrites prose to keep it true eventually rewrites prose that was fine.
       if (asset.size?.cutout && asksForBackground(asset.row.prompt ?? '')) {
         problems.push({
           level: 'warning',
           message:
-            `"${asset.file}" is a portrait but its prompt asks for a background. ` +
-            `It is composed as a cutout regardless — drop the phrase so the two agree.`,
+            `"${asset.file}" is a portrait but its brief asks for a background. ` +
+            `A portrait has to be a cutout — the display draws it with a shadow that ` +
+            `follows its outline — so a background is the thing that has to go.`,
         });
       }
     }

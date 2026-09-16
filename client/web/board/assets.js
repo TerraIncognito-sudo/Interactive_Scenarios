@@ -50,8 +50,6 @@ const state = {
   busy: new Set(),
   /** Collapsed sections, so a long board stays navigable. */
   collapsed: new Set(),
-  /** Rows whose composed-prompt preview is open. */
-  expanded: new Set(),
   /** Which half of a character's sheet is showing: their voice or their face. */
   sub: new Map(),
   /**
@@ -1427,124 +1425,6 @@ function sizeField(asset) {
 }
 
 /**
- * How much bigger what the model gets is than what the row says.
- *
- * `268 → 1223 chars` is the evidence. A storyboard writes `STYLE. SHIP.` and
- * means four hundred characters of palette and three hundred of hull; the row
- * keeps the shorthand because that is what one edit has to change all of, and
- * without a number beside it the expansion is invisible from the board.
- */
-function expansion(asset) {
-  const from = (asset.row?.prompt ?? '').trim().length;
-  const to = asset.composed?.positive?.length ?? 0;
-  return from && to > from ? `${from} → ${to} chars` : `${to} chars`;
-}
-
-function promptPreview(asset) {
-  const composed = asset.composed;
-  if (!composed) return null;
-
-  const key = `preview:${asset.file}`;
-  const open = state.expanded.has(key);
-
-  return h(
-    'div',
-    { class: 'preview' },
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'preview-toggle',
-        onclick: () => {
-          if (open) state.expanded.delete(key);
-          else state.expanded.add(key);
-          render();
-        },
-      },
-      open ? '▾' : '▸',
-      ' what the model gets',
-      h(
-        'span',
-        { class: 'preview-size' },
-        // Both numbers, because one of them is the whole point. The box above
-        // still holds the storyboard's shorthand and always will — it is what
-        // gets edited — so a row that only said "1223 chars" left the author
-        // looking at `STYLE. SHIP.` with no evidence anything had expanded.
-        expansion(asset),
-      ),
-      // A name nothing defines reaches the model as a word, and this is the
-      // row it belongs to. The board says it too, but a warning about a prompt
-      // is most useful next to the prompt.
-      composed.unresolved.length > 0
-        ? h(
-            'span',
-            { class: 'pill pill-stale' },
-            `${composed.unresolved.join(', ')} undefined`,
-          )
-        : null,
-    ),
-    // Collapsed still shows it. The invariant is that the board shows the
-    // composed prompt — every complaint about the art this pipeline makes has
-    // started with not being able to see what the model was given — and a
-    // disclosure triangle under a textarea full of `STYLE. SHIP.` reads as a
-    // footnote about the thing above it rather than as the thing itself.
-    !open ? h('p', { class: 'preview-peek' }, composed.positive) : null,
-    open
-      ? h(
-          'div',
-          { class: 'preview-body' },
-          asset.size?.declared
-            ? h(
-                'p',
-                { class: 'preview-text preview-meta' },
-                h('span', { class: 'preview-label' }, 'size '),
-                asset.size.declared,
-              )
-            : null,
-          h('p', { class: 'preview-text' }, composed.positive),
-          composed.negative
-            ? h(
-                'p',
-                { class: 'preview-text preview-negative' },
-                h('span', { class: 'preview-label' }, 'negative '),
-                composed.negative,
-              )
-            : null,
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'ghost small',
-              // Until an image generator is wired up, the way art gets made is
-              // somebody pasting this into one. Making them select nine hundred
-              // characters by hand is the difference between a tool and a demo.
-              onclick: (event) => {
-                event.stopPropagation();
-                void copyText(composed.positive, `prompt copied — ${composed.positive.length} characters`);
-              },
-            },
-            'Copy prompt',
-          ),
-          composed.negative
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  class: 'ghost small',
-                  onclick: (event) => {
-                    event.stopPropagation();
-                    void copyText(composed.negative, `negative copied — ${composed.negative.length} characters`);
-                  },
-                },
-                'Copy negative',
-              )
-            : null,
-        )
-      : null,
-  );
-}
-
-/**
  * Puts something on the clipboard and says what to do with it.
  *
  * `what` is the whole message, not a noun. It used to be a noun with
@@ -1600,7 +1480,11 @@ function assetRow(asset, generable = false) {
     spellcheck: 'false',
     placeholder: isVoice
       ? 'What this line says — the text handed to the voice model'
-      : 'Prompt for this asset',
+      // Nothing composes this any more, so it is a brief for whoever makes the
+      // file. Still in the hash: edit it and the picture it describes goes
+      // stale, which is the reminder somebody wants when a shot no longer
+      // matches what the row asks for.
+      : 'Brief for whoever makes this — what the shot has to be',
     // Saved on blur rather than on every keystroke: each save rewrites
     // project.yaml, and an author mid-sentence has not decided anything yet.
     onblur: (event) => {
@@ -1655,7 +1539,6 @@ function assetRow(asset, generable = false) {
     gapField(asset),
     sizeField(asset),
     formatField(asset),
-    promptPreview(asset),
     takesStrip(asset),
     assetActions(asset, generable),
   );

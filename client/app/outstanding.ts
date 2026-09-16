@@ -215,11 +215,6 @@ function qualityOf(asset: AssetView): string[] {
   if (asset.size?.cutout && asset.size.flat) {
     found.push('is a portrait with no transparency, so it arrives as a bust card');
   }
-  if (asset.composed?.unresolved?.length) {
-    found.push(
-      `prompt refers to ${asset.composed.unresolved.map((name) => `${name}.`).join(' ')} which nothing defines`,
-    );
-  }
   // Row notes are already written as sentences about this row — the missing
   // `hold` on a voiced line being the one that changes what an audience sees.
   for (const note of asset.notes) found.push(note);

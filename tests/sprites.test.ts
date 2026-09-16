@@ -18,7 +18,7 @@ import {
   SpriteError,
   wireSpritesInto,
 } from '../client/app/sprites.ts';
-import { asksForBackground, composePrompt } from '../client/app/prompt.ts';
+import { asksForBackground } from '../client/app/prompt.ts';
 import { ProjectSchema, recipeHash, resolveRecipe } from '../client/app/project.ts';
 
 const SHEETS = {
@@ -138,15 +138,10 @@ describe('what a portrait prompt turns into', () => {
       scenario: 'scenario.yaml',
       publish: 'assets',
       generated: 'generated',
-      sections: { images: { backend: 'manual', style: 'Muted maritime film still.' } },
+      sections: { images: { backend: 'manual' } },
       assets: { 'images/beau-sheet.png': { prompt } },
     });
   }
-
-  const portraitOf = (prompt: string) =>
-    composePrompt(
-      resolveRecipe(project(prompt), 'images', 'images/beau-sheet.png', { portrait: true }),
-    );
 
   test('the scenario is what says a file is a face', () => {
     assert.deepEqual([...portraitFilesOf(wired)].sort(), [
@@ -155,32 +150,11 @@ describe('what a portrait prompt turns into', () => {
     ]);
   });
 
-  test('the cutout instruction is added, and the background terms with it', () => {
-    const composed = portraitOf(SHEETS.Beaudoin);
-    assert.match(composed.positive, /isolated on a flat even background/);
-    assert.match(composed.positive, /matted onto transparency/i);
-    assert.match(composed.negative, /scenery/);
-    // The style still leads. A portrait that does not match the film is a
-    // portrait that reads as clip art the moment it slides in.
-    assert.match(composed.positive, /^Muted maritime film still\./);
-  });
-
-  test('a full-frame still gets none of it', () => {
-    const jetty = composePrompt(resolveRecipe(project('A jetty at dawn.'), 'images', 'images/x'));
-    assert.doesNotMatch(jetty.positive, /matted onto transparency/i);
-    assert.doesNotMatch(jetty.negative, /scenery/);
-  });
-
-  test('an author who asked in their own words keeps theirs', () => {
-    // Otherwise the composed prompt says it twice, in two vocabularies, and the
-    // author's edit reads as having done nothing.
-    const composed = portraitOf('Bust on a transparent background, hair tied back.');
-    assert.equal((composed.positive.match(/transparen/gi) ?? []).length, 1);
-  });
-
-  test('the cutout is part of the recipe, not a flourish on the preview', () => {
-    // A picture made before this and one made after are different pictures. If
-    // the hash could not tell them apart the board would call the old one done.
+  test('a portrait hashes differently from the same file that is not one', () => {
+    // Nothing composes a cutout instruction any more, but `portrait` stays on
+    // the recipe and this is why: a face matted out and the same picture with
+    // its background left on are different files, and a hash that could not
+    // tell them apart would call the wrong one finished.
     const plain = recipeHash(resolveRecipe(project(SHEETS.Beaudoin), 'images', 'images/beau-sheet.png'));
     const cut = recipeHash(
       resolveRecipe(project(SHEETS.Beaudoin), 'images', 'images/beau-sheet.png', {

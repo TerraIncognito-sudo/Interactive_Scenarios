@@ -205,7 +205,7 @@ export function scaffoldFromStoryboard(
     publish: 'dist/assets',
     generated: 'generated',
     sections: {
-      images: { backend: 'manual', style: '', negative: '' },
+      images: { backend: 'manual' },
       video: { backend: 'manual' },
       voice: { backend: 'manual' },
       sfx: { backend: 'manual' },

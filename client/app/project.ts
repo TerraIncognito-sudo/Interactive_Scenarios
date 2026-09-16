@@ -24,7 +24,6 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { ASSET_SECTIONS, type AssetSection } from '../../shared/scenario/load.ts';
-import { tokensIn } from './prompt.ts';
 
 /**
  * Generation parameters vary by model — steps and cfg for a sampler, seconds
@@ -39,21 +38,15 @@ export const ParamsSchema = z.record(
 export type Params = z.infer<typeof ParamsSchema>;
 
 export const SectionModelSchema = z.strictObject({
-  /** `manual` means "no generator wired up yet" — the Phase 1 default. */
-  backend: z.enum(['comfyui', 'sidecar', 'manual']).default('manual'),
+  /**
+   * `manual` means the files in this section are made somewhere else and
+   * brought in. That is now every section but voice, and permanently so.
+   */
+  backend: z.enum(['sidecar', 'manual']).default('manual'),
   /** Folder of weights on this machine. Scanned to populate the model picker. */
   root: z.string().min(1).optional(),
   /** Which file in `root` to use. */
   file: z.string().min(1).optional(),
-  /** ComfyUI graph template with substitution points, relative to the project. */
-  workflow: z.string().min(1).optional(),
-  /**
-   * Prepended and appended to every prompt in the section. Living here rather
-   * than on each asset is what keeps twenty-six stills looking like one film:
-   * one edit changes all of them, and the recipe hash makes all of them stale.
-   */
-  style: z.string().optional(),
-  negative: z.string().optional(),
   defaults: ParamsSchema.prefault({}),
 });
 
@@ -115,12 +108,6 @@ export type Voice = z.infer<typeof VoiceSchema>;
  */
 export const NARRATION_VOICE = 'vo';
 
-export const ReferenceImageSchema = z.strictObject({
-  file: z.string().min(1),
-  /** How hard to hold the reference. The storyboard's character sheets use 0.35. */
-  strength: z.number().min(0).max(1).default(0.35),
-});
-
 /** Where this asset came from in the storyboard, for click-through both ways. */
 export const SourceRefSchema = z.strictObject({
   shot: z.string().min(1).optional(),
@@ -143,9 +130,6 @@ export const AssetRowSchema = z.strictObject({
     .string()
     .regex(/^\d{2,5}[x×]\d{2,5}$/, 'a size looks like 1920x1080')
     .optional(),
-  /** Overrides the section's negative rather than adding to it. */
-  negative: z.string().optional(),
-  refs: z.array(ReferenceImageSchema).prefault([]),
   params: ParamsSchema.prefault({}),
   /** Voice only: the spoken text, and which configured voice says it. */
   text: z.string().optional(),
@@ -182,20 +166,6 @@ export type AssetRow = z.infer<typeof AssetRowSchema>;
  */
 export const ProjectSchema = z.strictObject({
   project: z.string().min(1),
-  /**
-   * Named blocks a prompt can refer to instead of repeating: `SHIP`, a design
-   * bible pasted into every hull shot so the ship stays the same ship.
-   *
-   * The same argument as a section's `style`, one level down. Twenty shots that
-   * each carry their own copy of the bible are twenty places to re-tune it, and
-   * nineteen of them will be missed. Referring to it by name means one edit
-   * changes all of them — and because the resolved text is folded into the
-   * recipe, one edit also makes all of them visibly stale.
-   *
-   * `STYLE` and `NEGATIVE` are not here: they are the section's own `style` and
-   * `negative`, which existed first and mean exactly this.
-   */
-  tokens: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{2,}$/), z.string()).prefault({}),
   title: z.string().min(1).optional(),
   /** All paths resolve relative to the project file, and may be absolute. */
   storyboard: z.string().min(1).optional(),
@@ -336,10 +306,14 @@ export function takesDir(paths: ProjectPaths, section: AssetSection, file: strin
  */
 export type Recipe = {
   section: AssetSection;
+  /**
+   * A note to whoever makes this file, not something a model is handed.
+   *
+   * Still in the hash, and that is the point: for art made in another program,
+   * a prompt edit going stale is exactly the reminder somebody wants when the
+   * shot they drew no longer matches what the row asks for.
+   */
   prompt: string;
-  negative: string;
-  style: string;
-  refs: { file: string; strength: number }[];
   params: Params;
   /** In the recipe, so re-sizing a shot marks what was made at the old size stale. */
   size?: string;
@@ -361,15 +335,6 @@ export type Recipe = {
   reference?: string;
   preset?: string;
   direction?: string;
-  /**
-   * The named blocks this prompt refers to, resolved.
-   *
-   * Only the ones it uses. A recipe has to contain everything that decides what
-   * comes out, so the ship's bible belongs in a hull shot's hash — but folding
-   * in every token the project defines would age forty images because somebody
-   * corrected a typo in a bible none of them mention.
-   */
-  tokens: Record<string, string>;
   model: { backend: string; file?: string };
 };
 
@@ -394,9 +359,6 @@ export function resolveRecipe(
     section,
     ...(context.portrait ? { portrait: true } : {}),
     prompt: row.prompt ?? '',
-    negative: row.negative ?? model?.negative ?? '',
-    style: model?.style ?? '',
-    refs: row.refs,
     size: row.size,
     // Widest first: the section is how this kind of asset is made, the voice is
     // how this character sounds, the row is this one clip. Each may correct the
@@ -407,19 +369,8 @@ export function resolveRecipe(
     reference: voice?.reference,
     preset: voice?.preset,
     direction: voice?.direction,
-    tokens: usedTokens(project, row.prompt ?? ''),
     model: { backend: model?.backend ?? 'manual', file: model?.file },
   };
-}
-
-/** The definitions a prompt actually refers to, resolved. Unknown names are left out. */
-function usedTokens(project: Project, prompt: string): Record<string, string> {
-  const used: Record<string, string> = {};
-  for (const name of tokensIn(prompt)) {
-    const defined = project.tokens[name];
-    if (defined !== undefined) used[name] = defined;
-  }
-  return used;
 }
 
 /** Key-order-independent JSON, so a reordered YAML map is not a new recipe. */

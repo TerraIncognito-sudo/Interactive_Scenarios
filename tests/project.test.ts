@@ -99,15 +99,19 @@ describe('recipe hashing', () => {
     project: 'p',
     scenario: 'scenario.yaml',
     publish: 'dist/assets',
-    sections: { images: { style: 'painterly', negative: 'text' } },
+    sections: { images: { backend: 'manual' } },
     assets: { 'room.jpg': { prompt: 'a room', params: { steps: 28, cfg: 3.5 } } },
   });
 
-  test('section style is folded in, so editing it restages the whole section', () => {
+  test('the row’s brief is folded in, so editing it restages that shot', () => {
+    // The section-wide style this used to prove is gone with the composer. The
+    // claim that matters survives one level down: a picture made against one
+    // brief and the same file made against another are different pictures, and
+    // for art made by hand that staleness is the whole reminder.
     const before = recipeHash(resolveRecipe(project, 'images', 'room.jpg'));
     const after = recipeHash(
       resolveRecipe(
-        { ...project, sections: { images: { ...project.sections.images!, style: 'photoreal' } } },
+        { ...project, assets: { 'room.jpg': { ...project.assets['room.jpg']!, prompt: 'a hall' } } },
         'images',
         'room.jpg',
       ),
@@ -121,7 +125,7 @@ describe('recipe hashing', () => {
       project: 'p',
       scenario: 'scenario.yaml',
       publish: 'dist/assets',
-      sections: { images: { negative: 'text', style: 'painterly' } },
+      sections: { images: { backend: 'manual' } },
       assets: { 'room.jpg': { params: { cfg: 3.5, steps: 28 }, prompt: 'a room' } },
     });
     assert.equal(a, recipeHash(resolveRecipe(reordered, 'images', 'room.jpg')));
