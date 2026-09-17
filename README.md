@@ -76,10 +76,10 @@ takes folder. With nothing open it opens the workspace. **Workspace…** is the 
 it changes where every project lives.
 
 If you would rather start from an idea than from a skeleton, the **Start here** tab is the
-whole route from one to a room full of people voting. It hands you two briefs to paste into a
-language model — one that turns a description into a storyboard, one that turns a storyboard
-into a `scenario.yaml` — creates the project folder from what comes back, and then walks you
-through the asset board and out onto the projector.
+whole route from one to a room full of people voting. It makes the project first, then hands
+you briefs to paste into a language model — one that turns a description into a storyboard,
+one that turns a storyboard into a `scenario.yaml` — saves what comes back into the folder,
+and walks you through the asset board and out onto the projector.
 
 Check your scenarios before you rely on them:
 
@@ -341,12 +341,28 @@ listing everything still standing between the project and a night.
 
 ### Start here
 
-The tab for the step everything else assumes. Four boxes and ten steps: describe the
-scenario in your own words, copy a brief into a language model to get a storyboard back,
-tidy the storyboard until you like it, copy a second brief to turn it into a
-`scenario.yaml`, and press a button to make the project folder. The remaining six steps
-walk from there to a live show — declare the voice clips, seed the images, make and publish
-the assets, rehearse, go live — each one linking to the tab that actually does the work.
+The tab for the step everything else assumes. Ten steps, and the first one makes the
+project: a name, a button, and a folder with a working show in it. Everything after that
+writes into that folder, which is the point of doing it first — the storyboard and the
+scenario have somewhere to go the moment they exist, and nothing you do here can land in a
+show you happened to have open.
+
+Then: describe the scenario in your own words; copy a brief into a language model to get a
+storyboard back; tidy it until you like it and **save it into the project**. Copy the second
+brief to turn it into a `scenario.yaml` and save that in too, replacing the starter. It is
+checked before it is written, so a mistake comes back as a list naming the node and the key —
+paste that back to the model and ask it to fix it, with your text still in the box.
+
+There are two versions of the scenario brief and which you want depends on where you are.
+**The short one is for the chat that just wrote your storyboard**: it is the file format and
+nothing else, because that conversation already has the storyboard in it and sending ninety
+thousand characters of it back is context the model needs for the answer. The full one is for
+a fresh chat and carries the storyboard with it. Neither is an abridgement of the other —
+both describe every node type.
+
+The remaining six steps walk from there to a live show — declare the voice clips, seed the
+images, make and publish the assets, rehearse, go live — each one linking to the tab that
+actually does the work.
 
 The ticks are yours. The program will not tick one for you: whether a storyboard is *good
 enough* is not a thing it can know. What it *can* see sits on its own line beside each

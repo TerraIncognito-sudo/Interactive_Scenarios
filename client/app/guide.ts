@@ -39,6 +39,12 @@ import { configDir } from './workspace.ts';
 const BRIEFS = {
   storyboard: 'storyboard-brief.md',
   scenario: 'scenario-brief.md',
+  // The same format reference, for the chat that has just written the
+  // storyboard and still has it in front of it. Pasting the full brief *plus*
+  // ninety thousand characters of storyboard into a conversation that already
+  // contains the storyboard is how a model runs out of room to answer in —
+  // and the answer is the whole show.
+  'scenario-short': 'scenario-brief-short.md',
 } as const;
 
 export type BriefName = keyof typeof BRIEFS;

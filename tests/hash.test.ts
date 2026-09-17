@@ -124,20 +124,30 @@ describe('the recipe hash is frozen', () => {
  * where the author's own projects are — `project.yaml` and `.ledger.json` are
  * gitignored, so on a clean clone there is nothing to count and the test says
  * so rather than passing quietly.
+ *
+ * **Named, not walked.** It used to read the directory, which quietly made
+ * every project the workspace has ever held part of the assertion — and the
+ * workspace is this repo's own `scenarios/`, so the first show anybody started
+ * failed the census by existing, with a message saying a clip they had not
+ * recorded yet was missing. A half-finished project is the ordinary state of a
+ * project. What this protects is the three that are done.
  */
+const FINISHED: Record<string, number> = {
+  'arctic-sentinel': 84,
+  'team-union': 57,
+  'team-union-video': 67,
+};
+
 describe('the finished shows are still finished', () => {
-  test('every row of every real project is ready, and matched by hash', async () => {
-    const { readdir } = await import('node:fs/promises');
+  test('every row of every finished project is ready, and matched by hash', async () => {
     const { loadLedger } = await import('../client/app/project.ts');
     const { buildOverview } = await import('../client/app/sections.ts');
 
     const root = join(import.meta.dirname, '..', 'scenarios');
-    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
 
     const counted: Record<string, number> = {};
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const file = join(root, entry.name, 'project.yaml');
+    for (const name of Object.keys(FINISHED)) {
+      const file = join(root, name, 'project.yaml');
 
       // "There is no project here" and "the project here will not load" are
       // different answers and only one of them is fine. Catching both as one
@@ -148,12 +158,12 @@ describe('the finished shows are still finished', () => {
       if (source === undefined) continue; // a scenario with no editor half; first-contact is one
 
       const project = await loadProject(file).catch((err: Error) => {
-        assert.fail(`${entry.name}/project.yaml exists but will not load: ${err.message}`);
+        assert.fail(`${name}/project.yaml exists but will not load: ${err.message}`);
       });
 
       const paths = pathsOf(file, project);
       const parsed = parseScenarioSource(await readFile(paths.scenario, 'utf8'));
-      assert.ok(parsed.ok, `${entry.name}: scenario.yaml must load`);
+      assert.ok(parsed.ok, `${name}: scenario.yaml must load`);
 
       const { ledger } = await loadLedger(paths.ledger);
       const overview = await buildOverview(parsed.scenario, project, ledger, paths);
@@ -167,30 +177,26 @@ describe('the finished shows are still finished', () => {
         assert.equal(
           row.status,
           'ready',
-          `${entry.name}/${row.file} is ${row.status}, and it was ready when this test was written`,
+          `${name}/${row.file} is ${row.status}, and it was ready when this test was written`,
         );
         assert.equal(
           selected?.hash,
           row.hash,
-          `${entry.name}/${row.file}: the selected take no longer matches its recipe`,
+          `${name}/${row.file}: the selected take no longer matches its recipe`,
         );
       }
-      counted[entry.name] = rows.length;
+      counted[name] = rows.length;
     }
 
     if (Object.keys(counted).length === 0) {
       // Not a pass. A clean clone has no projects to count, and saying so is
       // the difference between "nothing to check" and "everything checked out".
-      console.log('  (no project.yaml under scenarios/ — census skipped)');
+      console.log('  (none of the finished shows are here — census skipped)');
       return;
     }
 
     // Recorded rather than merely summed: a row vanishing is as interesting as
     // one going stale, and a bare total would hide it.
-    assert.deepEqual(counted, {
-      'arctic-sentinel': 84,
-      'team-union': 57,
-      'team-union-video': 67,
-    });
+    assert.deepEqual(counted, FINISHED);
   });
 });

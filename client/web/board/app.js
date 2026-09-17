@@ -173,10 +173,18 @@ async function revealProject() {
   }
 }
 
+/**
+ * Writes the source pane into the project's `scenario.yaml`.
+ *
+ * Returns whether it landed, because the walkthrough pastes a whole scenario
+ * through here and has to say something different depending: a refusal leaves
+ * the rejected text in the pane to be fixed, and reporting it as saved is how
+ * somebody walks off believing a file was written that was not.
+ */
 async function save() {
   // Nothing else is openable, so there is nothing else to save to. The editor
   // has no path that writes outside the workspace.
-  if (!state.projectName) return;
+  if (!state.projectName) return false;
 
   const source = $('source').value;
   $('save').disabled = true;
@@ -191,8 +199,14 @@ async function save() {
     );
     const data = await response.json();
     if (!response.ok) {
+      // The list, not only the headline. "Scenario does not match the expected
+      // format" names nothing to go and fix, and the reply has always carried
+      // the nodes and keys that are wrong — nothing was reading them. It
+      // matters most for a whole file pasted in from the walkthrough, where the
+      // list is what gets handed back to whatever wrote it.
+      showProblems(data.error ?? 'save failed', data.problems ?? []);
       setStatus('bad', data.error ?? 'save failed');
-      return;
+      return false;
     }
     state.saved = source;
     markClean();
@@ -203,9 +217,24 @@ async function save() {
     // dialogue quietly re-records a clip, and finding that out from a status
     // line beats finding it out from the board three days later.
     reportReconcile(data.reconciled);
+    return true;
   } finally {
     $('save').disabled = false;
   }
+}
+
+/**
+ * Puts a refusal where the person can read all of it.
+ *
+ * The status line holds one sentence; a scenario is refused with a list naming
+ * the node and the key, and that list is the thing somebody pastes back to
+ * whatever wrote the file.
+ */
+function showProblems(message, problems) {
+  const box = $('problems');
+  box.hidden = false;
+  box.className = 'problems';
+  box.replaceChildren(h('strong', {}, message), h('ul', {}, problems.map((p) => h('li', {}, p))));
 }
 
 /**
@@ -580,25 +609,56 @@ window.addEventListener('beforeunload', (event) => {
   }
 });
 
-$('story-save').addEventListener('click', () => {
-  void (async () => {
-    if (!state.projectName) return;
-    const source = $('story').value;
-    const response = await fetch(
-      `/api/projects/${encodeURIComponent(state.projectName)}/storyboard`,
-      {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source }),
-      },
-    );
-    const data = await response.json();
-    if (!response.ok) return setStatus('bad', data.error ?? 'could not save storyboard');
-    state.storySaved = source;
-    setStatus('ok', 'storyboard saved');
-    await refreshAssets();
-  })();
-});
+/**
+ * Puts a storyboard in front of the person, or says there is not one.
+ *
+ * Its own function because a project can *gain* a storyboard while it is open —
+ * the walkthrough pastes one into a folder that had none — and the pane has to
+ * come alive when that happens rather than going on saying the document is
+ * missing until somebody reopens the project.
+ */
+function showStoryboard(source, path) {
+  state.storySaved = source ?? '';
+  $('story').value = source ?? '';
+  $('story').disabled = source === undefined;
+  $('story-path').textContent = path ?? 'no storyboard in this project';
+  $('story-sync').disabled = source === undefined;
+  $('story-save').disabled = source === undefined;
+}
+
+/**
+ * Writes the storyboard pane into the project's storyboard file.
+ *
+ * A function rather than a listener body because the walkthrough hands a
+ * storyboard here too — pasted out of a chat window rather than typed on the
+ * Storyboard tab — and two copies of this would be two things to keep in step.
+ */
+async function saveStoryboard() {
+  if (!state.projectName) return false;
+  const source = $('story').value;
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(state.projectName)}/storyboard`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source }),
+    },
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    setStatus('bad', data.error ?? 'could not save storyboard');
+    return false;
+  }
+  // The reply is the reopened project, so this is what it now says about
+  // itself rather than what was just sent — which is the difference that shows
+  // when a project gains its first storyboard.
+  showStoryboard(data.storyboardSource ?? source, data.paths?.storyboard);
+  setStatus('ok', 'storyboard saved');
+  await refreshAssets();
+  return true;
+}
+
+$('story-save').addEventListener('click', () => void saveStoryboard());
 
 $('wire-voice').addEventListener('click', () => {
   void (async () => {
@@ -859,12 +919,7 @@ async function boot() {
     projectName: () => state.projectName,
     analysis: () => state.analysis,
     setStatus,
-    showProblems: (message, problems) => {
-      const box = $('problems');
-      box.hidden = false;
-      box.className = 'problems';
-      box.replaceChildren(h('strong', {}, message), h('ul', {}, problems.map((p) => h('li', {}, p))));
-    },
+    showProblems,
     jumpTo,
     // What is on disk but unclaimed, so an asset box can offer a picture
     // somebody made and never wired up. Read from the board rather than walked
@@ -875,12 +930,7 @@ async function boot() {
   initScenes({
     projectName: () => state.projectName,
     setStatus,
-    showProblems: (message, problems) => {
-      const box = $('problems');
-      box.hidden = false;
-      box.className = 'problems';
-      box.replaceChildren(h('strong', {}, message), h('ul', {}, problems.map((p) => h('li', {}, p))));
-    },
+    showProblems,
     jumpTo,
     spareAssets,
     afterEdit: afterNodeEdit,
@@ -908,6 +958,21 @@ async function boot() {
     // rest of the window is about, so the picker, the source pane and the board
     // all have to catch up before it reports success.
     onCreated: (name) => adoptProject(name),
+    // The walkthrough's two boxes hold a document each, pasted out of a chat
+    // window, and both have a home on disk. They go there through the same two
+    // functions the Save buttons call — a second copy of either would be a
+    // second thing to keep in step, and the one that fell behind would be the
+    // one nobody was looking at. Both return whether the write landed: a
+    // scenario is refused with a list of what is wrong, and the pane keeps the
+    // rejected text so it can be fixed rather than pasted again.
+    onApplyStoryboard: (source) => {
+      $('story').value = source;
+      return saveStoryboard();
+    },
+    onApplyScenario: (source) => {
+      $('source').value = source;
+      return save();
+    },
   });
 
   initAssets({
@@ -939,14 +1004,7 @@ async function boot() {
       renderGuide();
       return analyze();
     },
-    onStoryboard: (source, path) => {
-      state.storySaved = source ?? '';
-      $('story').value = source ?? '';
-      $('story').disabled = source === undefined;
-      $('story-path').textContent = path ?? 'no storyboard in this project';
-      $('story-sync').disabled = source === undefined;
-      $('story-save').disabled = source === undefined;
-    },
+    onStoryboard: showStoryboard,
   });
 
   const applyWorkspace = (next) => {

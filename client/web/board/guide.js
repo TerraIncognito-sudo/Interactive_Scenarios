@@ -21,6 +21,16 @@
  * all, and it is here rather than on the Assets tab because it is the moment
  * the project starts existing.
  *
+ * **It is step one, and that is a correction.** The project used to be made at
+ * step four, out of the boxes above it, which meant the first three steps ran
+ * against whatever project happened to be open — so the pipeline links below
+ * pointed at somebody else's show, and the storyboard and the scenario had
+ * nowhere of their own to be written until the create. Making the folder first
+ * costs nothing: a project with nothing in it is the starter scenario, which
+ * runs. Everything after it writes into a folder that exists, which is what
+ * lets the storyboard land in the project and the scenario replace the starter
+ * rather than both waiting in a box for a create that may never come.
+ *
  * **Go and do this.** The pipeline steps link to the button that does the work
  * rather than offering a second copy of it. Two buttons that call one route are
  * two things to keep in step, and the one that falls behind is the one nobody
@@ -43,11 +53,15 @@ const state = {
   open: null,
   /** Set while a create is in flight, so the button cannot be pressed twice. */
   creating: false,
+  /** Which box is being written into the project, so its button can say so. */
+  applying: null,
   getProject: () => null,
   getFacts: () => null,
   onStatus: () => {},
   onTab: () => {},
   onCreated: async () => {},
+  onApplyStoryboard: async () => false,
+  onApplyScenario: async () => false,
 };
 
 async function api(path, options) {
@@ -93,6 +107,7 @@ async function briefText(name) {
 // ---------------------------------------------------------------------------
 
 let pending;
+let waiting = {};
 
 /**
  * Saves the draft a beat after typing stops.
@@ -101,15 +116,55 @@ let pending;
  * these boxes hold a whole storyboard and a whole scenario file, which is an
  * afternoon of somebody's work sitting in a browser tab, and blur never
  * happens to a tab that is closed.
+ *
+ * The waiting patch accumulates rather than being replaced. One timer serves
+ * every box, so typing a name within the debounce of a paste used to cancel
+ * the paste's write and send the name instead — and the box that was not
+ * touched last was the one that never reached disk, silently, which is exactly
+ * the loss the draft exists to prevent.
  */
 function scheduleDraftSave(patch) {
   state.guide.draft = { ...state.guide.draft, ...patch };
+  waiting = { ...waiting, ...patch };
+  syncButtons();
   clearTimeout(pending);
-  pending = setTimeout(() => {
-    void api('/api/guide/draft', { method: 'PUT', body: JSON.stringify(patch) }).catch(() => {
-      state.onStatus('error', 'Could not save the draft.');
-    });
-  }, 600);
+  pending = setTimeout(() => void flushDraft(), 600);
+}
+
+/**
+ * Enables the buttons whose input has just arrived.
+ *
+ * Typing deliberately does not re-render: `render()` replaces the whole list,
+ * and a textarea replaced mid-paragraph takes the caret and the undo history
+ * with it. But the buttons under these boxes are disabled until their box has
+ * something in it, and nothing was updating them — so Create stayed greyed
+ * with a name typed into the field beside it, and the tab looked like it had
+ * simply refused. It is the reason a walkthrough that could create a project
+ * went a whole release without anybody managing to.
+ *
+ * One attribute says which box a button is waiting for, so this cannot drift
+ * out of step with the conditions the buttons are built with.
+ */
+function syncButtons() {
+  const list = $('guide-list');
+  if (!list) return;
+  const busy = state.creating || state.applying !== null;
+  for (const button of list.querySelectorAll('[data-needs]')) {
+    button.disabled = busy || !(state.guide?.draft?.[button.dataset.needs] ?? '').trim();
+  }
+}
+
+/** Writes whatever is waiting, now. Awaited before anything reads the draft. */
+async function flushDraft() {
+  clearTimeout(pending);
+  const patch = waiting;
+  waiting = {};
+  if (Object.keys(patch).length === 0) return;
+  try {
+    await api('/api/guide/draft', { method: 'PUT', body: JSON.stringify(patch) });
+  } catch {
+    state.onStatus('error', 'Could not save the draft.');
+  }
 }
 
 function draftBox(field, placeholder, rows = 8) {
@@ -144,8 +199,16 @@ function observed(key, facts) {
   switch (key) {
     case 'describe':
       return draft.description?.trim() ? `${words(draft.description)} words written` : null;
-    case 'storyboard':
-      return draft.storyboard?.trim() ? `${words(draft.storyboard)} words pasted back` : null;
+    case 'storyboard': {
+      if (!draft.storyboard?.trim()) return null;
+      // Two facts, not one: what is in the box, and whether it has reached the
+      // folder. The box was the whole of this once, and a storyboard that sat
+      // in it for an afternoon while the project went on having none is the
+      // failure that put a Save button underneath it.
+      const pasted = `${words(draft.storyboard)} words pasted back`;
+      if (!facts) return pasted;
+      return `${pasted} · ${facts.hasStoryboard ? 'saved into the project' : 'not saved yet'}`;
+    }
     case 'scenario':
       return draft.scenario?.trim() ? `${draft.scenario.split('\n').length} lines pasted back` : null;
     case 'create':
@@ -184,7 +247,14 @@ function goTo(tab, label) {
   );
 }
 
-function copyRow(brief, label, extra) {
+/**
+ * A brief, and the thing it carries with it.
+ *
+ * `extra` returning empty is a real case rather than a degenerate one: the
+ * short scenario brief goes into the chat that has the storyboard in it
+ * already, so what it carries is nothing at all.
+ */
+function copyRow(brief, label, extra, variant = 'primary') {
   return h(
     'div',
     { class: 'guide-row' },
@@ -192,7 +262,7 @@ function copyRow(brief, label, extra) {
       'button',
       {
         type: 'button',
-        class: 'primary',
+        class: variant,
         onclick: async () => {
           try {
             const text = await briefText(brief);
@@ -234,30 +304,42 @@ function copyRow(brief, label, extra) {
   );
 }
 
+/**
+ * Makes the folder, out of nothing but a name.
+ *
+ * It used to carry the pasted scenario, and that was the wrong way round. A
+ * scenario a model got slightly wrong refused the whole create, which left the
+ * person with no project at all and a refusal to read — at the one moment they
+ * had nothing else to work with. The starter scenario is a show that runs, so
+ * a folder can exist before there is anything to put in it, and the scenario
+ * is written into it at step four where being refused costs a fix rather than
+ * a project.
+ */
 async function createProject() {
   const draft = state.guide.draft;
   state.creating = true;
   render();
   try {
+    await flushDraft();
     const created = await api('/api/projects', {
       method: 'POST',
-      body: JSON.stringify({
-        name: draft.name,
-        scenario: draft.scenario,
-        storyboard: draft.storyboard,
-      }),
+      body: JSON.stringify({ name: draft.name }),
     });
-    state.onStatus('ok', `${created.name} created — it is open now.`);
-    await state.onCreated(created.name);
     // Opening a project normally moves you to the cast, because opening one is
     // a move. Creating one from here is not: the next thing this person needs
-    // is step five, and it is on this tab.
+    // is step two, and it is on this tab.
+    await state.onCreated(created.name);
     state.onTab('guide');
     await tick('create', true);
+    // Open what comes next rather than leaving the finished step open. The
+    // checklist opens at the first unticked step on a fresh load, and this is
+    // the same idea applied to the moment one of them stops being unticked.
+    state.open = 'describe';
+    // Last, because opening the project runs the analysis and the analysis has
+    // its own opinion about the status line. Said first, this sentence lasted
+    // until the validator answered and was replaced by the word "valid".
+    state.onStatus('ok', `${created.name} created — everything below now writes into it.`);
   } catch (err) {
-    // The whole message, newlines and all. A scenario is refused with a list of
-    // the keys and nodes that are wrong, and the headline on its own — "does
-    // not match the expected format" — is not something anybody can act on.
     state.onStatus('error', err.message);
   } finally {
     state.creating = false;
@@ -266,11 +348,64 @@ async function createProject() {
 }
 
 /**
+ * Hands one of the boxes to the project it belongs to.
+ *
+ * The box is where a paste lands and the project is where the document lives,
+ * and keeping them separate is the point: a scenario a model got slightly
+ * wrong comes back refused with a list naming the node, and the text has to
+ * still be here when it does — otherwise the fix is another round trip through
+ * a chat window for a missing `default:`.
+ *
+ * Neither write is this tab's own route. Both are the functions behind the
+ * Save buttons on the panes that own those two files.
+ */
+async function applyToProject(field, what, apply) {
+  const text = state.guide?.draft?.[field] ?? '';
+  if (!text.trim()) return state.onStatus('error', `Nothing in the ${what} box to save yet.`);
+  if (!state.getProject()) {
+    return state.onStatus('error', 'No project is open — step 1 makes one.');
+  }
+  const project = state.getProject();
+  state.applying = field;
+  render();
+  try {
+    await flushDraft();
+    // Last word, and only on success. Writing the scenario runs the validator
+    // behind it, and the validator's own report — the single word "valid" —
+    // arrives after this button's and is not an answer to the question the
+    // button asked, which was whether the file reached the folder.
+    if (await apply(text)) state.onStatus('ok', `${what} saved into ${project}.`);
+  } catch (err) {
+    state.onStatus('error', err.message);
+  } finally {
+    state.applying = null;
+    render();
+  }
+}
+
+/** The button both of those steps end with. */
+function applyRow(field, what, label, apply) {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'primary',
+      'data-needs': field,
+      disabled: state.applying !== null || !(state.guide?.draft?.[field] ?? '').trim(),
+      onclick: () => void applyToProject(field, what, apply),
+    },
+    state.applying === field ? 'Saving…' : label,
+  );
+}
+
+/**
  * The walkthrough, in order.
  *
- * `scope: 'draft'` steps happen before a project exists and are keyed to
- * nothing; the rest are keyed to whichever project is open, so two shows in one
- * workspace keep their own progress.
+ * `scope: 'draft'` is the one step that happens before a project exists, keyed
+ * to nothing because there is nothing to key it to. Everything else is keyed to
+ * whichever project is open, so two shows in one workspace keep their own
+ * progress — and, more to the point, so the work each step describes has a
+ * folder to happen in.
  */
 function steps(facts) {
   const draft = state.guide?.draft ?? {};
@@ -278,8 +413,58 @@ function steps(facts) {
 
   return [
     {
-      key: 'describe',
+      key: 'create',
       scope: 'draft',
+      title: 'Make the project',
+      body: () => [
+        h(
+          'p',
+          {},
+          'A folder in your workspace with a working show in it — a title card, a couple of ',
+          'lines and a vote. Press Play and it runs. Everything in it is meant to be ',
+          'replaced, and the next three steps are how.',
+        ),
+        h(
+          'p',
+          { class: 'hint' },
+          'First, on purpose. Every step below writes into the project that is open, so ',
+          'making it now is what stops the rest of this walkthrough happening to whichever ',
+          'show you had open when you started.',
+        ),
+        h(
+          'div',
+          { class: 'guide-row' },
+          h('input', {
+            class: 'guide-name',
+            type: 'text',
+            placeholder: 'folder name, e.g. arctic-sentinel',
+            value: draft.name ?? '',
+            spellcheck: 'false',
+            oninput: (event) => scheduleDraftSave({ name: event.target.value }),
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'primary',
+              'data-needs': 'name',
+              disabled: state.creating || !draft.name?.trim(),
+              onclick: () => void createProject(),
+            },
+            state.creating ? 'Creating…' : 'Create the project',
+          ),
+        ),
+        h(
+          'p',
+          { class: 'hint' },
+          'Letters, numbers, spaces, hyphens and underscores. It is the folder name, and it ',
+          'is what the picker at the top left will call the show.',
+        ),
+      ],
+    },
+    {
+      key: 'describe',
+      scope: 'project',
       title: 'Say what the show is',
       body: () => [
         h(
@@ -298,7 +483,7 @@ function steps(facts) {
     },
     {
       key: 'storyboard',
-      scope: 'draft',
+      scope: 'project',
       title: 'Turn it into a storyboard',
       body: () => [
         h(
@@ -306,7 +491,9 @@ function steps(facts) {
           {},
           'Copy the brief below — it carries your description with it — and paste the whole ',
           'thing into a chat with a capable model. What comes back is a shot-by-shot document: ',
-          'the cast, the visual style, every picture, every line, and the polls written out.',
+          'the cast, the visual style, every picture, every line, and the polls written out. ',
+          h('strong', {}, 'Keep that chat open'),
+          ' — the next step goes back to it.',
         ),
         h(
           'p',
@@ -316,66 +503,62 @@ function steps(facts) {
         ),
         copyRow('storyboard', 'Copy the brief + your description', () => draft.description ?? ''),
         filled(draftBox('storyboard', 'Paste the storyboard back here…', 10), draft.storyboard),
+        h(
+          'div',
+          { class: 'guide-row' },
+          applyRow('storyboard', 'storyboard', 'Save it into the project', (text) =>
+            state.onApplyStoryboard(text),
+          ),
+          h(
+            'span',
+            { class: 'hint' },
+            'Writes it beside the scenario, where the Storyboard tab reads it and the asset ' +
+              'rows are seeded from it.',
+          ),
+        ),
       ],
     },
     {
       key: 'scenario',
-      scope: 'draft',
+      scope: 'project',
       title: 'Turn the storyboard into a scenario.yaml',
       body: () => [
         h(
           'p',
           {},
-          'The same move again, with the second brief. This one describes the file format ',
-          'exactly — every node type, what a poll must declare, what the checker will refuse — ',
-          'and carries your storyboard with it.',
+          'Back in the same chat, paste the short brief. It is the file format and nothing ',
+          'else — the storyboard is already up there, and sending it again is ninety thousand ',
+          'characters of room the model needs for the answer instead.',
+        ),
+        copyRow('scenario-short', 'Copy the short brief (same chat)', () => ''),
+        h(
+          'p',
+          { class: 'hint' },
+          'Started a fresh chat instead? Use the full brief — it carries your storyboard ' +
+            'with it, and spells out everything the short one assumes you have just read.',
+        ),
+        copyRow('scenario', 'Copy the full brief + your storyboard', () => draft.storyboard ?? '', 'ghost'),
+        filled(draftBox('scenario', 'Paste the scenario.yaml back here…', 12), draft.scenario),
+        h(
+          'div',
+          { class: 'guide-row' },
+          applyRow('scenario', 'scenario', 'Save it into the project', (text) =>
+            state.onApplyScenario(text),
+          ),
+          h(
+            'span',
+            { class: 'hint' },
+            'Replaces the starter. It is checked first, so a mistake comes back as a list of ' +
+              'what is wrong — paste that back to the model and ask it to fix it.',
+          ),
         ),
         h(
           'p',
           { class: 'hint' },
-          'The file is validated the moment you press Create below, so a mistake here comes ',
-          'back as a list of what is wrong rather than as a broken project. If it is refused, ',
-          'paste the complaint back to the model and ask it to fix it.',
+          'If the model stopped partway, ask it to carry on from where it left off and add ' +
+            'the rest to the end of the box. A scenario that ends in the middle still loads; ' +
+            'it simply stops the show there.',
         ),
-        copyRow('scenario', 'Copy the brief + your storyboard', () => draft.storyboard ?? ''),
-        filled(draftBox('scenario', 'Paste the scenario.yaml back here…', 12), draft.scenario),
-      ],
-    },
-    {
-      key: 'create',
-      scope: 'draft',
-      title: 'Create the project',
-      body: () => [
-        h(
-          'p',
-          {},
-          'Makes a folder in your workspace holding the scenario and the storyboard, checks ',
-          'the file loads, and opens it. From here the rest of the editor is about this project.',
-        ),
-        h(
-          'div',
-          { class: 'guide-row' },
-          h('input', {
-            class: 'guide-name',
-            type: 'text',
-            placeholder: 'folder name, e.g. arctic-sentinel',
-            value: draft.name ?? '',
-            spellcheck: 'false',
-            oninput: (event) => scheduleDraftSave({ name: event.target.value }),
-          }),
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'primary',
-              disabled: state.creating || !draft.scenario?.trim(),
-              onclick: () => void createProject(),
-            },
-            state.creating ? 'Creating…' : 'Create the project',
-          ),
-        ),
-        !draft.scenario?.trim() &&
-          h('p', { class: 'hint' }, 'Nothing to create yet — the scenario box above is empty.'),
         h(
           'div',
           { class: 'guide-row' },
@@ -386,14 +569,14 @@ function steps(facts) {
               class: 'ghost',
               onclick: async () => {
                 if (!confirm('Clear the description, storyboard and scenario from this tab?')) return;
-                // Offered rather than done on a successful create. The draft is
+                // Offered rather than done on a successful save. The boxes are
                 // the only copy of a storyboard until somebody has checked the
                 // project actually opens.
                 state.guide = await api('/api/guide/draft', { method: 'DELETE' });
                 render();
               },
             },
-            'Clear the draft',
+            'Clear the boxes',
           ),
           h(
             'span',
@@ -624,7 +807,7 @@ function render() {
               ? h(
                   'p',
                   { class: 'hint' },
-                  'Open a project first — the picker is at the top left, or finish step 4 above.',
+                  'Make the project first — step 1 above, or pick one at the top left.',
                 )
               : step.body(),
           ),

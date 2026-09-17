@@ -2269,12 +2269,41 @@ function commentedBeats(source: string, changed: Retimed[]): number[] {
   return found;
 }
 
+/**
+ * Writes the storyboard, and makes sure the project can still find it.
+ *
+ * `storyboard:` in `project.yaml` is how every other part of the board reaches
+ * the document — `pathsOf` reads that key, and nothing re-scans the folder
+ * once the project file exists. A project set up for asset work *before* it
+ * had a storyboard therefore has no key, and writing `storyboard.md` beside it
+ * put a document on disk that the Storyboard tab went on reporting as absent
+ * and that seeding went on refusing to read. The file was there; the only
+ * record of what it was had never been written.
+ *
+ * So the key is recorded when the file is created and the project has no
+ * opinion yet. Through the document API like every other field edit, and never
+ * over an opinion that is already there: an author who pointed `storyboard:`
+ * at `script.md` meant it.
+ */
 export async function saveStoryboardSource(name: string, source: string): Promise<void> {
   const dir = projectDir(name);
   const file = join(dir, 'project.yaml');
   const project = await loadProject(file).catch(() => defaultProject(name, dir));
   const storyboard = project.storyboard ?? 'storyboard.md';
   await writeAtomic(join(dir, basename(storyboard)), source);
+
+  if (project.storyboard !== undefined) return;
+  const projectSource = await readFile(file, 'utf8').catch(() => undefined);
+  // No project file at all is the ordinary case for a folder that has never
+  // been near the asset pipeline, and it needs nothing done: `defaultProject`
+  // detects the storyboard by name until one is written.
+  if (projectSource === undefined) return;
+
+  const doc = parseDocument(projectSource);
+  doc.setIn(['storyboard'], storyboard);
+  const next = doc.toString();
+  parseProjectSource(next);
+  await writeAtomic(file, next);
 }
 
 /**

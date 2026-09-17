@@ -632,7 +632,10 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return sendJson(response, 200, await loadGuide());
   }
 
-  const briefMatch = /^\/api\/guide\/brief\/([a-z]+)$/.exec(path);
+  // A hyphen, because one brief is the short form of another and says so in
+  // its name. Still a closed list on the other side of it — the set is named
+  // in `guide.ts`, so this pattern widening cannot reach a second file.
+  const briefMatch = /^\/api\/guide\/brief\/([a-z-]+)$/.exec(path);
   if (briefMatch && request.method === 'GET') {
     const name = briefMatch[1]!;
     if (!isBriefName(name)) return sendJson(response, 404, { error: 'No such brief' });

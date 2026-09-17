@@ -17,7 +17,7 @@
 
 import { test, describe, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
@@ -75,8 +75,8 @@ nodes:
 // ---------------------------------------------------------------------------
 
 describe('the briefs', () => {
-  test('both are served as text, because what happens to them next is a paste', async () => {
-    for (const name of ['storyboard', 'scenario']) {
+  test('all of them are served as text, because what happens next is a paste', async () => {
+    for (const name of ['storyboard', 'scenario', 'scenario-short']) {
       const response = await api(`/api/guide/brief/${name}`);
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type') ?? '', /text\/plain/);
@@ -90,21 +90,51 @@ describe('the briefs', () => {
     assert.equal((await api('/api/guide/brief/passwd')).status, 404);
   });
 
-  test('the scenario brief describes every node type the schema has', async () => {
+  test('both scenario briefs describe every node type the schema has', async () => {
     // The failure this catches is quiet and slow: a node type is added, the
     // brief goes on listing five, and every scenario a model writes from it is
     // missing the sixth for as long as nobody notices.
-    const brief = await (await api('/api/guide/brief/scenario')).text();
+    //
+    // Both, because the short one is not a summary of the long one — it is the
+    // same reference for the chat that already holds the storyboard, and it is
+    // the one most people will use. A format reference that has quietly become
+    // the less complete of the two is worse than not having it.
     const types = ScenarioNodeSchema.options.map(
       (option) => (option.shape.type as { value: string }).value,
     );
     assert.ok(types.length >= 6, 'the schema walk found nothing');
-    for (const type of types) {
-      assert.ok(
-        new RegExp(`^### ${type}$`, 'm').test(brief),
-        `the scenario brief has no section for a "${type}" node`,
-      );
+
+    for (const name of ['scenario', 'scenario-short']) {
+      const brief = await (await api(`/api/guide/brief/${name}`)).text();
+      for (const type of types) {
+        assert.ok(
+          new RegExp(`^### ${type}$`, 'm').test(brief),
+          `the ${name} brief has no section for a "${type}" node`,
+        );
+      }
+      // The rules with no second chance. A poll missing its default is refused
+      // at the editor, which is recoverable; a file that will not load because
+      // an unknown key was invented is the round trip this brief exists to
+      // avoid.
+      assert.match(brief, /default:/, `${name} never mentions a poll's default`);
+      assert.match(brief, /unknown key/i, `${name} never says an unknown key is an error`);
     }
+  });
+
+  test('the short brief does not ask for the storyboard it is sent after', async () => {
+    // Its whole reason for existing: the chat it goes into wrote the storyboard
+    // a moment ago, and pasting ninety thousand characters of it back is the
+    // room the model needed for the answer. A short brief that still said "the
+    // storyboard is below this brief" would be describing something that is
+    // not there.
+    const brief = await (await api('/api/guide/brief/scenario-short')).text();
+    assert.ok(
+      !/storyboard is below/i.test(brief),
+      'the short brief still expects the storyboard to be pasted under it',
+    );
+    assert.match(brief, /earlier in this conversation/i);
+    // And it says what to do about the one failure a long show actually hits.
+    assert.match(brief, /continue in the\s+next reply/i);
   });
 
   test('the storyboard brief spells the labels its parser actually matches', async () => {
@@ -261,6 +291,73 @@ describe('creating a project', () => {
   });
 });
 
+describe('a storyboard that arrives after the project file does', () => {
+  test('the project records where it is, or nothing can find it', async () => {
+    // The walkthrough now makes the folder first and pastes the storyboard into
+    // it afterwards, which is an order `project.yaml` had never been written
+    // for: `pathsOf` reads the `storyboard:` key and nothing re-scans the
+    // folder once the file exists. So `storyboard.md` landed on disk, the
+    // Storyboard tab went on reporting the document as absent, and seeding went
+    // on refusing to read it. The file was there; the only record of what it
+    // was had never been written.
+    await api('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'late-story', scenario: A_SCENARIO }),
+    });
+    await api('/api/projects/late-story/init', { method: 'POST' });
+
+    const before = (await (await api('/api/projects/late-story')).json()) as {
+      storyboardSource?: string;
+    };
+    assert.equal(before.storyboardSource, undefined, 'it started with a storyboard somehow');
+
+    const saved = await api('/api/projects/late-story/storyboard', {
+      method: 'PUT',
+      body: JSON.stringify({ source: '# Late\n\n### Shot A.1 — Only\n' }),
+    });
+    assert.equal(saved.status, 200);
+
+    const dir = join(workspace, 'late-story');
+    assert.ok(existsSync(join(dir, 'storyboard.md')), 'nothing was written');
+    assert.match(
+      readFileSync(join(dir, 'project.yaml'), 'utf8'),
+      /^storyboard: storyboard\.md$/m,
+      'the project file still does not say where the storyboard is',
+    );
+
+    // The claim that matters, and the one the board reads: reopening it finds
+    // the document.
+    const after = (await (await api('/api/projects/late-story')).json()) as {
+      storyboardSource?: string;
+    };
+    assert.match(after.storyboardSource ?? '', /Shot A\.1/);
+  });
+
+  test('a storyboard the author already named keeps its name', async () => {
+    // `storyboard: script.md` is somebody saying where their document lives.
+    // Writing `storyboard.md` beside it and re-pointing the key would split one
+    // document into two, and the one the board read would be the empty one.
+    await api('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'named-story', scenario: A_SCENARIO }),
+    });
+    await api('/api/projects/named-story/init', { method: 'POST' });
+
+    const dir = join(workspace, 'named-story');
+    const file = join(dir, 'project.yaml');
+    writeFileSync(file, `${readFileSync(file, 'utf8')}storyboard: script.md\n`, 'utf8');
+
+    await api('/api/projects/named-story/storyboard', {
+      method: 'PUT',
+      body: JSON.stringify({ source: '# Named\n' }),
+    });
+
+    assert.ok(existsSync(join(dir, 'script.md')), 'it wrote somewhere else');
+    assert.equal(existsSync(join(dir, 'storyboard.md')), false);
+    assert.match(readFileSync(file, 'utf8'), /^storyboard: script\.md$/m);
+  });
+});
+
 describe('the tab itself', () => {
   test('every step the page draws has somewhere to keep its tick', () => {
     // The two halves of one decision written in two files: the step keys live
@@ -271,10 +368,15 @@ describe('the tab itself', () => {
     const keys = [...source.matchAll(/^\s{6}key: '([a-z]+)',\n\s{6}scope: '(draft|project)',/gm)];
     assert.ok(keys.length >= 10, `only found ${keys.length} steps — the walk is broken`);
 
-    // The four that happen before a project exists are keyed to nothing,
-    // because there is nothing to key them to.
+    // Exactly one step happens before a project exists: the one that makes it.
+    // It used to be the fourth, with the description, the storyboard and the
+    // scenario ahead of it keyed to nothing — which meant the first three steps
+    // of a new show ran against whichever project happened to be open, and the
+    // two documents had nowhere of their own to be written until a create that
+    // might never come.
     const drafts = keys.filter((match) => match[2] === 'draft').map((match) => match[1]);
-    assert.deepEqual(drafts, ['describe', 'storyboard', 'scenario', 'create']);
+    assert.deepEqual(drafts, ['create']);
+    assert.equal(keys[0]![1], 'create', 'the project is no longer made first');
   });
 
   test('the pipeline steps send people to a button rather than offering a second one', () => {
@@ -288,5 +390,30 @@ describe('the tab itself', () => {
       !/fetch\(`?\/api\/projects\/\$\{[^}]*\}\/(wire|sync|init)/.test(source),
       'the walkthrough is calling a pipeline route of its own',
     );
+    // The two boxes that hold a document go to disk through the functions
+    // behind the Save buttons on the panes that own those files, handed in as
+    // `onApplyStoryboard` and `onApplyScenario`. A second fetch here would be a
+    // second thing to keep in step with the storyboard pane and the source
+    // pane, and it would be the one nobody was looking at.
+    assert.ok(source.includes('state.onApplyStoryboard('), 'no storyboard hand-off');
+    assert.ok(source.includes('state.onApplyScenario('), 'no scenario hand-off');
+    assert.ok(
+      !/\/storyboard`|\/scenario`/.test(source),
+      'the walkthrough writes a project file through a route of its own',
+    );
+  });
+
+  test('the create sends a name and nothing else', () => {
+    // It used to carry the pasted scenario, which meant a scenario a model got
+    // slightly wrong refused the whole create — leaving somebody with no
+    // project at all at the one moment they had nothing else to work with. The
+    // folder is made from the starter and the scenario is saved into it a step
+    // later, where being refused costs a fix rather than a project.
+    const source = readFileSync(join(ROOT, 'client', 'web', 'board', 'guide.js'), 'utf8');
+    const call = /await api\('\/api\/projects', \{\s*method: 'POST',\s*body: JSON\.stringify\(([^)]*)\)/.exec(
+      source,
+    );
+    assert.ok(call, 'the walkthrough no longer creates a project');
+    assert.match(call[1]!, /^\{ name: draft\.name \}$/);
   });
 });

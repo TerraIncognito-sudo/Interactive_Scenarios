@@ -739,6 +739,18 @@ hand-tuned prompts and comments recording why. Field edits go through YAML's doc
 (`client/app/projects.ts`); parsing to an object and re-serialising strips every comment in
 the file the first time anyone touches a text box. A test guards this.
 
+**A storyboard that arrives after `project.yaml` has to be recorded in it.** `pathsOf` reads
+the `storyboard:` key, and nothing re-scans the folder once the project file exists — the
+name-sniffing in `defaultProject` only runs while there is no project file at all. So a
+project set up for asset work before it had a storyboard had no key, and writing
+`storyboard.md` beside it put a document on disk that the Storyboard tab went on reporting as
+absent and seeding went on refusing to read. The file was there; the only record of what it
+was had never been written. `saveStoryboardSource` sets the key when it creates the file and
+the project has no opinion yet, through the document API and never over one already there — an
+author who pointed `storyboard:` at `script.md` meant it, and a second document the board read
+instead would be the empty one. This became reachable the day the walkthrough started making
+the folder before the storyboard.
+
 **Anything the pipeline needs done to a project, the client does.** If a scenario has to be
 hand-edited or a script run once to get an asset onto the board, the ecosystem has a hole in it
 and the two halves will drift. Declaring `voice:` on every line is `wireVoice`; giving each
@@ -888,14 +900,55 @@ second opinion about what is finished with the disagreement invisible.
 **The walkthrough links to buttons; it does not grow its own.** Its pipeline steps call
 `goTo('assets')` and friends rather than the routes behind them. Two buttons that call one
 route are two things to keep in step, and the one that falls behind is the one nobody is
-looking at. A test asserts it calls no pipeline route of its own.
+looking at. A test asserts it calls no pipeline route of its own. The two boxes that hold a
+document are the same rule one level further in: they write through `onApplyStoryboard` and
+`onApplyScenario`, which *are* the functions behind the storyboard pane's Save and the source
+pane's Save, rather than a second `PUT` of their own.
+
+**The project is made first, and everything after it writes into a folder.** It used to be
+step four, built out of the three boxes above it — which meant the first three steps of a new
+show ran against whichever project happened to be open, and the two documents somebody had
+just spent an afternoon on had nowhere of their own to be written until a create that might
+never come. A folder made from nothing but a name is the starter scenario, which runs, so
+creating first costs nothing. What it buys is that the storyboard lands in the project, the
+scenario replaces the starter, and step seven's "seed the pictures" is unambiguous about whose
+pictures. **The create sends a name and nothing else**, deliberately: carrying the pasted
+scenario meant a scenario a model got slightly wrong refused the whole create, leaving
+somebody with no project at all at the one moment they had nothing else to work with. Being
+refused at step four costs a fix; being refused at step one costs the afternoon.
+
+**The box is the buffer and the project is the destination, and they are separate on
+purpose.** A scenario comes back refused with a list naming the node, and the text has to
+still be in the box when it does — otherwise the fix for a missing `default:` is another round
+trip through a chat window. So the boxes keep saving to the draft as they always did, and a
+button underneath commits. What the refusal shows is the *list*, not the headline: the reply
+has always carried the keys and nodes that are wrong and nothing was reading them, so "Scenario
+does not match the expected format" was the whole of what anybody got — a sentence naming
+nothing to go and fix.
+
+**A button disabled by what is in a box has to notice the box filling up.** Typing deliberately
+does not re-render — `render()` replaces the list, and a textarea replaced mid-paragraph takes
+the caret and the undo history with it — so nothing was updating the buttons, and Create stayed
+greyed out with a name typed into the field beside it. The tab looked like it had simply
+refused, and the walkthrough went a whole release with no way to reach the thing it exists for.
+`syncButtons` reads one `data-needs` attribute off each button so the enabling and the
+disabling cannot drift apart.
+
+**The briefs travel to where the work is, and there are two of the scenario one.** The
+storyboard is written in a chat, and the chat that wrote it still has it — so pasting the full
+brief *plus* ninety thousand characters of storyboard back into that same conversation spends
+on context the room the model needs for the answer, which is the whole show. `scenario-short`
+is the format reference for that chat and carries nothing with it; the full brief is for a
+fresh one and carries the storyboard. It is **not a summary**: it is the same reference, and
+the node-type test walks both, because the one most people will use quietly becoming the less
+complete of the two is exactly how a brief starts producing files that will not load.
 
 **The briefs are checked against the formats they describe.** `docs/prompts/*.md` are prose
 handed to a language model, and prose drifts: the scenario schema gains a node type, the
 storyboard parser learns a heading, and the document telling somebody what to write goes on
 describing last year's file. `tests/guide.test.ts` walks `ScenarioNodeSchema.options` and
-insists on a `### <type>` section for each, and checks the storyboard brief spells every label
-its parser matches. It also asserts neither brief teaches `STYLE.`, because nothing expands it
+insists on a `### <type>` section for each **in both scenario briefs**, and checks the
+storyboard brief spells every label its parser matches. It also asserts neither brief teaches `STYLE.`, because nothing expands it
 any more — a prompt saying `STYLE.` now reaches a model as the word STYLE, and the brief is the
 only place anybody would learn to write it.
 
@@ -905,13 +958,15 @@ machine.
 
 ### Making a project, and finding it again
 
-**One route creates a project, and it answers to two callers.** The walkthrough arrives
-holding a whole `scenario.yaml` somebody pasted; the picker's **New** button arrives holding
-nothing but a name, and `createProject` scaffolds a starter. Two routes would be two places
-for "what does a new project look like" to be answered, and the one that fell behind would be
-the one nobody was looking at. The starter goes through the same `parseScenarioSource` as a
-paste, which is what catches a template broken by a change to the schema — on the first press
-of New rather than by whoever gets the unopenable folder.
+**One route creates a project, and both ways in send a name.** The picker's **New** button
+and the walkthrough's step one both arrive holding nothing else, and `createProject` scaffolds
+a starter. Two routes would be two places for "what does a new project look like" to be
+answered, and the one that fell behind would be the one nobody was looking at. The starter
+goes through the same `parseScenarioSource` as anything pasted, which is what catches a
+template broken by a change to the schema — on the first press of New rather than by whoever
+gets the unopenable folder. The route still *accepts* a whole `scenario` and `storyboard`,
+which is what makes a project out of a file somebody already has, and the tests hold that
+branch; no button sends one any more, for the reason under **The project is made first**.
 
 **A folder name is not a scenario id.** `NEW_PROJECT_NAME` allows spaces so a folder can be
 called "My Show"; `idPattern` does not. `scenarioIdFor` derives one from the other, and the
@@ -962,7 +1017,7 @@ how "created — press Play" became "valid" with nothing to explain the change.
 | `client/web/stage/` | The projector — TypeScript, Vite-bundled, runs the production engine |
 | `client/web/lib/` | `pool.ts`, `fetch-asset.ts`, `connection.ts` — shared by the stage |
 | `client/voice/` | The text-to-speech sidecar. Python, uv-managed, client-only |
-| `docs/prompts/` | The two LLM briefs the walkthrough hands out |
+| `docs/prompts/` | The LLM briefs the walkthrough hands out: a storyboard one, and two of the scenario one |
 | `scenarios/` | Content, and the client's default workspace |
 | `tests/` | At the root rather than in a workspace, because several exist to join two |
 
