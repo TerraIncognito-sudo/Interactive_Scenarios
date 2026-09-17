@@ -230,3 +230,157 @@ export function scaffoldFromStoryboard(
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// A scenario from nothing
+// ---------------------------------------------------------------------------
+
+/**
+ * A scenario id out of a folder name.
+ *
+ * `NEW_PROJECT_NAME` lets a folder be called "My Show", and `idPattern` does
+ * not let a scenario be. Two rules, deliberately different — a folder name is
+ * for a person reading a file list and an id is referenced by other lines —
+ * so the id is derived rather than assumed, or naming a project with a space
+ * in it would write a file that will not load.
+ */
+export function scenarioIdFor(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '');
+  // Every legal folder name starts with a letter or a digit, so this only
+  // fires for a name that was entirely punctuation somewhere the folder rule
+  // is looser than this one. Better a dull id than an unloadable file.
+  return slug === '' ? 'scenario' : slug;
+}
+
+/**
+ * One of somebody's words, quoted however YAML needs it quoting.
+ *
+ * `title: Sea State: a rehearsal` is not YAML, and neither is a title starting
+ * with a `#`, a `-` or a quote. The rest of this template is ours and can be
+ * written out literally; these two values are not, so they go through the
+ * serialiser for exactly as long as it takes to make them safe.
+ */
+function scalar(value: string): string {
+  return stringifyYaml(value, { lineWidth: 0 }).trimEnd();
+}
+
+/**
+ * The file a brand-new project starts life as.
+ *
+ * Writing one of these by hand meant knowing the shape of a format that is
+ * written down in a Zod schema, so the honest first step of "make a new
+ * scenario" used to be "go and read `schema.ts`". What comes back instead is a
+ * show that already runs: press Play and it plays, and every line of it is
+ * meant to be replaced.
+ *
+ * It declares **no assets**. Declaring a name is what puts a row on the asset
+ * board, which is exactly right once somebody knows what picture they want and
+ * is a first run that reports one thing missing before they have written a
+ * word. A scene with no background renders as a gradient, which is a perfectly
+ * good way to write a whole story before any art exists.
+ *
+ * Written as a string rather than through `stringifyYaml`, unlike the
+ * storyboard scaffold beside it. The comments are most of the point — this is
+ * the one file in the program whose job is to teach the format — and a
+ * serialiser would throw every one of them away.
+ */
+export function starterScenario(options: { name: string; title?: string }): string {
+  const id = scenarioIdFor(options.name);
+  // Somebody's words, on one line. A title arrives over HTTP, so it can hold
+  // anything at all — and a newline in it would end the comment it is written
+  // into and leave the rest of the sentence being read as YAML.
+  const title = (options.title ?? options.name).replace(/\s+/g, ' ').trim().slice(0, 120);
+
+  return `# ${title}
+#
+# A new scenario, and a working one: open the Show tab and press Play and it
+# runs. Everything in here is meant to be replaced — it exists so there is
+# something on the projector before there is a story, and so the shape of the
+# file is in front of you rather than in a schema.
+#
+# Three things worth knowing before you start deleting:
+#
+#   - A beat ends when its \`hold\` (in seconds) elapses. Nothing opens the
+#     audio file to find out how long it is, so a hold shorter than its clip
+#     cuts the line off mid-word. The Assets tab measures the real clips and
+#     offers to write these numbers for you.
+#   - A scene is a *place*, and several shots can share one. Give a node its
+#     own \`background:\` for a new shot in the same room.
+#   - Every poll needs a \`default:\`. A vote nobody answers must never be able
+#     to stall in front of an audience.
+#
+# Everything the editor writes back into this file is written in place, so
+# these comments survive. They are yours to delete.
+
+id: ${id}
+title: ${scalar(title)}
+description: One sentence about what the room is going to argue about.
+
+start: title_card
+
+characters:
+  narr:
+    name: Narrator
+    # Quoted, or YAML reads the # as the start of a comment.
+    color: '#B0BEC5'
+
+scenes:
+  # No background, so this renders as a gradient. Add
+  # \`background: images/opening.png\` when you know what you want there —
+  # declaring the name is what puts it on the Assets tab to be made.
+  opening: {}
+
+nodes:
+  # A gate has no clock at all. It waits for the button, which is what lets you
+  # talk over a title card for as long as the room needs.
+  - id: title_card
+    type: gate
+    scene: opening
+    text: ${scalar(title)}
+    label: Start
+    next: opening_line
+
+  - id: opening_line
+    type: dialogue
+    scene: opening
+    lines:
+      - who: narr
+        text: Replace this with the first thing the room hears.
+        hold: 4
+      - who: narr
+        text: One line per beat — the projector shows them one at a time.
+        hold: 4
+    next: the_question
+
+  - id: the_question
+    type: poll
+    scene: opening
+    question: Replace this with the question the room votes on.
+    prompt: There is no right answer. Decide together.
+    duration: 60
+    options:
+      - { key: one, label: The first answer, next: ending_one }
+      - { key: two, label: The second answer, next: ending_two }
+    default: one
+    set:
+      # A later \`branch\` node can read this, which is how a vote still matters
+      # three scenes on without the script exploding into a tree.
+      choice: $winner
+
+  - id: ending_one
+    type: end
+    scene: opening
+    text: The room chose the first answer.
+
+  - id: ending_two
+    type: end
+    scene: opening
+    text: The room chose the second answer.
+`;
+}

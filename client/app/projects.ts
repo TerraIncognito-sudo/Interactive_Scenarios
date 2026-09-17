@@ -50,6 +50,7 @@ import {
   strippedProjectSource,
   type RecipeMigration,
 } from './migrate-recipes.ts';
+import { starterScenario } from './scaffold.ts';
 import { buildOverview, type Overview } from './sections.ts';
 import { outstandingOf, type Outstanding } from './outstanding.ts';
 import {
@@ -200,6 +201,20 @@ function projectDir(name: string): string {
     throw new ProjectError(`"${name}" is not a folder inside the workspace`);
   }
   return dir;
+}
+
+/**
+ * A project's folder on disk, for the one caller that wants the folder itself
+ * rather than anything in it.
+ *
+ * `projectDir` is the containment check every route already goes through, and
+ * this is it under a name worth exporting. Nothing outside this file gets to
+ * build a path into the workspace by hand: the board sends a name, this turns
+ * it into a path, and a name that resolves anywhere but inside the workspace
+ * is refused before it reaches the filesystem at all.
+ */
+export function projectFolder(name: string): string {
+  return projectDir(name);
 }
 
 /** The storyboard, if the folder has one. Any `*storyboard*.md` counts. */
@@ -389,10 +404,18 @@ export type CreatedProject = { name: string; scenario: string; storyboard?: stri
  * that will not load is a project the picker offers and the editor then refuses
  * to open, and the first thing anybody would do about it is delete the folder
  * and lose the paste.
+ *
+ * **Leave `scenario` out and one is scaffolded**, which is the other half of
+ * this: the walkthrough's route in is a paste, and the picker's is a person who
+ * has an idea and no text to paste. Both land here rather than in two routes
+ * that would drift, and the starter goes through the same parse as anything
+ * pasted — so a template broken by an edit to the schema is caught here, on the
+ * first attempt to use it, rather than by whoever next presses New.
  */
 export async function createProject(options: {
   name: string;
-  scenario: string;
+  scenario?: string;
+  title?: string;
   storyboard?: string;
 }): Promise<CreatedProject> {
   const name = options.name.trim();
@@ -403,7 +426,12 @@ export async function createProject(options: {
     );
   }
 
-  const parsed = parseScenarioSource(options.scenario);
+  const source =
+    options.scenario !== undefined && options.scenario.trim() !== ''
+      ? options.scenario
+      : starterScenario({ name, ...(options.title ? { title: options.title } : {}) });
+
+  const parsed = parseScenarioSource(source);
   if (!parsed.ok) {
     // The problems and not merely the headline: "does not match the expected
     // format" is not something anybody can act on, and the list underneath it
@@ -419,7 +447,7 @@ export async function createProject(options: {
   }
 
   await mkdir(dir, { recursive: true });
-  await writeAtomic(join(dir, 'scenario.yaml'), options.scenario);
+  await writeAtomic(join(dir, 'scenario.yaml'), source);
 
   // The storyboard travels with it when there is one. It is not required —
   // a scenario written by hand is a whole project — but it is what the asset

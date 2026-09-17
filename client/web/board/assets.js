@@ -115,7 +115,12 @@ export async function openProject(name) {
     // they are looking at.
     // 'cast' rather than the board: opening a project is not an action, and
     // the first question anybody has about a show is who is in it.
-    state.onScenario(data.scenarioSource, name, data.paths.scenario, 'cast');
+    // Awaited, so that when this resolves the window really is about this
+    // project — the source pane filled *and* validated. Left unawaited, the
+    // analysis lands a moment later and overwrites whatever the action that
+    // opened the project had to say about itself, which is how "created —
+    // press Play" became "valid" with nothing to explain the change.
+    await state.onScenario(data.scenarioSource, name, data.paths.scenario, 'cast');
     state.onStoryboard(data.storyboardSource, data.paths.storyboard);
     render();
   } catch (err) {

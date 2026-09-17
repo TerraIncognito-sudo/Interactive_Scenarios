@@ -99,6 +99,7 @@ import {
   saveDraft,
   setStep,
 } from './guide.ts';
+import { revealFolder, revealTarget } from './reveal.ts';
 import { writeRecord } from './show/record.ts';
 import { dropLink, goLive, goOffline, linkView, relinkNow } from './show/link.ts';
 import { attachShowSocket, type ShowSocket } from './show/ws.ts';
@@ -682,19 +683,28 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return sendJson(response, 200, { projects: await listProjects(), dir: workspace() });
   }
 
+  // One route, two ways in. The walkthrough arrives holding a whole
+  // `scenario.yaml` somebody pasted; the picker's New button arrives holding
+  // nothing but a name, and gets a scaffolded starter. Two routes would be two
+  // places for "what does a new project look like" to be answered, and the one
+  // that fell behind would be the one nobody was looking at.
   if (path === '/api/projects' && request.method === 'POST') {
     const body = (await readBody(request)) as {
       name?: unknown;
+      title?: unknown;
       scenario?: unknown;
       storyboard?: unknown;
     };
-    if (typeof body.name !== 'string' || typeof body.scenario !== 'string') {
-      return sendJson(response, 400, { error: 'Expected { name, scenario, storyboard? }' });
+    if (typeof body.name !== 'string') {
+      return sendJson(response, 400, {
+        error: 'Expected { name, scenario?, title?, storyboard? }',
+      });
     }
     try {
       const created = await createProject({
         name: body.name,
-        scenario: body.scenario,
+        ...(typeof body.scenario === 'string' ? { scenario: body.scenario } : {}),
+        ...(typeof body.title === 'string' ? { title: body.title } : {}),
         ...(typeof body.storyboard === 'string' ? { storyboard: body.storyboard } : {}),
       });
       return sendJson(response, 200, {
@@ -702,6 +712,22 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         projects: await listProjects(),
         dir: workspace(),
       });
+    } catch (err) {
+      return sendJson(response, 400, { error: (err as Error).message });
+    }
+  }
+
+  // Not a project action, because it is also what you press with nothing open:
+  // the answer to "where is this" when no project is selected is the workspace
+  // itself, and a route under `/api/projects/:name` could not say that.
+  if (path === '/api/reveal' && request.method === 'POST') {
+    const body = (await readBody(request)) as { project?: unknown };
+    try {
+      const dir = await revealTarget(
+        typeof body.project === 'string' && body.project !== '' ? body.project : undefined,
+      );
+      revealFolder(dir);
+      return sendJson(response, 200, { path: dir });
     } catch (err) {
       return sendJson(response, 400, { error: (err as Error).message });
     }

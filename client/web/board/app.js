@@ -54,10 +54,10 @@ const state = {
 /**
  * The one control that says which project is open.
  *
- * Projects only. The editor cannot see the repo's `scenarios/` folder at all —
- * that is the live server's, and an editor able to write into it will
- * eventually do so by accident. Deploying is copying a finished folder across
- * by hand, deliberately, when the show is ready.
+ * Every folder in the workspace that holds a `scenario.yaml`, which since the
+ * two programs became one is usually the repo's own `scenarios/`. What stops
+ * an edit landing under a live projector is no longer that the editor cannot
+ * reach the folder — it is the show holding its own, in `show/session.ts`.
  */
 function renderPicker() {
   $('picker').replaceChildren(
@@ -83,6 +83,94 @@ function renderPicker() {
 function markSelected(value) {
   state.selected = value;
   $('picker').value = value;
+}
+
+/**
+ * Catches the whole window up on a project that has just come into existence.
+ *
+ * Creating one is the only action here that changes what every other tab is
+ * about, so the picker's list, its selection, the source pane and the board all
+ * have to move together — and `openProject` is what actually sets
+ * `state.projectName`, so nothing may report success before it resolves.
+ *
+ * One function rather than one per entry point: the walkthrough creates
+ * projects too, and two copies of this would drift on the day a third thing
+ * needed refreshing.
+ */
+async function adoptProject(name) {
+  const next = await fetch('/api/projects').then((r) => r.json());
+  state.projects = next.projects;
+  setProjects(next.projects, next.workspace);
+  renderPicker();
+  markSelected(name);
+  await openProject(name);
+}
+
+/**
+ * New scenario: a name, a folder, and a file that already runs.
+ *
+ * The starter is written by the server rather than sent from here, so what a
+ * new scenario looks like is answered in one place — and it is parsed by the
+ * same check a pasted one goes through before a single byte is written.
+ *
+ * A native prompt, as everywhere else on this board. A name is one line of
+ * text, and a dialog to collect it would be more program than the question
+ * deserves.
+ */
+async function newProject() {
+  const name = prompt(
+    `Name for the new scenario folder:
+
+Letters, numbers, spaces, hyphens and underscores.`,
+    '',
+  );
+  if (name === null || name.trim() === '') return;
+
+  setStatus('', `creating ${name.trim()}…`);
+  try {
+    const response = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setStatus('bad', data.error ?? 'could not create it');
+      return;
+    }
+    await adoptProject(data.name);
+    // Straight to the story rather than to the cast, because the starter has
+    // one narrator and five nodes: what somebody wants to see the second it
+    // exists is the beats they are about to replace.
+    showTab('nodes');
+    setStatus('good', `${data.name} created — press Play to hear it run`);
+  } catch (err) {
+    setStatus('bad', err.message);
+  }
+}
+
+/**
+ * Hands the open project's folder to the file manager.
+ *
+ * The name goes over the wire and the path comes back, never the other way
+ * round: the server resolves it inside the workspace, which is the same
+ * containment check every project route makes. Nothing open means the
+ * workspace, because "where is this" is the question either way.
+ */
+async function revealProject() {
+  try {
+    const response = await fetch('/api/reveal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: state.projectName ?? '' }),
+    });
+    const data = await response.json();
+    // The path either way. If no file manager opened — a headless box, a
+    // locked-down desktop — this is still the answer somebody wanted.
+    setStatus(response.ok ? 'good' : 'bad', data.error ?? data.path);
+  } catch (err) {
+    setStatus('bad', err.message);
+  }
 }
 
 async function save() {
@@ -467,6 +555,8 @@ $('picker').addEventListener('change', (event) => {
   }
   void openProject(name);
 });
+$('new-project').addEventListener('click', () => void newProject());
+$('reveal').addEventListener('click', () => void revealProject());
 $('save').addEventListener('click', () => void save());
 $('revert').addEventListener('click', () => {
   $('source').value = state.saved;
@@ -817,17 +907,7 @@ async function boot() {
     // Creating a project is the one action on that tab that changes what the
     // rest of the window is about, so the picker, the source pane and the board
     // all have to catch up before it reports success.
-    onCreated: async (name) => {
-      const next = await fetch('/api/projects').then((r) => r.json());
-      state.projects = next.projects;
-      setProjects(next.projects, next.workspace);
-      renderPicker();
-      markSelected(name);
-      // `openProject` calls back into `onScenario`, which is what fills the
-      // source pane and sets `state.projectName` — so the rest of the window
-      // is about the new project by the time this resolves.
-      await openProject(name);
-    },
+    onCreated: (name) => adoptProject(name),
   });
 
   initAssets({

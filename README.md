@@ -65,11 +65,21 @@ It opens on `http://localhost:8890`, binds to loopback only, and asks for a **wo
 folder the first time — any folder whose subfolders contain `scenario.yaml` files.
 Pointing it at this repo's `scenarios/` is the usual answer.
 
-If you have never made a scenario before, the **Start here** tab is the whole route from
-an idea to a room full of people voting. It hands you two briefs to paste into a language
-model — one that turns a description into a storyboard, one that turns a storyboard into a
-`scenario.yaml` — creates the project folder for you, and then walks you through the asset
-board and out onto the projector.
+Then press **New…**, give it a name, and you have a scenario. What lands is a working show
+rather than an empty file: a title card, two lines of narration, a vote and two endings, with
+the rules you are about to need written into the comments. Press Play and it runs. Everything
+in it is meant to be replaced.
+
+Beside it, **Open folder** hands the open project's folder to your file manager — for the
+half of this work that is still ordinary file work, like dropping a rendered still into a
+takes folder. With nothing open it opens the workspace. **Workspace…** is the other one:
+it changes where every project lives.
+
+If you would rather start from an idea than from a skeleton, the **Start here** tab is the
+whole route from one to a room full of people voting. It hands you two briefs to paste into a
+language model — one that turns a description into a storyboard, one that turns a storyboard
+into a `scenario.yaml` — creates the project folder from what comes back, and then walks you
+through the asset board and out onto the projector.
 
 Check your scenarios before you rely on them:
 
@@ -323,10 +333,11 @@ after you open it**. The board will not let you press Start until you have, and 
 
 ## The client
 
-`npm run client` starts it. It is a row of tabs: **Start here**, **Characters**, **Nodes**,
-**Scenes**, **Variables**, **Simulate**, **Assets**, **Storyboard**, **scenario.yaml**,
-**Show**, and a command centre listing everything still standing between the project and a
-night.
+`npm run client` starts it. Along the top: the project picker, **New…**, **Open folder** and
+**Workspace…**, and over on the right the Play / Stage / Stop controls and Save. Below that a
+row of tabs — **Start here**, **Characters**, **Nodes**, **Scenes**, **Variables**,
+**Simulate**, **Assets**, **Storyboard**, **scenario.yaml**, **Show**, and a command centre
+listing everything still standing between the project and a night.
 
 ### Start here
 

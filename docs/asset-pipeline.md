@@ -265,7 +265,9 @@ all edit by source offset so comments and hand-wrapped scalars survive.
 
 | Button | What it does |
 |---|---|
-| **Create the project** | Writes the folder, the scenario and the storyboard. The newest of these, and the one whose absence used to send somebody to a terminal |
+| **New…** | Makes a folder and a starter scenario that already runs, from nothing but a name |
+| **Create the project** | The same route with a pasted `scenario.yaml` in hand, which is how the walkthrough ends |
+| **Open folder** | Hands the project's folder to the file manager, because dropping a still into a takes folder is still file work |
 | **Declare voice clips** | Puts a `voice:` on every spoken line, then re-seeds so each has a row |
 | **Give each shot its own picture** | Moves a storyboard shot's still onto its node as `background:`, and folds away stand-in scenes that existed only to carry one |
 | **Give speakers a portrait** | Declares a `sprite:` for each character the storyboard drew a *character sheet* for, and only those |

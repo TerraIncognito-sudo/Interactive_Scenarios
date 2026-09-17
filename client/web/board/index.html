@@ -17,8 +17,31 @@
         projector is the show holding its own folder — see show/session.ts.
       -->
       <select id="picker" aria-label="Project"></select>
+      <!--
+        The one thing the picker could not do was add to itself. Making a
+        scenario meant a terminal, or the walkthrough and a language model, and
+        neither is what somebody wants at the moment they have decided to start
+        a second show.
+      -->
+      <button id="new-project" type="button" class="ghost" title="Start a new scenario in this folder">
+        New…
+      </button>
+      <!--
+        Dropping a rendered still into a takes folder is still ordinary file
+        work, and it used to end with reading a path off the screen and typing
+        it into Explorer. With nothing open this opens the workspace, which is
+        the honest answer to the same question.
+      -->
+      <button id="reveal" type="button" class="ghost" title="Open this project's folder in the file manager">
+        Open folder
+      </button>
+      <!--
+        Renamed from "Folder…" the day "Open folder" appeared beside it. Two
+        buttons a word apart, one of which changes where every project lives,
+        is a mis-click somebody makes once and remembers for a long time.
+      -->
       <button id="change-workspace" type="button" class="ghost" title="Choose the folder your projects live in">
-        Folder…
+        Workspace…
       </button>
 
       <span class="status" id="status">…</span>

@@ -903,6 +903,36 @@ only place anybody would learn to write it.
 the repository, and a route that took a path would be a route that reads any file on the
 machine.
 
+### Making a project, and finding it again
+
+**One route creates a project, and it answers to two callers.** The walkthrough arrives
+holding a whole `scenario.yaml` somebody pasted; the picker's **New** button arrives holding
+nothing but a name, and `createProject` scaffolds a starter. Two routes would be two places
+for "what does a new project look like" to be answered, and the one that fell behind would be
+the one nobody was looking at. The starter goes through the same `parseScenarioSource` as a
+paste, which is what catches a template broken by a change to the schema — on the first press
+of New rather than by whoever gets the unopenable folder.
+
+**A folder name is not a scenario id.** `NEW_PROJECT_NAME` allows spaces so a folder can be
+called "My Show"; `idPattern` does not. `scenarioIdFor` derives one from the other, and the
+starter's `title:` and its gate's `text:` go through the YAML serialiser rather than straight
+into the template — a title of `Ethics: in practice` written literally is not YAML, and what
+it produces is a folder the picker offers and the editor then refuses to open.
+
+**Opening the folder is the one place this program runs another program, and it never uses a
+shell.** `reveal.ts` gives `spawn` an argv array, so the path is one argument whatever is
+inside it; through a shell a project folder called `Q3 & review` would run `review` as a
+command, and a folder name is not a thing this program controls. The board sends a **name**
+and the server makes the path, through the same `projectFolder` containment check every other
+project route goes through. The exit code is deliberately not waited on — `explorer.exe`
+exits 1 on success, routinely — and the reply carries the path, so on a machine with no file
+manager the button still answers the question somebody actually had.
+
+**`openProject` resolves when the window is really about that project.** It awaits
+`onScenario`, which returns the analysis. Left unawaited the validation lands a moment later
+and overwrites whatever the action that opened the project had to say about itself — which is
+how "created — press Play" became "valid" with nothing to explain the change.
+
 ## Layout
 
 | Path | What lives there |
