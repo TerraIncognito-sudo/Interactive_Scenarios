@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "node --watch server/index.ts",
     "start": "node server/index.ts",
-    "editor": "node client/app/server.ts",
+    "client": "node client/app/server.ts",
     "project:new": "node client/app/import.ts",
     "build": "vite build && vite build --config client/vite.config.ts",
     "build:stage": "vite build --config client/vite.config.ts",

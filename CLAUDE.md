@@ -58,7 +58,7 @@ Proves the voice sidecar end to end — uv, Python, the bridge, and MP3 encoding
 model. Add `-- chatterbox` once one is installed. See
 [docs/voice-generation.md](docs/voice-generation.md).
 
-`npm run editor` starts the client on **8890**, loopback only. `npm start` runs the relay on
+`npm run client` starts the client on **8890**, loopback only. `npm start` runs the relay on
 **8880** and `npm run dev` watches it. **Never leave a dev server running** — one was left on
 8880 once and served a stale page to the user's browser while they debugged a "crash" on the
 real server. Kill what you start, on both ports.

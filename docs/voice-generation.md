@@ -4,7 +4,7 @@ How to go from a scenario full of `voice:` declarations to a folder of clips the
 actually plays. Read [asset-pipeline.md](asset-pipeline.md) first if you have not — this
 picks up where the asset board leaves off.
 
-"The editor" throughout means the client — `npm run editor`, the board window on
+"The editor" throughout means the client — `npm run client`, the board window on
 `localhost:8890`. Voice is the one section of the pipeline with a generator behind it;
 everything else is made elsewhere and brought in.
 

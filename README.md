@@ -58,7 +58,7 @@ npm install
 Start the client:
 
 ```bash
-npm run editor
+npm run client
 ```
 
 It opens on `http://localhost:8890`, binds to loopback only, and asks for a **workspace**
@@ -323,7 +323,7 @@ after you open it**. The board will not let you press Start until you have, and 
 
 ## The client
 
-`npm run editor` starts it. It is a row of tabs: **Start here**, **Characters**, **Nodes**,
+`npm run client` starts it. It is a row of tabs: **Start here**, **Characters**, **Nodes**,
 **Scenes**, **Variables**, **Simulate**, **Assets**, **Storyboard**, **scenario.yaml**,
 **Show**, and a command centre listing everything still standing between the project and a
 night.
