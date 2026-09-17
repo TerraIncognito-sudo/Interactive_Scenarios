@@ -12,7 +12,7 @@ import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { fetchAsset } from '../src/client/shared/fetch-asset.ts';
+import { fetchAsset } from '../client/web/lib/fetch-asset.ts';
 
 /** A server whose behaviour each test writes for itself. */
 async function serving(

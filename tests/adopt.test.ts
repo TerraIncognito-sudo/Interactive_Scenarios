@@ -95,9 +95,9 @@ async function workshop() {
   );
 
   process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-  const { setWorkspace } = await import('../tools/editor/workspace.ts');
+  const { setWorkspace } = await import('../client/app/workspace.ts');
   const { openProject, adoptTakes, importTake, saveProjectSource } = await import(
-    '../tools/editor/projects.ts'
+    '../client/app/projects.ts'
   );
   await setWorkspace(root);
 

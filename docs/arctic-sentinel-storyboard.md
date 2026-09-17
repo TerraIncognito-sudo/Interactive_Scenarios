@@ -7,6 +7,14 @@ character voice-over, interrupted twice by an audience vote
 **Runtime:** ~13 min of story + 2 polls (90 s each) ≈ **16–17 min** wall clock
 **Audience:** a classroom / seminar room voting from phones
 
+> **A note for anyone copying this as a template.** The image briefs below open with
+> `STYLE.` and `SHIP.`, which a since-deleted composer used to expand into the
+> paragraphs defined once in §3. Nothing expands them any more — a brief saying
+> `STYLE.` reaches an image model as the word STYLE — so a storyboard written today
+> spells each brief out in full. `docs/prompts/storyboard-brief.md` is the current
+> shape, and the one the parser and the tests are held against. This document is left
+> as it was written, because it is the production script of a finished show.
+
 > **Fiction notice — put this on screen before Shot A.1.**
 > Every ship, unit, person and system in this scenario is invented. Nothing here depicts
 > real Canadian, Russian or allied capability, doctrine, or rules of engagement. It exists

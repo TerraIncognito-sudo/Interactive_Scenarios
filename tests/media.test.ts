@@ -9,10 +9,10 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ScenarioSchema } from '../src/scenario/schema.ts';
-import { checkScenario } from '../src/scenario/check.ts';
-import { assetsOf, assetReferencesOf } from '../src/scenario/load.ts';
-import { initialState, reduce, sceneMediaOf } from '../src/engine/engine.ts';
+import { ScenarioSchema } from '../shared/scenario/schema.ts';
+import { checkScenario } from '../shared/scenario/check.ts';
+import { assetsOf, assetReferencesOf } from '../shared/scenario/load.ts';
+import { initialState, reduce, sceneMediaOf } from '../shared/engine/engine.ts';
 
 function build(scenes: Record<string, unknown>, lines: unknown[]) {
   return ScenarioSchema.parse({

@@ -96,8 +96,8 @@ async function workshop() {
   );
 
   process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-  const { setWorkspace } = await import('../tools/editor/workspace.ts');
-  const { deleteTake, openProject } = await import('../tools/editor/projects.ts');
+  const { setWorkspace } = await import('../client/app/workspace.ts');
+  const { deleteTake, openProject } = await import('../client/app/projects.ts');
   await setWorkspace(root);
 
   const ledger = () => JSON.parse(readFileSync(join(dir, '.ledger.json'), 'utf8'));
@@ -115,7 +115,7 @@ describe('importing a finished file', () => {
   test('lands in the takes folder, which it creates', async () => {
     const shop = await workshop();
     try {
-      const { importTake } = await import('../tools/editor/projects.ts');
+      const { importTake } = await import('../client/app/projects.ts');
       const result = await importTake(
         'demo',
         { section: 'images', file: 'images/a1-jetty.png', filename: 'jetty-v3-final.png' },
@@ -136,7 +136,7 @@ describe('importing a finished file', () => {
     // first would throw away a reading the author may already have selected.
     const shop = await workshop();
     try {
-      const { importTake } = await import('../tools/editor/projects.ts');
+      const { importTake } = await import('../client/app/projects.ts');
       const one = await importTake(
         'demo',
         { section: 'images', file: 'images/a1-jetty.png', filename: 'final.png' },
@@ -161,7 +161,7 @@ describe('importing a finished file', () => {
   test('the first take is selected, and later ones never steal it', async () => {
     const shop = await workshop();
     try {
-      const { importTake } = await import('../tools/editor/projects.ts');
+      const { importTake } = await import('../client/app/projects.ts');
       const first = await importTake(
         'demo',
         { section: 'images', file: 'images/a1-jetty.png', filename: 'one.png' },
@@ -184,7 +184,7 @@ describe('importing a finished file', () => {
   test('a name from a dialog is made into a take id, or refused', async () => {
     const shop = await workshop();
     try {
-      const { importTake } = await import('../tools/editor/projects.ts');
+      const { importTake } = await import('../client/app/projects.ts');
       // A path is a filename here — the dialog gives a bare name, but nothing
       // downstream should depend on that being true.
       const result = await importTake(
@@ -213,7 +213,7 @@ describe('importing a finished file', () => {
     // author would find out by selecting it and hearing nothing.
     const shop = await workshop();
     try {
-      const { importTake } = await import('../tools/editor/projects.ts');
+      const { importTake } = await import('../client/app/projects.ts');
       const broken = new Readable({
         read() {
           this.push(Buffer.from('half a '));
@@ -343,7 +343,7 @@ describe('deleting a take', () => {
       for (const take of book.assets['voice/tran-a-01.mp3'].takes) take.hash = real;
       writeFileSync(join(shop.dir, '.ledger.json'), JSON.stringify(book), 'utf8');
 
-      const { publish } = await import('../tools/editor/projects.ts');
+      const { publish } = await import('../client/app/projects.ts');
       await publish('demo', { section: 'voice', files: ['voice/tran-a-01.mp3'] });
       assert.equal(shop.ledger().assets['voice/tran-a-01.mp3'].published, 'abc123-02.mp3');
 
@@ -361,7 +361,7 @@ describe('deleting a take', () => {
       );
 
       // Somebody auditions the other take and prefers it.
-      const { selectTake } = await import('../tools/editor/projects.ts');
+      const { selectTake } = await import('../client/app/projects.ts');
       await selectTake('demo', 'voice/tran-a-01.mp3', 'abc123-01.mp3');
 
       const after = await shop.openProject('demo');
@@ -410,7 +410,7 @@ describe('deleting a take', () => {
         'a noticeably longer reading of the same line',
       );
 
-      const { selectTake } = await import('../tools/editor/projects.ts');
+      const { selectTake } = await import('../client/app/projects.ts');
       await selectTake('demo', 'voice/tran-a-01.mp3', 'abc123-01.mp3');
 
       const open = await shop.openProject('demo');
@@ -430,7 +430,7 @@ describe('deleting a take', () => {
     // must not throw away the eighty-nine that worked.
     const shop = await workshop();
     try {
-      const { publish } = await import('../tools/editor/projects.ts');
+      const { publish } = await import('../client/app/projects.ts');
       const result = await publish('demo', {
         section: 'voice',
         files: ['voice/tran-a-01.mp3', 'voice/nothing-selected.mp3'],

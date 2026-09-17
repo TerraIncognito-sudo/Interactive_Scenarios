@@ -8,9 +8,9 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeScenario, simulate } from '../tools/editor/analysis.ts';
-import { ASSET_SECTIONS, parseScenarioSource } from '../src/scenario/load.ts';
-import { declaredAssets } from '../tools/editor/sections.ts';
+import { analyzeScenario, simulate } from '../client/app/analysis.ts';
+import { ASSET_SECTIONS, parseScenarioSource } from '../shared/scenario/load.ts';
+import { declaredAssets } from '../client/app/sections.ts';
 
 const SOURCE = `
 id: memory

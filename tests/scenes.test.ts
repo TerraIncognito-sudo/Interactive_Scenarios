@@ -16,8 +16,8 @@ import {
   usersOf,
   SceneEditError,
   type SceneField,
-} from '../tools/editor/scenes.ts';
-import { parseScenarioSource } from '../src/scenario/load.ts';
+} from '../client/app/scenes.ts';
+import { parseScenarioSource } from '../shared/scenario/load.ts';
 
 const SOURCE = `id: demo
 title: Demo

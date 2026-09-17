@@ -24,11 +24,11 @@ import {
   assetReferencesOf,
   assetsOf,
   parseScenarioSource,
-} from '../src/scenario/load.ts';
-import { beatOf, initialState, reduce } from '../src/engine/engine.ts';
+} from '../shared/scenario/load.ts';
+import { beatOf, initialState, reduce } from '../shared/engine/engine.ts';
 
 const display = readFileSync(
-  join(import.meta.dirname, '..', 'src', 'client', 'display', 'main.ts'),
+  join(import.meta.dirname, '..', 'client', 'web', 'stage', 'main.ts'),
   'utf8',
 );
 

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { BallotBox, resolvePoll, variablesFrom } from '../src/engine/votes.ts';
-import { PollNodeSchema, type PollNode } from '../src/scenario/schema.ts';
+import { BallotBox, resolvePoll, variablesFrom } from '../shared/engine/votes.ts';
+import { PollNodeSchema, type PollNode } from '../shared/scenario/schema.ts';
 
 function poll(overrides: Partial<PollNode> = {}): PollNode {
   return PollNodeSchema.parse({
