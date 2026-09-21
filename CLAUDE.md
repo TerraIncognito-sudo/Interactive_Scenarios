@@ -705,14 +705,23 @@ shape.
 
 **A group's one button is a promise that something can do the work.** `missing` and `stale`
 both carried `action: 'generate'` for every section, and only voice has a generator —
-permanently, since `generate.ts` throws for anything else. So nineteen stills nobody can
-generate sat under a "Generate all 19" that would have failed nineteen times. The split is on
-the section's own `backend`, which is the author's declaration in `project.yaml` rather than a
-guess about the kind of file: a voice section left on `manual` is as unmakeable as an images
-one. `missing-manual` and `stale-manual` offer nothing to press and carry the row's two copy
-buttons instead, because for those the work *is* the trip out to another program. The brief
-line says the shape and the format so that trip is one trip, and a row with no brief at all
-says so — it is the one item the copy buttons cannot help with.
+permanently, since `generate.ts` throws for every other section by name. So fifty-seven
+stills nobody can generate sat under a "Generate all" that would have failed fifty-seven
+times. `missing-manual` and `stale-manual` offer nothing to press and carry the row's two
+copy buttons instead, because for those the work *is* the trip out to another program. The
+brief line says the shape and the format so that trip is one trip, and a row with no brief at
+all says so — it is the one item the copy buttons cannot help with.
+
+**The split is on the kind of file, never on whether the section is set up.** Keyed on
+`backend === 'sidecar'` for one commit, and it was wrong in the way that costs most: a
+project scaffolds with every section on `manual` until somebody picks a model, so the first
+thing a new show did was put its hundred and nine voice clips under "nothing here can make
+them" and take away the only working generator on the board — on the one tab whose whole job
+is listing what is left to do. Whether a generator *exists* is permanent and belongs to the
+section; whether it is *configured* is the author's, changes hourly, and already has a better
+answer than a hidden button: the route refuses with "set its backend to sidecar and pick a
+model", which names the fix. A disabled or absent control explains nothing, which is the same
+rule as `startBlockedBecause` returning a sentence rather than a boolean.
 
 **The board knows where each row actually renders.** `rowsFor` gives voice clips to the
 Characters tab and portraits to a character's other sub-tab, so a link that sends somebody to

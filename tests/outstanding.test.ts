@@ -34,18 +34,18 @@ function asset(over: Partial<AssetView> & Pick<AssetView, 'file' | 'status'>): A
   } as AssetView;
 }
 
-/**
- * A section with a generator behind it, which is what `voice` really has.
- *
- * Stated rather than left out, because leaving it out is now a different
- * claim: a section whose backend is `manual` is one nothing on the board can
- * make, and its unmade rows belong in the hand-made group with a copy button
- * instead of a Generate all. Arctic Sentinel's `voice:` is `backend: sidecar`
- * and every other section of it is `manual`, so this is the real shape.
- */
+/** A voice section with a model picked, which is what a set-up project has. */
 const SIDECAR = { backend: 'sidecar', defaults: {} } as SectionView['model'];
 
-/** What every section but voice is, and permanently: made somewhere else. */
+/**
+ * A section with no model picked — which every section of a brand new project
+ * is, because `createProject` scaffolds them all that way.
+ *
+ * Load-bearing in the voice tests below. The backend is the author's setting
+ * and says nothing about whether a generator for that kind of file exists, and
+ * confusing the two put a new show's ninety voice clips under "nothing here
+ * can make them" with the one button that could have made them taken away.
+ */
 const MANUAL = { backend: 'manual', defaults: {} } as SectionView['model'];
 
 function sectionOf(
@@ -501,23 +501,40 @@ describe('a section nothing here can generate', () => {
     }
   });
 
-  test('the same rows in a section that has one keep their Generate', async () => {
-    // The determinant is the section's own backend, not the kind of file: a
-    // voice section left on `manual` is as unmakeable as an images one, and
-    // saying otherwise would offer a button that throws.
-    const generable = outstandingOf(
-      overview([asset({ file: 'voice/a.mp3', status: 'missing', published: false })]),
-    );
-    assert.deepEqual(groupsOf(generable), { missing: 1 });
-    assert.equal(generable.groups[0]!.action, 'generate');
+  test('voice keeps its Generate even before a model is picked', async () => {
+    // The regression this is here for. A brand new project scaffolds every
+    // section on `backend: manual`, including voice — so keying the split on
+    // the backend put a hundred and nine voice clips in the hand-made list and
+    // removed the only working generator on the board from the one tab that
+    // exists to list unfinished work.
+    //
+    // Whether a generator *exists* is a fact about the kind of file and is
+    // permanent. Whether it is *configured* is a separate question the route
+    // answers by name, telling you to pick a model — which is a better answer
+    // than a hidden button.
+    for (const model of [SIDECAR, MANUAL]) {
+      const result = outstandingOf(
+        withSections([
+          sectionOf('voice', [asset({ file: 'voice/a.mp3', status: 'missing', published: false })], model),
+        ]),
+      );
+      assert.deepEqual(groupsOf(result), { missing: 1 }, `backend ${model!.backend}`);
+      assert.equal(result.groups[0]!.action, 'generate');
+    }
+  });
 
-    const byHand = outstandingOf(
-      withSections([
-        sectionOf('voice', [asset({ file: 'voice/a.mp3', status: 'missing', published: false })], MANUAL),
-      ]),
-    );
-    assert.deepEqual(groupsOf(byHand), { 'missing-manual': 1 });
-    assert.equal(byHand.groups[0]!.action, 'open');
+  test('a picture is in the hand-made list whatever the section says', async () => {
+    // And the other direction: no backend setting can conjure an image
+    // generator, because there has never been one to configure.
+    for (const model of [SIDECAR, MANUAL]) {
+      const result = outstandingOf(
+        withSections([
+          sectionOf('images', [asset({ file: 'images/a.png', section: 'images', status: 'missing', published: false })], model),
+        ]),
+      );
+      assert.deepEqual(groupsOf(result), { 'missing-manual': 1 }, `backend ${model!.backend}`);
+      assert.equal(result.groups[0]!.action, 'open');
+    }
   });
 
   test('each line says the shape and the format, so the trip out is one trip', async () => {

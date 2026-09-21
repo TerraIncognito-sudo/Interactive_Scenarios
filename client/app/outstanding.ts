@@ -106,17 +106,20 @@ type GroupSpec = {
 const SPECS: Record<OutstandingGroup, GroupSpec> = {
   missing: {
     label: 'Not made yet',
-    hint: 'The scenario asks for these and there is no take on disk. The show renders a gradient where they should be.',
+    hint:
+      'The scenario asks for these and there is no take on disk. The show renders a gradient ' +
+      'where they should be. Voice has a generator, so this is the one group on this tab ' +
+      'that can make itself — if it refuses, the Voice section needs a model picked first.',
     level: 'error',
     action: 'generate',
   },
   'missing-manual': {
     label: 'Not made yet, and nothing here can make them',
     hint:
-      'The scenario asks for these and there is no take on disk. This section has no ' +
-      'generator — voice is the only one that has ever had one — so each is a file somebody ' +
-      'makes in another program and drops into its takes folder. The brief is on the row, ' +
-      'and the buttons put it on the clipboard.',
+      'The scenario asks for these and there is no take on disk. Voice is the only section ' +
+      'that has a generator, so each of these is a file somebody makes in another program ' +
+      'and drops into its takes folder. The brief is on the row, and the buttons put it on ' +
+      'the clipboard.',
     level: 'error',
     action: 'open',
   },
@@ -300,15 +303,22 @@ export function outstandingOf(overview: Overview): Outstanding {
   };
 
   for (const view of overview.sections) {
-    // Whether a button here could make one of these, which is the author's own
-    // declaration in `project.yaml` rather than a guess. Voice is the only
-    // section that has ever had a generator and permanently so — `generate.ts`
-    // throws for anything else — so every other section reaches this as
-    // `manual` and its work is a trip to another program. Told apart because
-    // the one button on a group heading is the whole point of a group: a
-    // "Generate all 9" over nine stills nothing can generate is a button that
-    // answers a question by failing nine times.
-    const generable = (view.model?.backend ?? 'manual') === 'sidecar';
+    // Whether a generator for this kind of asset exists at all. Voice is the
+    // only section that has ever had one and permanently so — `generate.ts`
+    // throws for every other section by name — so this is a fact about the
+    // kind of file rather than a reading of the project.
+    //
+    // Deliberately **not** `backend === 'sidecar'`, which is what it was for
+    // one commit and was wrong in the way that matters. A backend is the
+    // author's setting, and a project scaffolds with every section on
+    // `manual` until somebody picks a model — so a new show's ninety voice
+    // clips landed under "nothing here can make them" and lost the one button
+    // on the board that could actually have made them. Whether a section is
+    // *configured* is a different question with a different answer: the route
+    // already refuses with "set its backend to sidecar and pick a model",
+    // which names the fix, where a group that quietly hid the button named
+    // nothing at all.
+    const generable = view.section === 'voice';
 
     for (const asset of view.assets) {
       const where = { section: asset.section, file: asset.file, label: asset.file };
