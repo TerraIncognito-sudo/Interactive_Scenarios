@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>Live rooms — relay</title>
+    <link rel="stylesheet" href="../lib/base.css" />
+    <link rel="stylesheet" href="../console/console.css" />
+  </head>
+  <body class="console-body">
+    <section class="gate" id="gate" hidden>
+      <h1>Relay console</h1>
+      <p>Sign in to see what is running.</p>
+      <form id="sign-in">
+        <input id="password" type="password" placeholder="Admin password" autocomplete="current-password" />
+        <p class="error" id="sign-in-error"></p>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <div id="shell" hidden>
+      <header class="bar">
+        <h1>Relay</h1>
+        <nav>
+          <a href="/status" aria-current="page">Rooms</a>
+          <a href="/keys">Keys</a>
+        </nav>
+        <span class="spacer"></span>
+        <span class="note" id="tick"></span>
+      </header>
+      <main id="rooms"></main>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

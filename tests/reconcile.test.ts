@@ -102,10 +102,10 @@ async function workshop(options: { storyboard?: boolean } = {}) {
   }
 
   process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-  const { setWorkspace } = await import('../tools/editor/workspace.ts');
+  const { setWorkspace } = await import('../client/app/workspace.ts');
   await setWorkspace(root);
 
-  const projects = await import('../tools/editor/projects.ts');
+  const projects = await import('../client/app/projects.ts');
   const readProject = () => readFileSync(join(dir, 'project.yaml'), 'utf8');
   const writeScenario = (source: string) =>
     writeFileSync(join(dir, 'scenario.yaml'), source, 'utf8');

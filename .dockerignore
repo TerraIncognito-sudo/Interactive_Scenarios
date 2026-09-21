@@ -5,9 +5,18 @@ data
 .gitignore
 .github
 tests
-# The editor is a desk tool that writes to scenarios/. It has no authentication
-# and no business being inside the image that faces an audience.
-tools
+docs
+# The client is a desk tool that writes to project folders. It has no
+# authentication and no business inside the image that faces an audience.
+# Its package.json is copied explicitly in the Dockerfile, because npm ci
+# validates the workspace list -- but none of its source comes along.
+client
+!client/package.json
+# Scenarios are the show. The relay has no parser for one and no route that
+# would serve one, so a copy in here would be a folder nothing reads and a
+# thing to steal. They used to be mounted so they could be edited without a
+# rebuild; there is nothing left in the container to reload them into.
+scenarios
 *.md
 !README.md
 .env

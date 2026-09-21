@@ -1,0 +1,82 @@
+# The frozen shape of a recipe, as of the commit that added this file.
+#
+# Every hash in a project's .ledger.json was computed from an object of this
+# shape, empty fields and all — `canonical()` filters `undefined` and nothing
+# else, so `negative: ''`, `style: ''`, `refs: []` and `tokens: {}` are inside
+# all 208 recorded hashes across the three finished shows. Deleting a field
+# from `Recipe` therefore moves every one of them, and a stale row is not a
+# candidate for `adoptTakes`, which only rescues `unmanaged`.
+#
+# So this fixture is checked in and the hashes are asserted as literals. The
+# real project.yaml files are gitignored, and a test that skips when its data
+# is missing is a test that is green on CI for the wrong reason.
+#
+# The style, negative and SHIP text are lifted verbatim from arctic-sentinel so
+# the fixture is representative of the real lengths rather than a toy.
+project: hash-legacy
+title: Hash fixture
+scenario: scenario.yaml
+publish: assets
+generated: generated
+sections:
+  images:
+    backend: manual
+    style: |-
+      cinematic 2.5D animated illustration, painterly semi-realism in the register of a
+      high-end animated documentary; confident brushwork, no outlines; muted North Atlantic palette —
+      slate blue, gunmetal, sea-ice white, wet-black steel — punctuated only by amber instrument glow
+      and navigation red; strong rim light, deep shadow, volumetric haze; 16:9, wide cinematic
+      framing, shallow depth of field; subtle film grain and slight chromatic aberration at frame
+      edges; no text, no lettering, no readable insignia, no national flags, no logos
+    negative: |-
+      text, letters, watermarks, logos, flags, national insignia, recognisable real-world
+      hull numbers, photorealistic faces, uncanny smiling, gore, lens flare spam, HDR clipping,
+      cluttered UI screens with legible text, extra fingers, warped hands, cartoon proportions,
+      anime, 3D render look, stock-photo lighting
+  video:
+    backend: manual
+  voice:
+    backend: sidecar
+    file: chatterbox
+  sfx:
+    backend: manual
+  ambience:
+    backend: manual
+  music:
+    backend: manual
+assets:
+  images/jetty.png:
+    prompt: |-
+      STYLE. SHIP. Pre-dawn at a working naval jetty, low tide, wet concrete.
+      NEGATIVE.
+    size: 1920x1080
+  images/hero-sheet.png:
+    prompt: STYLE. Character reference sheet. Bust portrait, three-quarter view, even soft key
+      light.
+    size: 832x1216
+  video/approach.mp4:
+    prompt: The hull pulling away from the jetty into open water, locked off, eight seconds.
+  voice/narr-01.mp3:
+    prompt: unhurried, matter-of-fact, no menace.
+    text: The pier is busy the way it always is before a ship sails.
+    voice: narr
+    source:
+      node: open
+      line: 0
+  sfx/burst.mp3:
+    prompt: One hard transient and a long ringing decay into wind. No music.
+    source:
+      node: open
+      line: 0
+  ambience/sea.mp3: {}
+voices:
+  narr:
+    reference: voices/narr.wav
+    preset: bm_fable
+    direction: steady, unhurried
+tokens:
+  SHIP: |-
+    a 90-metre uncrewed surface combatant — low tumblehome hull, wet-black composite,
+    no bridge windows anywhere, no railings, no lifelines, no visible deck fittings; a single
+    faceted sensor mast amidships; forward gun mount under a smooth cover; the hull is unbroken
+    where a superstructure should be. The absence of any place for a person is the point.

@@ -8,9 +8,9 @@ import {
   activeScene,
   EngineError,
   type RunState,
-} from '../src/engine/engine.ts';
-import { resolvePoll } from '../src/engine/votes.ts';
-import { ScenarioSchema, type Scenario } from '../src/scenario/schema.ts';
+} from '../shared/engine/engine.ts';
+import { resolvePoll } from '../shared/engine/votes.ts';
+import { ScenarioSchema, type Scenario } from '../shared/scenario/schema.ts';
 
 /**
  * A compact scenario covering every node type and a branch that reads a

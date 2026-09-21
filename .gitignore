@@ -15,11 +15,11 @@ desktop.ini
 coverage/
 
 # The voice sidecar's environment normally lives outside this tree entirely
-# (see tools/voice/env.ts — the repo is in OneDrive and torch is gigabytes),
+# (see client/voice/env.ts — the repo is in OneDrive and torch is gigabytes),
 # but ignore the default location too in case anyone runs uv by hand. uv
 # rebuilds it from uv.lock, which is committed: the lock is what pins a
 # Blackwell-capable CUDA torch.
-tools/voice/.venv/
+client/voice/.venv/
 __pycache__/
 *.pyc
 
@@ -33,3 +33,15 @@ scenarios/*/.ledger.json
 scenarios/*/generated/
 scenarios/*/voices/
 scenarios/*/*storyboard.md
+
+# Written by the abort test in tests/show.test.ts and removed again. Listed
+# because if that test ever crashes the process -- which is exactly what it
+# exists to catch -- its `finally` does not run and eight megabytes are left
+# in a checked-in fixture folder.
+tests/fixtures/scenarios/media/assets/images/harbour.jpg
+
+# The record a show writes of how its audience voted. The test that proves the
+# route works removes its own, the way the 8MB asset test does — and for the
+# same reason it is also named here: a `finally` does not run if a test ever
+# crashes the process again.
+tests/fixtures/scenarios/*/records/

@@ -1,0 +1,11 @@
+{
+  "name": "@interactive-scenario/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The engine, the scenario schema and the wire protocols. Imported by both halves; imports neither.",
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  }
+}

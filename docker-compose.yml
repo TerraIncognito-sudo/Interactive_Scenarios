@@ -7,9 +7,20 @@ services:
     ports:
       - '8880:8880'
     environment:
-      # Password for /admin, where sessions are run. Leave unset and one is
+      # Password for the console at /status and /keys, where rooms are watched
+      # and ended and keys are issued and revoked. Leave unset and one is
       # generated and printed at startup (see: docker compose logs).
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
+      # There is deliberately no RELAY_KEY here, and nobody should helpfully
+      # add one. A secret in this file is one phrase shared by everyone who
+      # has ever been told it: it cannot be withdrawn from one person, there
+      # is no way to see who is using it, and changing it locks out every
+      # client at once. Keys are issued and revoked one at a time in the
+      # console at /keys and live in the database below — which is also why a
+      # fresh relay opens no rooms until somebody signs in and generates one.
+      # An empty value must never quietly mean the permissive thing.
+
       # Usually leave this alone: links are derived from the address each
       # request arrives on, so browsing to the LAN IP gives LAN links and a
       # Cloudflare-proxied request gives scurrycat.ca links. Only set it when
@@ -18,11 +29,12 @@ services:
       ROOM_TTL_MINUTES: ${ROOM_TTL_MINUTES:-240}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      # SQLite. Survives restarts so a live show is not lost to a redeploy.
+      # SQLite, and losing it costs more than it used to. It holds every key
+      # ever issued, so a wiped volume locks out every client until new ones
+      # are generated — and while a client is disconnected mid-poll it holds
+      # the only copy of the votes, because the phones are the part you cannot
+      # ask to do it again.
       - scenario-data:/data
-      # Scenarios are content, not code: mount them and you can add or edit a
-      # scenario without rebuilding the image. Call POST /api/reload after.
-      - ./scenarios:/app/scenarios:ro
 
 volumes:
   scenario-data:

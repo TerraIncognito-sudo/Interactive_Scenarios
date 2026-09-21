@@ -1,0 +1,687 @@
+/* The projector surface.
+   Everything is authored against a fixed 1920x1080 stage and scaled to fit,
+   so type size is predictable regardless of the projector we are handed. */
+
+.display-body {
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+}
+
+/*
+ * Centring is done in JS, not here.
+ *
+ * `place-items: center` on a 1920px child does nothing useful once the window
+ * is narrower than that: centring an item bigger than its area is unsafe
+ * overflow, so the browser pins it to the start edge instead — and then
+ * `transform-origin: center` scaled it about a centre that was already in the
+ * wrong place, putting the picture half its own overflow off to the right.
+ * True on every screen under 1920 wide, which is every laptop panel a
+ * presenter drives this from and no projector, which is why it survived.
+ */
+.stage-wrap {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* The quiet default that makes a scene without artwork still read as a place.
+   It lives on the stage rather than on `.scene` so that it also shows through
+   when a scene *declares* a background that has not been made yet: the image
+   layer above is simply transparent until the file exists. A scenario in
+   production says what art it needs long before the art arrives. */
+.stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: top left;
+  overflow: hidden;
+  background-color: #0a0d14;
+  background-image:
+    radial-gradient(1200px 700px at 22% 18%, rgba(79, 195, 247, 0.16), transparent 62%),
+    radial-gradient(1000px 800px at 82% 78%, rgba(255, 138, 101, 0.12), transparent 60%),
+    linear-gradient(168deg, #10141d 0%, #080a10 100%);
+}
+
+/* Transparent where there is no artwork, so the stage's gradient shows through
+   — including when the file is declared but not yet made. */
+.scene {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: opacity 700ms ease, background-image 700ms ease;
+}
+
+/* Motion for a scene, painted over the still. `object-fit: cover` matches the
+   background's `background-size: cover`, so a clip and its poster frame line
+   up rather than jumping at the moment the video starts. */
+.scene-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.scene-video[hidden] {
+  display: none;
+}
+
+/* Deliberately hard to miss: a silent show is a broken show, and the operator
+   has seconds to notice before the first line is spoken over nothing. */
+.audio-gate {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 0.7rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent, #4fc3f7);
+  background: rgba(10, 12, 18, 0.92);
+  color: var(--text, #e8ecf4);
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  animation: fade-in 420ms ease both;
+}
+
+.audio-gate[hidden] {
+  display: none;
+}
+
+/* The projector normally hides the cursor; it has to come back to be clicked. */
+.display-body:has(.audio-gate:not([hidden])) {
+  cursor: default;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.62) 100%);
+}
+
+.panel {
+  position: absolute;
+  inset: 0;
+  padding: 96px;
+  display: flex;
+  flex-direction: column;
+  animation: fade-in 420ms ease both;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  font-size: 26px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------- lobby -- */
+
+.lobby {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.lobby-inner {
+  max-width: 1400px;
+}
+
+.lobby-title {
+  margin: 0;
+  font-family: var(--font-display);
+  /* Sized to leave room for the join block rather than to be as large as it can
+     be. The stage is a fixed 1080 with nothing to scroll, so every block on this
+     panel is spending from one budget, and the title is the cheapest place to
+     find room — it is read once, where the room code is read by everybody
+     holding a phone. */
+  font-size: 92px;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+
+.lobby-sub {
+  margin: 24px auto 0;
+  max-width: 1220px;
+  font-size: 28px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.join-block {
+  margin-top: 44px;
+  display: flex;
+  gap: 56px;
+  align-items: center;
+  justify-content: center;
+  /* The one thing on this screen the audience has to be able to read, so it
+     carries its own ground rather than trusting the picture behind it. A `lobby:`
+     scene can be a daylight clip, and white-on-white is a room that cannot join.
+     Sized to its contents — `fit-content` with the panel centring it — because
+     the point of a lobby scene is to be seen: a full-panel scrim solved the
+     legibility and threw away the picture that made anyone want it. */
+  width: fit-content;
+  margin-inline: auto;
+  /* Hugging the QR, which is the tallest thing in here: the box is a ground for
+     the join details, not a frame around them, and every pixel of it is a pixel
+     of the lobby clip nobody can see. */
+  padding: 16px 40px;
+  border-radius: 22px;
+  background: rgb(0 0 0 / 0.72);
+}
+
+/* `hidden` is a presentation hint and loses to any class that sets `display`,
+   which is the trap a projector shows you from the back of a room: the join
+   block was `hidden` all through an unlinked show and still held 221 pixels of
+   empty black box in the middle of the lobby — a gap exactly where a QR code
+   that failed to draw would leave one, which is the reading the unlinked state
+   exists to prevent. Every element this stylesheet gives a `display` to and the
+   script ever hides needs its own rule. */
+.join-block[hidden],
+#poll-join[hidden] {
+  display: none;
+}
+
+/* The other half: said in words, in the place the block would have been. */
+#lobby-unlinked {
+  margin-top: 44px;
+  opacity: 0.55;
+}
+
+#lobby-unlinked[hidden] {
+  display: none;
+}
+
+.qr {
+  width: 300px;
+  height: 300px;
+  border-radius: 20px;
+  background: #fff;
+  padding: 16px;
+  display: block;
+}
+
+.qr-small {
+  width: 208px;
+  height: 208px;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.join-text {
+  text-align: left;
+}
+
+.join-label {
+  margin: 0 0 6px;
+  font-size: 22px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.join-url {
+  margin: 0 0 28px;
+  font-size: 40px;
+  color: var(--accent);
+  word-break: break-all;
+}
+
+.join-url.small {
+  font-size: 24px;
+  margin: 14px 0 4px;
+  text-align: center;
+}
+
+.room-code {
+  margin: 0;
+  font-size: 92px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-code.small {
+  font-size: 52px;
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.asset-state {
+  margin: 26px 0 0;
+  font-size: 24px;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------- dialogue -- */
+
+.dialogue {
+  justify-content: flex-end;
+}
+
+.portrait {
+  position: absolute;
+  right: 120px;
+  bottom: 340px;
+  width: 460px;
+  animation: portrait-in 500ms ease both;
+}
+
+.portrait img {
+  width: 100%;
+  display: block;
+  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.6));
+}
+
+@keyframes portrait-in {
+  from {
+    opacity: 0;
+    transform: translateX(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dialogue-box {
+  position: relative;
+  background: linear-gradient(180deg, rgba(12, 15, 22, 0.9), rgba(8, 10, 16, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 24px;
+  padding: 54px 62px;
+  min-height: 300px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+}
+
+.nameplate {
+  position: absolute;
+  top: -30px;
+  left: 48px;
+  padding: 12px 30px;
+  border-radius: 999px;
+  background: var(--nameplate, var(--accent));
+  color: #06080d;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.nameplate[hidden] {
+  display: none;
+}
+
+.line {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 54px;
+  line-height: 1.42;
+  letter-spacing: -0.005em;
+}
+
+/* Narration, with no speaker, reads differently from spoken dialogue. */
+.dialogue-box.narration .line {
+  font-style: italic;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.caret {
+  display: inline-block;
+  width: 3px;
+  height: 0.92em;
+  margin-left: 6px;
+  vertical-align: -0.08em;
+  background: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- pause -- */
+
+.beat {
+  justify-content: center;
+  align-items: center;
+}
+
+.beat-text {
+  margin: 0;
+  max-width: 1300px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 72px;
+  line-height: 1.35;
+  font-style: italic;
+  color: var(--text-dim);
+}
+
+/* ----------------------------------------------------------------- poll -- */
+
+.poll-head {
+  flex: 0 0 auto;
+}
+
+.poll-question {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 76px;
+  line-height: 1.18;
+  letter-spacing: -0.012em;
+}
+
+.poll-prompt {
+  margin: 20px 0 0;
+  font-size: 32px;
+  color: var(--text-dim);
+}
+
+.poll-body {
+  flex: 1 1 auto;
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 64px;
+  align-items: start;
+}
+
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.bar {
+  position: relative;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+  min-height: 104px;
+  display: flex;
+  align-items: center;
+  padding: 0 34px;
+  gap: 26px;
+}
+
+.bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(79, 195, 247, 0.42), rgba(79, 195, 247, 0.2));
+  /* Votes arrive in bursts; ease so the bar reads as motion, not a jump. */
+  transition: width 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bar.winner .bar-fill {
+  background: linear-gradient(90deg, rgba(94, 201, 138, 0.55), rgba(94, 201, 138, 0.24));
+}
+
+.bar-key {
+  position: relative;
+  flex: 0 0 auto;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 30px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.bar-label {
+  position: relative;
+  flex: 1 1 auto;
+  font-size: 40px;
+  line-height: 1.2;
+}
+
+.bar-count {
+  position: relative;
+  flex: 0 0 auto;
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.poll-aside {
+  text-align: center;
+}
+
+.countdown {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin: 26px auto 0;
+}
+
+.ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ring-track,
+.ring-fill {
+  fill: none;
+  stroke-width: 9;
+}
+
+.ring-track {
+  stroke: rgba(255, 255, 255, 0.1);
+}
+
+.ring-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 326.7;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 400ms linear, stroke 400ms ease;
+}
+
+/* The last ten seconds should be felt, not just read. */
+.countdown.urgent .ring-fill {
+  stroke: var(--accent-warm);
+}
+
+.countdown.urgent .countdown-num {
+  color: var(--accent-warm);
+}
+
+.countdown-num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 66px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.voters {
+  margin: 18px 0 0;
+  font-size: 26px;
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------------------- result -- */
+
+.result {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.result-label {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 116px;
+  line-height: 1.1;
+  color: var(--good);
+}
+
+.result-detail {
+  margin: 32px 0 0;
+  font-size: 34px;
+  color: var(--text-dim);
+}
+
+/* --------------------------------------------------------------- ending -- */
+
+.ending {
+  justify-content: center;
+  align-items: center;
+}
+
+.ending-text {
+  margin: 0;
+  max-width: 1400px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 88px;
+  line-height: 1.28;
+}
+
+/* ------------------------------------------------------- local control -- */
+
+/*
+ * The presenter's own feedback, on a screen an audience is watching.
+ *
+ * Same bargain as the connection badge: it may only intrude when it is saying
+ * something true and useful. Pressing back or skip is confirmed by the show
+ * itself changing, so those cues last a second and go; "Paused" stays, because
+ * a stopped show and a long held beat look identical from the third row and
+ * the presenter is the one who needs to tell them apart.
+ */
+.cue {
+  position: fixed;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 100;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(10, 12, 18, 0.82);
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.cue[hidden] {
+  display: none;
+}
+
+/* Only ever on screen because somebody pressed ? for it. */
+.keys {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 100;
+  min-width: 19rem;
+  /* A poll option is a sentence here. Unbounded, the legend grew as wide as
+     the picture the moment one opened. */
+  max-width: min(36rem, 46vw);
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radius);
+  background: rgba(10, 12, 18, 0.9);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.keys[hidden] {
+  display: none;
+}
+
+.keys h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.keys dl {
+  margin: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.keys dl > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.keys dt {
+  flex: 0 0 4.5rem;
+}
+
+.keys dt {
+  flex: 0 0 4.5rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.keys dd {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  /* The numbered options arrive one per line. */
+  white-space: pre-line;
+}
+
+/* The lobby is the one screen a presenter reads before anyone is watching. */
+.keys-hint {
+  margin: 14px 0 0;
+  font-size: 18px;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.keys-hint kbd {
+  font: inherit;
+  padding: 0 0.35em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}

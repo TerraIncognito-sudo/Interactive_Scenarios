@@ -16,8 +16,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { outstandingOf, OUTSTANDING_GROUPS } from '../tools/editor/outstanding.ts';
-import type { AssetView, Overview, SectionView } from '../tools/editor/sections.ts';
+import { outstandingOf, OUTSTANDING_GROUPS } from '../client/app/outstanding.ts';
+import type { AssetView, Overview, SectionView } from '../client/app/sections.ts';
 
 function asset(over: Partial<AssetView> & Pick<AssetView, 'file' | 'status'>): AssetView {
   return {
@@ -34,9 +34,49 @@ function asset(over: Partial<AssetView> & Pick<AssetView, 'file' | 'status'>): A
   } as AssetView;
 }
 
+/** A voice section with a model picked, which is what a set-up project has. */
+const SIDECAR = { backend: 'sidecar', defaults: {} } as SectionView['model'];
+
+/**
+ * A section with no model picked — which every section of a brand new project
+ * is, because `createProject` scaffolds them all that way.
+ *
+ * Load-bearing in the voice tests below. The backend is the author's setting
+ * and says nothing about whether a generator for that kind of file exists, and
+ * confusing the two put a new show's ninety voice clips under "nothing here
+ * can make them" with the one button that could have made them taken away.
+ */
+const MANUAL = { backend: 'manual', defaults: {} } as SectionView['model'];
+
+function sectionOf(
+  section: SectionView['section'],
+  assets: AssetView[],
+  model: SectionView['model'],
+): SectionView {
+  return {
+    section,
+    model,
+    assets,
+    counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
+  };
+}
+
+function withSections(sections: SectionView[], over: Partial<Overview> = {}): Overview {
+  return {
+    sections,
+    cast: [],
+    orphans: [],
+    strays: [],
+    counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
+    problems: [],
+    ...over,
+  };
+}
+
 function overview(assets: AssetView[], over: Partial<Overview> = {}): Overview {
   const section: SectionView = {
     section: 'voice',
+    model: SIDECAR,
     assets,
     counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
   };
@@ -364,8 +404,21 @@ describe('the contract', () => {
     // A group in the list with no way to reach it is a promise the tab cannot
     // keep; one produced with no spec would render blank.
     const produced = outstandingOf(
-      overview(
+      withSections(
         [
+          sectionOf('images', [
+            // The two groups a section with no generator produces. They exist
+            // precisely because the section they are in cannot answer them.
+            asset({
+              file: 'images/jetty.png',
+              section: 'images',
+              status: 'missing',
+              published: false,
+              size: { declared: '1920x1080' },
+            }),
+            asset({ file: 'images/rook.png', section: 'images', status: 'stale' }),
+          ], MANUAL),
+          sectionOf('voice', [
           asset({ file: 'voice/missing.mp3', status: 'missing', published: false }),
           asset({ file: 'voice/pick.mp3', status: 'unselected', published: false }),
           asset({ file: 'voice/stale.mp3', status: 'stale' }),
@@ -404,6 +457,7 @@ describe('the contract', () => {
             publishedTake: 't1',
             format: { actual: 'PNG', declared: 'jpg', rename: 'images/lying.png' },
           }),
+          ], SIDECAR),
         ],
         {
           cast: [{ id: 'beau', name: 'Beau', lines: 2, ready: 0, referenceExists: false }],
@@ -424,5 +478,96 @@ describe('the contract', () => {
       assert.ok(group.label && group.hint, `${group.group} is described`);
       assert.ok(group.level, `${group.group} has a severity`);
     }
+  });
+});
+
+describe('a section nothing here can generate', () => {
+  test('its unmade rows are a separate group with no button on it', async () => {
+    // The complaint this answers: "Generate all 9" over nine stills, in a
+    // section whose backend is `manual` and whose generator has never existed.
+    // Pressing it would fail nine times and make nothing.
+    const result = outstandingOf(
+      withSections([
+        sectionOf('images', [
+          asset({ file: 'images/jetty.png', section: 'images', status: 'missing', published: false }),
+          asset({ file: 'images/deck.png', section: 'images', status: 'stale' }),
+        ], MANUAL),
+      ]),
+    );
+
+    assert.deepEqual(groupsOf(result), { 'missing-manual': 1, 'stale-manual': 1 });
+    for (const group of result.groups) {
+      assert.equal(group.action, 'open', `${group.group} offers nothing to press`);
+    }
+  });
+
+  test('voice keeps its Generate even before a model is picked', async () => {
+    // The regression this is here for. A brand new project scaffolds every
+    // section on `backend: manual`, including voice — so keying the split on
+    // the backend put a hundred and nine voice clips in the hand-made list and
+    // removed the only working generator on the board from the one tab that
+    // exists to list unfinished work.
+    //
+    // Whether a generator *exists* is a fact about the kind of file and is
+    // permanent. Whether it is *configured* is a separate question the route
+    // answers by name, telling you to pick a model — which is a better answer
+    // than a hidden button.
+    for (const model of [SIDECAR, MANUAL]) {
+      const result = outstandingOf(
+        withSections([
+          sectionOf('voice', [asset({ file: 'voice/a.mp3', status: 'missing', published: false })], model),
+        ]),
+      );
+      assert.deepEqual(groupsOf(result), { missing: 1 }, `backend ${model!.backend}`);
+      assert.equal(result.groups[0]!.action, 'generate');
+    }
+  });
+
+  test('a picture is in the hand-made list whatever the section says', async () => {
+    // And the other direction: no backend setting can conjure an image
+    // generator, because there has never been one to configure.
+    for (const model of [SIDECAR, MANUAL]) {
+      const result = outstandingOf(
+        withSections([
+          sectionOf('images', [asset({ file: 'images/a.png', section: 'images', status: 'missing', published: false })], model),
+        ]),
+      );
+      assert.deepEqual(groupsOf(result), { 'missing-manual': 1 }, `backend ${model!.backend}`);
+      assert.equal(result.groups[0]!.action, 'open');
+    }
+  });
+
+  test('each line says the shape and the format, so the trip out is one trip', async () => {
+    const result = outstandingOf(
+      withSections([
+        sectionOf('images', [
+          asset({
+            file: 'images/rook.png',
+            section: 'images',
+            status: 'missing',
+            published: false,
+            size: { suggested: '832x1216', cutout: true },
+          }),
+        ], MANUAL),
+      ]),
+    );
+    assert.equal(result.groups[0]!.items[0]!.detail, '832x1216 PNG cutout');
+  });
+
+  test('a row with no brief says so, because the copy buttons cannot help it', async () => {
+    const result = outstandingOf(
+      withSections([
+        sectionOf('images', [
+          asset({
+            file: 'images/jetty.png',
+            section: 'images',
+            status: 'missing',
+            published: false,
+            hasPrompt: false,
+          }),
+        ], MANUAL),
+      ]),
+    );
+    assert.match(result.groups[0]!.items[0]!.detail!, /no brief/);
   });
 });

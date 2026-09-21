@@ -10,8 +10,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, reduce, beatOf } from '../src/engine/engine.ts';
-import { ScenarioSchema, isLinear, type Scenario } from '../src/scenario/schema.ts';
+import { initialState, reduce, beatOf } from '../shared/engine/engine.ts';
+import { ScenarioSchema, isLinear, type Scenario } from '../shared/scenario/schema.ts';
 
 const scenario: Scenario = ScenarioSchema.parse({
   id: 'gate-test',

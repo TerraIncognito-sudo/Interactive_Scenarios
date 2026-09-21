@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { formatOf, extensionOf, misnamed, renamedTo } from '../tools/editor/format.ts';
+import { formatOf, extensionOf, misnamed, renamedTo } from '../client/app/format.ts';
 
 /** A PNG header: signature, then an IHDR saying 8×8, truecolour with alpha. */
 function png(): Buffer {
@@ -222,8 +222,8 @@ async function workshop() {
   );
 
   process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-  const { setWorkspace } = await import('../tools/editor/workspace.ts');
-  const { openProject, renameToFormat } = await import('../tools/editor/projects.ts');
+  const { setWorkspace } = await import('../client/app/workspace.ts');
+  const { openProject, renameToFormat } = await import('../client/app/projects.ts');
   await setWorkspace(root);
 
   const read = (...parts: string[]) => readFileSync(join(dir, ...parts), 'utf8');

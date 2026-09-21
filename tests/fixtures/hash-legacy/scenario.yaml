@@ -1,0 +1,40 @@
+# A scenario that exists only to give the hash fixture something to resolve
+# against. It is deliberately tiny and deliberately covers one asset per
+# section, because the thing under test is `resolveRecipe` + `recipeHash`, and
+# what decides those is the *shape* of what a row carries rather than how much
+# of it there is.
+#
+# The sprite matters more than it looks: `portrait: true` reaches the recipe
+# from here, not from project.yaml, so a fixture with no sprite would leave the
+# one field with a scenario-derived value untested.
+id: hash-legacy
+title: Hash fixture
+start: open
+
+characters:
+  hero:
+    name: Hero
+    color: '#C8D8E4'
+    sprite: images/hero-sheet.png
+
+scenes:
+  jetty:
+    background: images/jetty.png
+    video: video/approach.mp4
+    ambience: ambience/sea.mp3
+
+nodes:
+  - id: open
+    type: dialogue
+    scene: jetty
+    lines:
+      - who: hero
+        text: The pier is busy the way it always is before a ship sails.
+        hold: 5.2
+        voice: voice/narr-01.mp3
+        sfx: sfx/burst.mp3
+    next: finish
+
+  - id: finish
+    type: end
+    text: End of fixture.

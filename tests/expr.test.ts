@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseExpr, referencedVars, testCondition, ExprError } from '../src/engine/expr.ts';
+import { parseExpr, referencedVars, testCondition, ExprError } from '../shared/engine/expr.ts';
 
 describe('expression evaluator', () => {
   test('compares a variable to a string literal', () => {

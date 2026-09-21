@@ -14,11 +14,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseScenarioSource } from '../src/scenario/load.ts';
-import { ScenarioSchema } from '../src/scenario/schema.ts';
-import { renameRows, sortIntoFolders } from '../tools/editor/folders.ts';
-import { pathsOf, ProjectSchema, takesDir } from '../tools/editor/project.ts';
-import { publishAsset } from '../tools/editor/generate.ts';
+import { parseScenarioSource } from '../shared/scenario/load.ts';
+import { ScenarioSchema } from '../shared/scenario/schema.ts';
+import { renameRows, sortIntoFolders } from '../client/app/folders.ts';
+import { pathsOf, ProjectSchema, takesDir } from '../client/app/project.ts';
+import { publishAsset } from '../client/app/generate.ts';
 
 const SOURCE = [
   '# Why this show is paced the way it is.',
@@ -320,8 +320,8 @@ describe('the button that files a whole project', () => {
     const { root, dir } = build();
     try {
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { sortAssets, openProject } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { sortAssets, openProject } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const result = await sortAssets('demo');
@@ -371,8 +371,8 @@ describe('the button that files a whole project', () => {
     const { root } = build();
     try {
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { sortAssets } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { sortAssets } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       await sortAssets('demo');
@@ -389,8 +389,8 @@ describe('the button that files a whole project', () => {
     const { root, dir } = build();
     try {
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { resolveMedia } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { resolveMedia } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       const take = await resolveMedia('demo', {
@@ -414,8 +414,8 @@ describe('the button that files a whole project', () => {
     try {
       writeFileSync(join(dir, 'secret.mp3'), 'not yours', 'utf8');
       process.env.EDITOR_CONFIG_DIR = join(root, '.config');
-      const { setWorkspace } = await import('../tools/editor/workspace.ts');
-      const { resolveMedia } = await import('../tools/editor/projects.ts');
+      const { setWorkspace } = await import('../client/app/workspace.ts');
+      const { resolveMedia } = await import('../client/app/projects.ts');
       await setWorkspace(root);
 
       // The editor browses the whole disk on purpose, but that is a picker a

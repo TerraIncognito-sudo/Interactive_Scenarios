@@ -25,9 +25,9 @@ import {
   BASE_FIELDS,
   OWN_FIELDS,
   NodeEditError,
-} from '../tools/editor/nodes.ts';
+} from '../client/app/nodes.ts';
 import { parse as parseYaml } from 'yaml';
-import { parseScenarioSource } from '../src/scenario/load.ts';
+import { parseScenarioSource } from '../shared/scenario/load.ts';
 import {
   BranchNodeSchema,
   DialogueNodeSchema,
@@ -36,7 +36,7 @@ import {
   PauseNodeSchema,
   PollNodeSchema,
   type Scenario,
-} from '../src/scenario/schema.ts';
+} from '../shared/scenario/schema.ts';
 
 /**
  * Comments in three positions that have all been broken by naive rewrites:

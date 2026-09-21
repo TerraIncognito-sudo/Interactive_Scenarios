@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkScenario, exitsOf } from '../src/scenario/check.ts';
-import { ScenarioSchema } from '../src/scenario/schema.ts';
+import { checkScenario, exitsOf } from '../shared/scenario/check.ts';
+import { ScenarioSchema } from '../shared/scenario/schema.ts';
 
 /** Builds a scenario from a node list, with sensible surrounding defaults. */
 function build(nodes: unknown[], extra: Record<string, unknown> = {}) {

@@ -11,9 +11,9 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseScenarioSource } from '../src/scenario/load.ts';
-import { retimeInto, targetHoldFor, holdMatches, round1, DEFAULT_GAP } from '../tools/editor/timing.ts';
-import { resolveRecipe, recipeHash, ProjectSchema } from '../tools/editor/project.ts';
+import { parseScenarioSource } from '../shared/scenario/load.ts';
+import { retimeInto, targetHoldFor, holdMatches, round1, DEFAULT_GAP } from '../client/app/timing.ts';
+import { resolveRecipe, recipeHash, ProjectSchema } from '../client/app/project.ts';
 
 const SOURCE = [
   '# Arctic Sentinel',

@@ -1,10 +1,20 @@
 /**
- * Surviving a server restart mid-show.
+ * Surviving a restart mid-poll.
  *
- * The plan lists "server process restarts" as a failure the system must absorb
- * rather than a scenario to hope against, so it gets a test rather than a
- * paragraph. A room is driven into an open poll, votes are cast, the process
- * is torn down, and a fresh server is built against the same data directory.
+ * Two different processes can die in the middle of a vote and the show has to
+ * absorb both, so both get a test rather than a paragraph.
+ *
+ * The **relay** restarting is a container being redeployed while forty phones
+ * are holding a question. That is the entire reason it has a database: the
+ * room, the poll and every ballot have to come back, and the phones must not
+ * be asked to do anything about it. A voter's own choice comes back
+ * highlighted, which is the part that would otherwise look like their vote was
+ * lost.
+ *
+ * The **client** dropping its link is a laptop that changed networks. The
+ * relay keeps taking votes while it is gone — nobody in the room notices —
+ * and the client comes back with its room token, replays the ballots into a
+ * fresh box, and carries on. Its clock never moved, because it was never here.
  */
 
 import { test, describe, before, after } from 'node:test';
@@ -13,13 +23,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
-import { buildServer } from '../src/server/index.ts';
-import type { Config } from '../src/server/config.ts';
-import type { PlayerState, Snapshot } from '../src/shared/protocol.ts';
+import { buildServer } from '../server/index.ts';
+import type { Config } from '../server/config.ts';
+import { RELAY_PROTOCOL } from '../shared/relay/protocol.ts';
+import type { PlayerState, RelayTally, RoomOpened, RoomResumed } from '../shared/relay/protocol.ts';
 
 let dataDir: string;
 const TEST_PASSWORD = 'test-password';
-const fixtures = join(import.meta.dirname, 'fixtures', 'scenarios');
 
 before(() => {
   process.env.LOG_LEVEL = 'silent';
@@ -41,10 +51,8 @@ function configFor(): Config {
     port: 0,
     host: '127.0.0.1',
     dataDir,
-    scenariosDir: fixtures,
-    clientDir: join(dataDir, 'no-client'),
+    webDir: join(dataDir, 'no-web'),
     publicUrl: 'http://test.local',
-    local: false,
     roomTtlMs: 60_000,
     adminPassword: TEST_PASSWORD,
     adminPasswordGenerated: false,
@@ -57,7 +65,7 @@ type Started = {
   wsUrl: string;
 };
 
-async function startServer(): Promise<Started> {
+async function startRelay(): Promise<Started> {
   const app = await buildServer(configFor());
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
@@ -69,14 +77,14 @@ async function startServer(): Promise<Started> {
   };
 }
 
-type Client = {
+type Peer = {
   socket: WebSocket;
   next<T>(match: (m: any) => boolean, timeoutMs?: number): Promise<T>;
   send(message: unknown): void;
   close(): void;
 };
 
-function connect(wsUrl: string): Promise<Client> {
+function connect(wsUrl: string): Promise<Peer> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(wsUrl);
     const messages: any[] = [];
@@ -105,7 +113,7 @@ function connect(wsUrl: string): Promise<Client> {
                 rej(
                   new Error(
                     `timed out; saw: ${messages
-                      .map((m) => `${m.type}${m.type === 'snapshot' ? `(${m.phase}/${m.beatInfo?.kind}/v${m.tally?.voters ?? '-'})` : m.type === 'error' ? `(${m.code}: ${m.message})` : ''}`)
+                      .map((m) => `${m.type}${m.type === 'error' ? `(${m.code})` : ''}`)
                       .join(', ')}`,
                   ),
                 ),
@@ -127,123 +135,168 @@ function connect(wsUrl: string): Promise<Client> {
   });
 }
 
-const isSnapshot = (m: any): m is Snapshot => m?.type === 'snapshot';
-const isPlayerState = (m: any): m is PlayerState => m?.type === 'playerState';
+async function issueKey(baseUrl: string, label: string): Promise<string> {
+  const response = await fetch(`${baseUrl}/api/keys`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
+    body: JSON.stringify({ label }),
+  });
+  assert.equal(response.status, 200);
+  return ((await response.json()) as { phrase: string }).phrase;
+}
 
-describe('surviving a server restart', () => {
-  test('a room mid-poll resumes with its votes intact', async () => {
-    // --- First process: get into a poll and collect votes -------------------
-    const first = await startServer();
+const A_POLL = {
+  type: 'poll',
+  nodeId: 'choose',
+  question: 'Which way?',
+  options: [
+    { key: 'left', label: 'Left' },
+    { key: 'right', label: 'Right' },
+  ],
+  endsAt: Date.now() + 300_000,
+};
 
-    const created = await fetch(`${first.baseUrl}/api/rooms`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
-      body: JSON.stringify({ scenarioId: 'slowpoll' }),
-    });
-    assert.equal(created.status, 200);
-    const room = (await created.json()) as {
-      code: string;
-      hostToken: string;
-      displayToken: string;
-    };
-    assert.match(room.code, /^[A-Z0-9]{6}$/);
+describe('surviving a relay restart', () => {
+  test('a room mid-poll comes back with its votes, and a phone sees its own choice', async () => {
+    // --- First container: a room, a question, two phones --------------------
+    const first = await startRelay();
+    const key = await issueKey(first.baseUrl, 'the presenting laptop');
 
-    const host = await connect(first.wsUrl);
-    host.send({ type: 'hello', role: 'host', room: room.code, token: room.hostToken });
-    await host.next(isSnapshot);
-    host.send({ type: 'command', command: { name: 'start' } });
-    await host.next<Snapshot>((m) => isSnapshot(m) && m.beatInfo?.kind === 'poll');
+    const client = await connect(first.wsUrl);
+    client.send({ type: 'openRoom', protocol: RELAY_PROTOCOL, key, title: 'Arctic Sentinel' });
+    const opened = await client.next<RoomOpened>((m) => m.type === 'roomOpened');
+    client.send(A_POLL);
+    await client.next((m) => m.type === 'tally');
 
-    for (const device of ['device-r-001', 'device-r-002', 'device-r-003']) {
-      const player = await connect(first.wsUrl);
-      player.send({ type: 'hello', role: 'player', room: room.code, deviceId: device });
-      await player.next(isPlayerState);
-      player.send({ type: 'vote', optionKey: device === 'device-r-003' ? 'right' : 'left' });
-      await player.next<PlayerState>((m) => isPlayerState(m) && m.choice !== undefined);
-      player.close();
-    }
+    const alice = await connect(first.wsUrl);
+    alice.send({ type: 'hello', role: 'player', room: opened.room, deviceId: 'alice-device-01' });
+    await alice.next((m) => m.type === 'playerState');
+    alice.send({ type: 'vote', optionKey: 'left' });
 
-    const beforeRestart = await host.next<Snapshot>(
-      (m) => isSnapshot(m) && (m.tally?.voters ?? 0) === 3,
-    );
-    assert.deepEqual(beforeRestart.tally?.counts, { left: 2, right: 1 });
+    const bob = await connect(first.wsUrl);
+    bob.send({ type: 'hello', role: 'player', room: opened.room, deviceId: 'bob-device-0001' });
+    await bob.next((m) => m.type === 'playerState');
+    bob.send({ type: 'vote', optionKey: 'right' });
 
-    host.close();
+    await client.next((m) => m.type === 'tally' && m.voters === 2);
+
+    // --- The container goes away --------------------------------------------
+    client.close();
+    alice.close();
+    bob.close();
     await first.app.close();
 
-    // --- Second process: same data directory, nothing else carried over -----
-    const second = await startServer();
+    // --- Second container, same volume --------------------------------------
+    const second = await startRelay();
 
-    const revived = await connect(second.wsUrl);
-    revived.send({ type: 'hello', role: 'host', room: room.code, token: room.hostToken });
-    const restored = await revived.next<Snapshot>(isSnapshot);
+    // Alice's phone reconnects the way `Connection` does on its own: same
+    // room, same device id, nothing about a restart anywhere in the frame.
+    const aliceAgain = await connect(second.wsUrl);
+    aliceAgain.send({
+      type: 'hello',
+      role: 'player',
+      room: opened.room,
+      deviceId: 'alice-device-01',
+    });
+    const restored = await aliceAgain.next<PlayerState>((m) => m.type === 'playerState');
+    assert.equal(restored.poll?.nodeId, 'choose');
+    assert.equal(restored.poll?.question, 'Which way?');
+    assert.equal(restored.poll?.options.length, 2);
+    // The one that would otherwise look like a lost vote: her own choice comes
+    // back, so the option she picked is still highlighted on her screen.
+    assert.equal(restored.choice, 'left');
 
-    assert.equal(restored.beatInfo.kind, 'poll', 'the room should still be mid-poll');
-    assert.equal(
-      restored.beatInfo.kind === 'poll' && restored.beatInfo.nodeId,
-      'vote',
-      'it should resume on the same node',
-    );
+    // And the client resumes onto the same room with both ballots.
+    const clientAgain = await connect(second.wsUrl);
+    clientAgain.send({
+      type: 'resumeRoom',
+      protocol: RELAY_PROTOCOL,
+      room: opened.room,
+      token: opened.token,
+    });
+    const resumed = await clientAgain.next<RoomResumed>((m) => m.type === 'roomResumed');
+    assert.equal(resumed.room, opened.room, 'the code on the wall must not change');
+    assert.equal(resumed.open?.nodeId, 'choose');
+    assert.equal(resumed.open?.votes.length, 2);
     assert.deepEqual(
-      restored.tally?.counts,
-      { left: 2, right: 1 },
-      'votes cast before the restart must still count',
+      resumed.open?.votes.map((v) => v.optionKey).sort(),
+      ['left', 'right'],
+      'every ballot comes back, or the tally on the board is a lie',
     );
 
-    // A late voter joining after the restart is counted alongside the old ones.
-    const late = await connect(second.wsUrl);
-    late.send({ type: 'hello', role: 'player', room: room.code, deviceId: 'device-r-late' });
-    await late.next(isPlayerState);
-    late.send({ type: 'vote', optionKey: 'right' });
-
-    const withLate = await revived.next<Snapshot>(
-      (m) => isSnapshot(m) && (m.tally?.voters ?? 0) === 4,
-    );
-    assert.deepEqual(withLate.tally?.counts, { left: 2, right: 2 });
-
-    // And the restored poll still decides the story correctly.
-    revived.send({ type: 'command', command: { name: 'forceBranch', optionKey: 'left' } });
-    const finished = await revived.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'finished');
-    assert.equal(finished.beatInfo.kind === 'end' && finished.beatInfo.text, 'Went left.');
-
-    late.close();
-    revived.close();
+    aliceAgain.close();
+    clientAgain.close();
     await second.app.close();
   });
 
-  test('the host token still works after a restart', async () => {
-    const first = await startServer();
-    const created = await fetch(`${first.baseUrl}/api/rooms`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-admin-password': TEST_PASSWORD },
-      body: JSON.stringify({ scenarioId: 'slowpoll' }),
+  test('a key survives, because it is in the volume rather than the environment', async () => {
+    // The whole reason keys are data. A redeploy that silently invalidated
+    // every key would lock out every client at once, which is the failure an
+    // environment variable has by design.
+    const relay = await startRelay();
+    const response = await fetch(`${relay.baseUrl}/api/keys`, {
+      headers: { 'x-admin-password': TEST_PASSWORD },
     });
-    const room = (await created.json()) as { code: string; hostToken: string };
+    const listed = (await response.json()) as { keys: { label: string }[] };
+    assert.ok(listed.keys.some((k) => k.label === 'the presenting laptop'));
 
-    const host = await connect(first.wsUrl);
-    host.send({ type: 'hello', role: 'host', room: room.code, token: room.hostToken });
-    await host.next(isSnapshot);
-    host.send({ type: 'command', command: { name: 'start' } });
-    await host.next<Snapshot>((m) => isSnapshot(m) && m.phase === 'running');
-    host.close();
-    await first.app.close();
+    const health = (await (await fetch(`${relay.baseUrl}/api/health`)).json()) as { keyed: boolean };
+    assert.equal(health.keyed, true);
+    await relay.app.close();
+  });
+});
 
-    const second = await startServer();
+describe('surviving a client that drops mid-poll', () => {
+  test('the room keeps taking votes, and the client comes back to all of them', async () => {
+    const relay = await startRelay();
+    const key = await issueKey(relay.baseUrl, 'a laptop on bad wifi');
 
-    // The old token is honoured...
-    const good = await connect(second.wsUrl);
-    good.send({ type: 'hello', role: 'host', room: room.code, token: room.hostToken });
-    const snapshot = await good.next<Snapshot>(isSnapshot);
-    assert.equal(snapshot.room, room.code);
-    good.close();
+    const client = await connect(relay.wsUrl);
+    client.send({ type: 'openRoom', protocol: RELAY_PROTOCOL, key });
+    const opened = await client.next<RoomOpened>((m) => m.type === 'roomOpened');
+    client.send(A_POLL);
+    await client.next((m) => m.type === 'tally');
 
-    // ...and a wrong one still is not.
-    const bad = await connect(second.wsUrl);
-    bad.send({ type: 'hello', role: 'host', room: room.code, token: 'nope' });
-    const error = await bad.next<any>((m) => m.type === 'error');
-    assert.equal(error.code, 'badToken');
-    bad.close();
+    const phone = await connect(relay.wsUrl);
+    phone.send({ type: 'hello', role: 'player', room: opened.room, deviceId: 'phone-device-001' });
+    await phone.next((m) => m.type === 'playerState');
+    phone.send({ type: 'vote', optionKey: 'left' });
+    await client.next((m) => m.type === 'tally' && m.voters === 1);
 
-    await second.app.close();
+    // The link dies. Nothing in the room changes — this is the difference
+    // between a relay that holds the votes and one that merely forwards them.
+    client.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const late = await connect(relay.wsUrl);
+    late.send({ type: 'hello', role: 'player', room: opened.room, deviceId: 'late-device-0001' });
+    const stillOpen = await late.next<PlayerState>((m) => m.type === 'playerState');
+    assert.equal(stillOpen.poll?.nodeId, 'choose', 'a phone must not notice the client leaving');
+    late.send({ type: 'vote', optionKey: 'right' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const back = await connect(relay.wsUrl);
+    back.send({
+      type: 'resumeRoom',
+      protocol: RELAY_PROTOCOL,
+      room: opened.room,
+      token: opened.token,
+    });
+    const resumed = await back.next<RoomResumed>((m) => m.type === 'roomResumed');
+    // **The same room code.** Opening a new one instead would put a fresh code
+    // on the projector and leave every phone in the room on a dead one.
+    assert.equal(resumed.room, opened.room);
+    assert.equal(resumed.open?.votes.length, 2);
+    assert.equal(resumed.players, 2);
+
+    // And the room is live again straight away: the next vote reaches it.
+    phone.send({ type: 'vote', optionKey: 'right' });
+    const tally = await back.next<RelayTally>((m) => m.type === 'tally');
+    assert.deepEqual(tally.counts, { left: 0, right: 2 });
+
+    phone.close();
+    late.close();
+    back.close();
+    await relay.app.close();
   });
 });

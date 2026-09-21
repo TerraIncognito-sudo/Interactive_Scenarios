@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Display — Interactive Scenario</title>
+    <link rel="stylesheet" href="../lib/base.css" />
+    <link rel="stylesheet" href="./display.css" />
+  </head>
+  <body class="display-body">
+    <div class="conn" data-status="connecting" id="conn">connecting</div>
+
+    <!-- Browsers refuse audible playback until the page has been interacted
+         with, and nobody clicks a projector. Without this the show runs mute
+         and there is nothing on screen to say why. -->
+    <button class="audio-gate" id="audio-gate" hidden>Click to enable sound</button>
+
+    <!-- Local control, for a presenter driving from the projector's own
+         keyboard. Both are on the wall the moment they are not hidden, so both
+         stay hidden until there is something to say: the cue speaks for a
+         second, the legend only when somebody asks for it. -->
+    <div class="cue" id="cue" hidden></div>
+    <aside class="keys" id="keys" hidden>
+      <h2>Presenter keys</h2>
+      <dl>
+        <div><dt>Space</dt><dd id="key-space">Pause</dd></div>
+        <div><dt>&rarr;</dt><dd id="key-right">Next beat</dd></div>
+        <div><dt>&larr;</dt><dd>Back a beat</dd></div>
+        <div><dt>1&hairsp;&ndash;&hairsp;9</dt><dd id="key-number">Pick a poll option</dd></div>
+        <div><dt>?</dt><dd>Hide this</dd></div>
+      </dl>
+    </aside>
+
+    <!-- Fixed 1920x1080 design surface, scaled by JS to fit any projector. -->
+    <div class="stage-wrap" id="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="scene" id="scene"></div>
+        <!-- Sits over the still background, which acts as its poster frame.
+             Muted and inline so autoplay policy never blocks it. -->
+        <video class="scene-video" id="scene-video" muted playsinline loop hidden></video>
+        <div class="vignette"></div>
+
+        <!-- Lobby -->
+        <section class="panel lobby" id="view-lobby">
+          <div class="lobby-inner">
+            <p class="eyebrow">Ready when you are</p>
+            <h1 class="lobby-title" id="lobby-title">Interactive Scenario</h1>
+            <p class="lobby-sub" id="lobby-sub"></p>
+            <div class="join-block" id="lobby-join" hidden>
+              <img class="qr" id="lobby-qr" alt="QR code to join the session" />
+              <div class="join-text">
+                <p class="join-label">Join from your phone</p>
+                <p class="join-url" id="lobby-url"></p>
+                <p class="join-label">Room code</p>
+                <p class="room-code" id="lobby-code">------</p>
+              </div>
+            </div>
+            <!--
+              Not an error state. A show runs start to finish on this machine
+              with no relay behind it, so the absence of a code has to read as
+              a decision rather than as a QR that failed to draw.
+            -->
+            <p class="join-label" id="lobby-unlinked">Running on this machine — no phones connected</p>
+            <p class="asset-state" id="asset-state"></p>
+            <p class="keys-hint">Press <kbd>?</kbd> on this screen for presenter keys</p>
+          </div>
+        </section>
+
+        <!-- Dialogue -->
+        <section class="panel dialogue" id="view-dialogue" hidden>
+          <div class="portrait" id="portrait" hidden><img id="portrait-img" alt="" /></div>
+          <div class="dialogue-box">
+            <div class="nameplate" id="nameplate" hidden></div>
+            <p class="line" id="line"></p>
+          </div>
+        </section>
+
+        <!-- Pause beat -->
+        <section class="panel beat" id="view-pause" hidden>
+          <p class="beat-text" id="pause-text"></p>
+        </section>
+
+        <!-- Poll -->
+        <section class="panel poll" id="view-poll" hidden>
+          <div class="poll-head">
+            <h2 class="poll-question" id="poll-question"></h2>
+            <p class="poll-prompt" id="poll-prompt"></p>
+          </div>
+
+          <div class="poll-body">
+            <ul class="bars" id="poll-bars"></ul>
+
+            <aside class="poll-aside">
+              <div id="poll-join" hidden>
+                <img class="qr qr-small" id="poll-qr" alt="QR code to join the vote" />
+                <p class="join-url small" id="poll-url"></p>
+                <p class="room-code small" id="poll-code">------</p>
+              </div>
+              <div class="countdown">
+                <svg viewBox="0 0 120 120" class="ring">
+                  <circle class="ring-track" cx="60" cy="60" r="52" />
+                  <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52" />
+                </svg>
+                <span class="countdown-num" id="countdown">--</span>
+              </div>
+              <p class="voters" id="voters">0 voting</p>
+            </aside>
+          </div>
+        </section>
+
+        <!-- Result reveal -->
+        <section class="panel result" id="view-result" hidden>
+          <p class="eyebrow">The room decided</p>
+          <h2 class="result-label" id="result-label"></h2>
+          <p class="result-detail" id="result-detail"></p>
+        </section>
+
+        <!-- Ending -->
+        <section class="panel ending" id="view-end" hidden>
+          <p class="ending-text" id="end-text"></p>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

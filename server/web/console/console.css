@@ -1,0 +1,233 @@
+/* The relay's two pages. Read in a hurry, usually while something is wrong. */
+
+body.console-body {
+  padding: 0;
+  min-height: 100%;
+}
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 1.2rem;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-sunken);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.bar h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.bar nav {
+  display: flex;
+  gap: 0.9rem;
+  font-size: 0.9rem;
+}
+
+.bar nav a[aria-current='page'] {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.bar .spacer {
+  flex: 1;
+}
+
+.bar .note {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+main {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 1.6rem 1.4rem 4rem;
+}
+
+/* --- the sign-in gate ---------------------------------------------------- */
+
+.gate {
+  max-width: 22rem;
+  margin: 6rem auto;
+  text-align: center;
+}
+
+.gate h1 {
+  font-size: 1.2rem;
+  margin: 0 0 0.4rem;
+}
+
+.gate p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin: 0 0 1.4rem;
+}
+
+input[type='password'],
+input[type='text'] {
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
+
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.error {
+  color: var(--bad);
+  font-size: 0.85rem;
+  min-height: 1.2em;
+  margin: 0.6rem 0 0;
+}
+
+/* --- cards --------------------------------------------------------------- */
+
+.card {
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.9rem;
+}
+
+.card.muted {
+  opacity: 0.55;
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.code {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 1.35rem;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+}
+
+.phrase {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 1.05rem;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  user-select: all;
+  word-break: break-all;
+}
+
+.title-tag {
+  color: var(--text-dim);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0.7rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  list-style: none;
+  padding: 0;
+}
+
+.facts b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pill {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+}
+
+.pill.live {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 45%, transparent);
+}
+
+.pill.away {
+  color: var(--accent-warm);
+  border-color: color-mix(in srgb, var(--accent-warm) 45%, transparent);
+}
+
+.pill.gone {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+}
+
+.actions {
+  margin-top: 0.9rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+button.danger {
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--line));
+  color: var(--bad);
+}
+
+.empty {
+  color: var(--text-faint);
+  text-align: center;
+  padding: 3rem 1rem;
+  line-height: 1.7;
+}
+
+h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 1.8rem 0 0.7rem;
+}
+
+h2:first-child {
+  margin-top: 0;
+}
+
+.explainer {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  border-left: 2px solid var(--line);
+  padding-left: 0.9rem;
+  margin: 0 0 1.4rem;
+}
+
+.issued {
+  border-color: color-mix(in srgb, var(--good) 40%, var(--line));
+}
+
+.issued .phrase {
+  font-size: 1.3rem;
+  display: inline-block;
+  margin-top: 0.5rem;
+}

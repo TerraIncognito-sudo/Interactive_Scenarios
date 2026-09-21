@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>Keys — relay</title>
+    <link rel="stylesheet" href="../lib/base.css" />
+    <link rel="stylesheet" href="../console/console.css" />
+  </head>
+  <body class="console-body">
+    <section class="gate" id="gate" hidden>
+      <h1>Relay console</h1>
+      <p>Sign in to manage keys.</p>
+      <form id="sign-in">
+        <input id="password" type="password" placeholder="Admin password" autocomplete="current-password" />
+        <p class="error" id="sign-in-error"></p>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <div id="shell" hidden>
+      <header class="bar">
+        <h1>Relay</h1>
+        <nav>
+          <a href="/status">Rooms</a>
+          <a href="/keys" aria-current="page">Keys</a>
+        </nav>
+        <span class="spacer"></span>
+        <span class="note" id="tick"></span>
+      </header>
+
+      <main>
+        <p class="explainer">
+          A key lets one client open rooms on this relay. It is read out once and kept by that
+          machine, so give it a label saying whose it is. Revoking a key refuses every
+          <em>future</em> room and does nothing to one already running — those keep going until
+          somebody ends them on the Rooms page.
+        </p>
+
+        <form id="issue" class="row">
+          <input id="label" type="text" placeholder="Whose machine is this for?" autocomplete="off" />
+          <button type="submit">Generate a key</button>
+        </form>
+        <p class="error" id="issue-error"></p>
+
+        <div id="issued"></div>
+        <div id="keys"></div>
+      </main>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
