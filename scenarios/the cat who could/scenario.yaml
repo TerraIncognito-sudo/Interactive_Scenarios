@@ -1,0 +1,955 @@
+# Ray Finds His Place: an autoplaying illustrated scenario with two audience polls.
+# Converted from the storyboard "RAY FINDS HIS PLACE — Storyboard & Production Script".
+# Story runtime: about 4 min 40 s on every path, plus two 40-second polls.
+#
+# Scoring note: the storyboard keeps two counters (snuggles and dances). The
+# condition language has no arithmetic, so each poll instead records its winning
+# option, and the ending branch reads both choices together:
+#   both snuggle            -> The Loaf        (snuggles 2, dances 0)
+#   both dance              -> The Kitchen Disco (snuggles 0, dances 2)
+#   anything else (a split) -> The Snuggle Shuffle (1-1)
+
+id: ray-finds-his-place
+title: Ray Finds His Place
+description: A fluffy white kitten tries to win over the grumpy black cat who owned the house first, and the room votes on how he goes about it.
+start: arrival
+lobby: front_hall
+
+settings:
+  wordsPerMinute: 160
+  minLineSeconds: 2
+  maxLineSeconds: 14
+  charsPerSecond: 45
+
+# No sprites here: Ray and Belle are painted into every still, so an overlaid
+# portrait would show them twice. Their character sheets are reference art only.
+characters:
+  narr:
+    name: Narrator
+    color: '#B0BEC5'
+  ray:
+    name: Ray
+    sprite: images/ray-sheet.png
+    color: '#90CAF9'
+  belle:
+    name: Belle
+    sprite: images/belle-sheet.png
+    color: '#FFB300'
+  human:
+    name: The Human
+    color: '#A5D6A7'
+
+# Scenes are places, and each shot overrides the picture on its own node.
+# The storyboard specifies no music beds, so none are declared yet.
+# Only the dining room gets an ambience bed, because every shot there is in the storm.
+scenes:
+  front_hall:
+    background: images/scene-front-hall.png
+  kitchen:
+    background: images/scene-kitchen.png
+  window_seat:
+    background: images/scene-window-seat.png
+  living_room:
+    background: images/scene-living-room.png
+  dining_room:
+    background: images/scene-dining-room-storm.png
+    ambience: ambience/storm-rain.mp3
+
+nodes:
+
+  # ───────────────────────── ACT A — The box with holes ─────────────────────────
+
+  - id: arrival                      # Shot A.1: cold open, the carrier (9 s)
+    type: dialogue
+    scene: front_hall
+    background: images/a1-carrier.png
+    lines:
+      - who: narr
+        text: "This is Ray."
+        hold: 2.5
+        voice: voice/narr-a1-01.mp3
+      - who: narr
+        text: "Ray weighs about as much as a large grapefruit, and half of that is fluff."
+        hold: 6.5
+        voice: voice/narr-a1-02.mp3
+    next: a2_first_steps
+
+  - id: a2_first_steps               # Shot A.2 (11 s)
+    type: dialogue
+    scene: front_hall
+    background: images/a2-first-steps.png
+    video: video/a2-first-steps.mp4  # whiskers twitch on a loop
+    lines:
+      - who: narr
+        text: "Today Ray was adopted."
+        hold: 2.5
+        voice: voice/narr-a2-01.mp3
+      - who: narr
+        text: "He has been given a whole house."
+        hold: 3
+        voice: voice/narr-a2-02.mp3
+      - who: ray
+        text: "Hello, house. I'm new."
+        hold: 2.5
+        voice: voice/ray-a2-03.mp3
+      - who: ray
+        text: "Please don't be loud."
+        hold: 3
+        voice: voice/ray-a2-04.mp3
+    next: a3_bowl
+
+  - id: a3_bowl                      # Shot A.3 (7 s)
+    type: dialogue
+    scene: kitchen
+    background: images/a3-bowl.png
+    lines:
+      - who: human
+        text: "Welcome home, buddy."
+        hold: 2.5
+        voice: voice/human-a3-01.mp3
+      - who: human
+        text: "Belle? Belle. Be nice."
+        hold: 4.5
+        voice: voice/human-a3-02.mp3
+    next: a4_belle_sunbeam
+
+  - id: a4_belle_sunbeam             # Shot A.4 (9 s)
+    type: dialogue
+    scene: window_seat
+    background: images/a4-belle-sunbeam.png
+    lines:
+      - who: narr
+        text: "This is Belle."
+        hold: 2
+        voice: voice/narr-a4-01.mp3
+      - who: narr
+        text: "Belle has lived here for eleven years."
+        hold: 3.5
+        voice: voice/narr-a4-02.mp3
+      - who: narr
+        text: "Belle did not request a kitten."
+        hold: 3.5
+        voice: voice/narr-a4-03.mp3
+    next: a5_looking_up
+
+  - id: a5_looking_up                # Shot A.5 (9 s)
+    type: dialogue
+    scene: window_seat
+    background: images/a5-looking-up.png
+    video: video/a5-looking-up.mp4   # tail tip wiggles on a loop
+    lines:
+      - who: ray
+        text: "Oh! A big one! Hi!"
+        hold: 3
+        voice: voice/ray-a5-01.mp3
+      - who: ray
+        text: "I'm the house's cat now too."
+        hold: 3
+        voice: voice/ray-a5-02.mp3
+      - who: ray
+        text: "We match. Except opposite."
+        hold: 3
+        voice: voice/ray-a5-03.mp3
+    next: a6_no
+
+  - id: a6_no                        # Shot A.6 (8 s)
+    type: dialogue
+    scene: window_seat
+    background: images/a6-no.png
+    lines:
+      - who: belle
+        text: "No."
+        hold: 2.5
+        voice: voice/belle-a6-01.mp3
+      - who: belle
+        text: "We don't match."
+        hold: 2.5
+        voice: voice/belle-a6-02.mp3
+      - who: belle
+        text: "You're a dandelion that got lost."
+        hold: 3
+        voice: voice/belle-a6-03.mp3
+    next: a7_dinner
+
+  - id: a7_dinner                    # Shot A.7 (9 s)
+    type: dialogue
+    scene: kitchen
+    background: images/a7-dinner.png
+    video: video/a7-dinner.mp4       # slow chewing loop
+    lines:
+      - who: narr
+        text: "Belle welcomes Ray properly, by eating his dinner."
+        hold: 4.5
+        voice: voice/narr-a7-01.mp3
+        sfx: sfx/slow-crunching.mp3
+      - who: narr
+        text: "Slowly. While maintaining eye contact."
+        hold: 4.5
+        voice: voice/narr-a7-02.mp3
+    next: a8_couch
+
+  - id: a8_couch                     # Shot A.8 (8 s)
+    type: dialogue
+    scene: living_room
+    background: images/a8-couch.png
+    lines:
+      - who: narr
+        text: "Ray spends the afternoon auditioning places to belong."
+        hold: 5
+        voice: voice/narr-a8-01.mp3
+      - who: narr
+        text: "The couch: too tall."
+        hold: 3
+        voice: voice/narr-a8-02.mp3
+    next: a9_rug
+
+  - id: a9_rug                       # Shot A.9 (6 s)
+    type: dialogue
+    scene: living_room
+    background: images/a9-rug.png
+    lines:
+      - who: narr
+        text: "The rug: already occupied by a sock."
+        hold: 6
+        voice: voice/narr-a9-01.mp3
+    next: a10_basket
+
+  - id: a10_basket                   # Shot A.10 (8 s)
+    type: dialogue
+    scene: living_room
+    background: images/a10-basket.png
+    lines:
+      - who: narr
+        text: "The laundry basket: perfect. Briefly."
+        hold: 3.5
+        voice: voice/narr-a10-01.mp3
+      - who: narr
+        text: "Until it was needed for laundry."
+        hold: 4.5
+        voice: voice/narr-a10-02.mp3
+    next: a11_hiss
+
+  - id: a11_hiss                     # Shot A.11 (12 s)
+    type: dialogue
+    scene: window_seat
+    background: images/a11-hiss.png
+    lines:
+      - who: belle
+        text: "That is my sunbeam."
+        hold: 3.5
+        voice: voice/belle-a11-01.mp3
+        sfx: sfx/cat-hiss.mp3
+      - who: belle
+        text: "I've had it since before you were a concept."
+        hold: 4.5
+        voice: voice/belle-a11-02.mp3
+      - who: ray
+        text: "...It's a very good sunbeam."
+        hold: 4
+        voice: voice/ray-a11-03.mp3
+    next: a12_two_ideas
+
+  - id: a12_two_ideas                # Shot A.12 (7 s)
+    type: dialogue
+    scene: window_seat
+    background: images/a12-two-ideas.png
+    lines:
+      - who: narr
+        text: "Ray has two ideas."
+        hold: 2.5
+        voice: voice/narr-a12-01.mp3
+      - who: narr
+        text: "Neither is great. Both are very Ray."
+        hold: 4.5
+        voice: voice/narr-a12-02.mp3
+    next: p1_sunbeam
+
+  # ───────────────────────── POLL 1 — the sunbeam ─────────────────────────
+  # Patient approach or show-off approach. The two branches rejoin at `storm`,
+  # but the choice is stored in afternoon_choice and read again by route_ending.
+  # Nobody votes -> snuggle. Poll 2 defaults to dance, so a silent room gets the split ending.
+  - id: p1_sunbeam
+    type: poll
+    scene: window_seat
+    background: images/a12-two-ideas.png
+    question: "Belle hissed. What should Ray do?"
+    prompt: "It's her sunbeam. It's his house now too."
+    duration: 40
+    options:
+      - { key: snuggle, label: "Curl up quietly nearby", next: p1_snuggle }
+      - { key: dance, label: "Win her over with zoomies", next: p1_dance }
+    default: snuggle
+    tiebreak: first
+    set:
+      afternoon_choice: $winner
+
+  # ───────────────────────── ACT B — The polite glacier (snuggle) ─────────────────────────
+
+  - id: p1_snuggle                   # Shot B.1 (11 s)
+    type: dialogue
+    scene: window_seat
+    background: images/b1-one-paw.png
+    lines:
+      - who: narr
+        text: "Ray chooses patience."
+        hold: 2.5
+        voice: voice/narr-b1-01.mp3
+      - who: narr
+        text: "He advances at the speed of a very polite glacier."
+        hold: 4
+        voice: voice/narr-b1-02.mp3
+      - who: narr
+        text: "One paw. A pause. Another paw."
+        hold: 4.5
+        voice: voice/narr-b1-03.mp3
+    next: b2_cushion
+
+  - id: b2_cushion                   # Shot B.2 (7 s)
+    type: dialogue
+    scene: window_seat
+    background: images/b2-cushion.png
+    lines:
+      - who: belle
+        text: "I can see you."
+        hold: 2.5
+        voice: voice/belle-b2-01.mp3
+      - who: ray
+        text: "I'm not here. I'm a cushion."
+        hold: 4.5
+        voice: voice/ray-b2-02.mp3
+    next: b3_principle
+
+  - id: b3_principle                 # Shot B.3 (8 s)
+    type: dialogue
+    scene: window_seat
+    background: images/b3-principle.png
+    lines:
+      - who: narr
+        text: "Belle considers leaving on principle."
+        hold: 3.5
+        voice: voice/narr-b3-01.mp3
+      - who: narr
+        text: "She decides the principle can wait."
+        hold: 4.5
+        voice: voice/narr-b3-02.mp3
+    next: b4_tail
+
+  - id: b4_tail                      # Shot B.4 (11 s)
+    type: dialogue
+    scene: window_seat
+    background: images/b4-tail.png
+    lines:
+      - who: narr
+        text: "Twenty minutes later, the cushion is asleep."
+        hold: 4
+        voice: voice/narr-b4-01.mp3
+      - who: narr
+        text: "And Belle's tail, without permission from Belle, drifts over and rests across his back."
+        hold: 7
+        voice: voice/narr-b4-02.mp3
+    next: b5_independent
+
+  - id: b5_independent               # Shot B.5 (6 s)
+    type: dialogue
+    scene: window_seat
+    background: images/b5-independent.png
+    lines:
+      - who: belle
+        text: "That tail acts independently."
+        hold: 3
+        voice: voice/belle-b5-01.mp3
+      - who: belle
+        text: "We've discussed it."
+        hold: 3
+        voice: voice/belle-b5-02.mp3
+    next: b6_nobody_move
+
+  - id: b6_nobody_move               # Shot B.6 (8 s), then rejoins at the storm
+    type: dialogue
+    scene: window_seat
+    background: images/b6-nobody-move.png
+    lines:
+      - who: human
+        text: "Oh my gosh. Nobody move."
+        hold: 4
+        voice: voice/human-b6-01.mp3
+      - who: narr
+        text: "The household holds its breath."
+        hold: 4
+        voice: voice/narr-b6-02.mp3
+    next: storm
+
+  # ───────────────────────── ACT C — The performance (dance) ─────────────────────────
+
+  - id: p1_dance                     # Shot C.1 (9 s)
+    type: dialogue
+    scene: living_room
+    background: images/c1-zoomies.png
+    lines:
+      - who: narr
+        text: "Ray chooses charisma."
+        hold: 3
+        voice: voice/narr-c1-01.mp3
+        sfx: sfx/paws-skitter-hardwood.mp3
+      - who: narr
+        text: "If he cannot be tolerated, he will be spectacular."
+        hold: 6
+        voice: voice/narr-c1-02.mp3
+    next: c2_sideways_hop
+
+  - id: c2_sideways_hop              # Shot C.2 (8 s)
+    type: dialogue
+    scene: living_room
+    background: images/c2-sideways-hop.png
+    video: video/c2-sideways-hop.mp4 # small hop loop
+    lines:
+      - who: ray
+        text: "This is the sideways hop."
+        hold: 2.5
+        voice: voice/ray-c2-01.mp3
+      - who: ray
+        text: "It's very advanced."
+        hold: 2.5
+        voice: voice/ray-c2-02.mp3
+      - who: ray
+        text: "Please hold your applause."
+        hold: 3
+        voice: voice/ray-c2-03.mp3
+    next: c3_belle_watches
+
+  - id: c3_belle_watches             # Shot C.3 (6 s)
+    type: dialogue
+    scene: window_seat
+    background: images/c3-belle-watches.png
+    lines:
+      - who: belle
+        text: "What is happening to your body."
+        hold: 6
+        voice: voice/belle-c3-01.mp3
+    next: c4_curtain
+
+  - id: c4_curtain                   # Shot C.4 (8 s)
+    type: dialogue
+    scene: living_room
+    background: images/c4-curtain.png
+    lines:
+      - who: narr
+        text: "For his second act, Ray climbs the curtains."
+        hold: 4
+        voice: voice/narr-c4-01.mp3
+      - who: narr
+        text: "He gets exactly halfway."
+        hold: 4
+        voice: voice/narr-c4-02.mp3
+    next: c5_finale
+
+  - id: c5_finale                    # Shot C.5 (11 s)
+    type: dialogue
+    scene: living_room
+    background: images/c5-finale.png
+    video: video/c5-finale.mp4       # Belle's tail swishes in rhythm on a loop
+    lines:
+      - who: narr
+        text: "The finale does not go as rehearsed."
+        hold: 4
+        voice: voice/narr-c5-01.mp3
+        sfx: sfx/pillows-thump.mp3
+      - who: narr
+        text: "But up on the window seat, very quietly, Belle's tail begins to keep time."
+        hold: 7
+        voice: voice/narr-c5-02.mp3
+    next: c6_white_fly
+
+  - id: c6_white_fly                 # Shot C.6 (10 s), then rejoins at the storm
+    type: dialogue
+    scene: living_room
+    background: images/c6-white-fly.png
+    lines:
+      - who: human
+        text: "Belle... were you just playing with him?"
+        hold: 4.5
+        voice: voice/human-c6-01.mp3
+      - who: belle
+        text: "I was swatting a fly."
+        hold: 2.5
+        voice: voice/belle-c6-02.mp3
+      - who: belle
+        text: "A large white fly."
+        hold: 3
+        voice: voice/belle-c6-03.mp3
+    next: storm
+
+  # ───────────────────────── ACT D — The weather arrives (shared) ─────────────────────────
+  # Poll 1's branches rejoin here: the storm comes whatever Ray did that afternoon.
+
+  - id: storm                        # Shot D.1 (10 s)
+    type: dialogue
+    scene: kitchen
+    background: images/d1-dinner-opposite-ends.png
+    video: video/d1-dinner-opposite-ends.mp4   # rain runs down the window on a loop
+    lines:
+      - who: narr
+        text: "That evening, dinner is served at opposite ends of the kitchen."
+        hold: 5
+        voice: voice/narr-d1-01.mp3
+        sfx: sfx/rain-distant-thunder.mp3
+      - who: narr
+        text: "Outside, the weather arrives without being adopted by anyone."
+        hold: 5
+        voice: voice/narr-d1-02.mp3
+    next: d2_lightning
+
+  - id: d2_lightning                 # Shot D.2 (6 s)
+    type: dialogue
+    scene: dining_room
+    background: images/d2-lightning.png
+    lines:
+      - who: ray
+        text: "The sky is broken!"
+        hold: 6
+        voice: voice/ray-d2-01.mp3
+        sfx: sfx/thunder-crack.mp3
+    next: d3_scared_too
+
+  - id: d3_scared_too                # Shot D.3 (11 s)
+    type: dialogue
+    scene: dining_room
+    background: images/d3-scared-too.png
+    lines:
+      - who: narr
+        text: "Belle has lived through a hundred storms."
+        hold: 3.5
+        voice: voice/narr-d3-01.mp3
+      - who: narr
+        text: "She has not enjoyed one."
+        hold: 3
+        voice: voice/narr-d3-02.mp3
+      - who: narr
+        text: "It turns out the big one is scared too."
+        hold: 4.5
+        voice: voice/narr-d3-03.mp3
+    next: d4_are_you_okay
+
+  - id: d4_are_you_okay              # Shot D.4 (8 s)
+    type: dialogue
+    scene: dining_room
+    background: images/d4-are-you-okay.png
+    lines:
+      - who: ray
+        text: "Belle? Are you okay?"
+        hold: 3
+        voice: voice/ray-d4-01.mp3
+      - who: belle
+        text: "I'm fine. I live under here now."
+        hold: 5
+        voice: voice/belle-d4-02.mp3
+    next: d5_lamp_flickers
+
+  - id: d5_lamp_flickers             # Shot D.5 (6 s)
+    type: dialogue
+    scene: dining_room
+    background: images/d5-lamp-flickers.png
+    lines:
+      - who: human
+        text: "It's okay, you two! It'll pass!"
+        hold: 6
+        voice: voice/human-d5-01.mp3
+        sfx: sfx/lights-flicker-buzz.mp3
+    next: d6_two_ideas_again
+
+  - id: d6_two_ideas_again           # Shot D.6 (9 s)
+    type: dialogue
+    scene: dining_room
+    background: images/d6-two-ideas-again.png
+    lines:
+      - who: narr
+        text: "The storm is very big. Ray is very small."
+        hold: 4.5
+        voice: voice/narr-d6-01.mp3
+      - who: narr
+        text: "But Ray, once again, has two ideas."
+        hold: 4.5
+        voice: voice/narr-d6-02.mp3
+    next: p2_storm
+
+  # ───────────────────────── POLL 2 — the storm ─────────────────────────
+  # Comfort Belle or turn the storm into a game. The choice goes into storm_choice,
+  # and route_ending reads it together with afternoon_choice to pick the ending.
+  # Nobody votes -> dance (the opposite of Poll 1's default, so a silent room gets the split ending).
+  - id: p2_storm
+    type: poll
+    scene: dining_room
+    background: images/d6-two-ideas-again.png
+    question: "Thunder! Belle is scared. What should Ray do?"
+    prompt: "He's the smallest one here."
+    duration: 40
+    options:
+      - { key: snuggle, label: "Press close and purr", next: p2_snuggle }
+      - { key: dance, label: "Pounce on the lightning", next: p2_dance }
+    default: dance
+    tiebreak: first
+    set:
+      storm_choice: $winner
+
+  # ───────────────────────── ACT E — The engine (snuggle) ─────────────────────────
+
+  - id: p2_snuggle                   # Shot E.1 (12 s)
+    type: dialogue
+    scene: dining_room
+    background: images/e1-pressing-close.png
+    video: video/e1-pressing-close.mp4   # fluff vibrates on a loop
+    lines:
+      - who: narr
+        text: "Ray does the only thing a kitten can do about weather."
+        hold: 5
+        voice: voice/narr-e1-01.mp3
+        sfx: sfx/kitten-purr.mp3
+      - who: narr
+        text: "He presses close and purrs — a big engine in a very small vehicle."
+        hold: 7
+        voice: voice/narr-e1-02.mp3
+    next: e2_keep_doing_it
+
+  - id: e2_keep_doing_it             # Shot E.2 (8 s)
+    type: dialogue
+    scene: dining_room
+    background: images/e2-keep-doing-it.png
+    lines:
+      - who: belle
+        text: "You're vibrating."
+        hold: 2.5
+        voice: voice/belle-e2-01.mp3
+      - who: ray
+        text: "It's on purpose."
+        hold: 2.5
+        voice: voice/ray-e2-02.mp3
+      - who: belle
+        text: "...Keep doing it."
+        hold: 3
+        voice: voice/belle-e2-03.mp3
+    next: e3_paw
+
+  - id: e3_paw                       # Shot E.3 (8 s)
+    type: dialogue
+    scene: dining_room
+    background: images/e3-paw.png
+    lines:
+      - who: narr
+        text: "Belle lifts one paw, and sets it over him."
+        hold: 4
+        voice: voice/narr-e3-01.mp3
+      - who: narr
+        text: "Purely to keep him from blowing away."
+        hold: 4
+        voice: voice/narr-e3-02.mp3
+    next: e4_barely_notices
+
+  - id: e4_barely_notices            # Shot E.4 (10 s)
+    type: dialogue
+    scene: dining_room
+    background: images/e4-barely-notices.png
+    lines:
+      - who: narr
+        text: "The next thunderclap arrives on schedule."
+        hold: 4
+        voice: voice/narr-e4-01.mp3
+        sfx: sfx/thunder-soft-distant.mp3
+      - who: narr
+        text: "For the first time in eleven years, Belle barely notices."
+        hold: 6
+        voice: voice/narr-e4-02.mp3
+    next: route_ending
+
+  # ───────────────────────── ACT F — The light show (dance) ─────────────────────────
+
+  - id: p2_dance                     # Shot F.1 (9 s)
+    type: dialogue
+    scene: dining_room
+    background: images/f1-sky-toy.png
+    lines:
+      - who: narr
+        text: "Ray decides the lightning is not a threat."
+        hold: 4
+        voice: voice/narr-f1-01.mp3
+        sfx: sfx/thunder-rumble.mp3
+      - who: narr
+        text: "It's a toy the sky keeps throwing."
+        hold: 5
+        voice: voice/narr-f1-02.mp3
+    next: f2_got_it
+
+  - id: f2_got_it                    # Shot F.2 (9 s)
+    type: dialogue
+    scene: dining_room
+    background: images/f2-got-it.png
+    lines:
+      - who: ray
+        text: "Got it! No, wait — got THAT one!"
+        hold: 5
+        voice: voice/ray-f2-01.mp3
+      - who: belle
+        text: "You haven't got any of them."
+        hold: 4
+        voice: voice/belle-f2-02.mp3
+    next: f3_belle_gets_one
+
+  - id: f3_belle_gets_one            # Shot F.3 (9 s)
+    type: dialogue
+    scene: dining_room
+    background: images/f3-belle-gets-one.png
+    lines:
+      - who: narr
+        text: "And then, against every principle she holds, Belle gets one."
+        hold: 6
+        voice: voice/narr-f3-01.mp3
+      - who: belle
+        text: "...I got one."
+        hold: 3
+        voice: voice/belle-f3-02.mp3
+    next: f4_stage
+
+  - id: f4_stage                     # Shot F.4 (10 s)
+    type: dialogue
+    scene: dining_room
+    background: images/f4-stage.png
+    video: video/f4-stage.mp4        # spotlight pulses; the cats bob in a loop
+    lines:
+      - who: narr
+        text: "For the rest of the storm, the dining room is a stage,"
+        hold: 5
+        voice: voice/narr-f4-01.mp3
+        sfx: sfx/thunder-applause.mp3
+      - who: narr
+        text: "and the lightning is working for them."
+        hold: 5
+        voice: voice/narr-f4-02.mp3
+    next: route_ending
+
+  # ───────────────────────── ENDING ROUTING ─────────────────────────
+  # Both votes snuggle -> The Loaf. Both votes dance -> The Kitchen Disco.
+  # A split, including a room that never voted -> The Snuggle Shuffle.
+  - id: route_ending
+    type: branch
+    when:
+      - { if: "afternoon_choice == 'snuggle' && storm_choice == 'snuggle'", next: end_loaf }
+      - { if: "afternoon_choice == 'dance' && storm_choice == 'dance'", next: end_disco }
+    else: end_shuffle
+
+  # ───────────────────────── ENDING A — The Loaf ─────────────────────────
+  # end_loaf is the storyboard's opening beat for this ending; fin_loaf is the terminal node.
+
+  - id: end_loaf                     # Ending A opening beat (10 s)
+    type: dialogue
+    scene: window_seat
+    background: images/ea-loaf-morning.png
+    lines:
+      - who: narr
+        text: "Morning. The sunbeam is exactly where it always is."
+        hold: 4.5
+        voice: voice/narr-ea-01.mp3
+      - who: narr
+        text: "It is now shared — a temporary arrangement, Belle insists."
+        hold: 5.5
+        voice: voice/narr-ea-02.mp3
+    next: g1_temporary
+
+  - id: g1_temporary                 # Shot G.1 (8 s)
+    type: dialogue
+    scene: window_seat
+    background: images/g1-temporary.png
+    lines:
+      - who: belle
+        text: "This is temporary."
+        hold: 2.5
+        voice: voice/belle-g1-01.mp3
+      - who: ray
+        text: "Okay."
+        hold: 2
+        voice: voice/ray-g1-02.mp3
+      - who: belle
+        text: "About fifteen years, temporary."
+        hold: 3.5
+        voice: voice/belle-g1-03.mp3
+    next: g2_window_seat_gone
+
+  - id: g2_window_seat_gone          # Shot G.2 (7 s)
+    type: dialogue
+    scene: window_seat
+    background: images/g2-window-seat-gone.png
+    lines:
+      - who: human
+        text: "I'm never getting that window seat back, am I."
+        hold: 7
+        voice: voice/human-g2-01.mp3
+    next: g3_underneath_a_cat
+
+  - id: g3_underneath_a_cat          # Shot G.3 (11 s)
+    type: dialogue
+    scene: window_seat
+    background: images/g3-underneath-a-cat.png
+    lines:
+      - who: narr
+        text: "Ray has found his place."
+        hold: 3.5
+        voice: voice/narr-g3-01.mp3
+      - who: narr
+        text: "It is small, and warm, and slightly underneath a cat."
+        hold: 7.5
+        voice: voice/narr-g3-02.mp3
+    next: fin_loaf
+
+  - id: fin_loaf
+    type: end
+    scene: window_seat
+    background: images/g3-underneath-a-cat.png
+    text: "Ending A: The Loaf"
+
+  # ───────────────────────── ENDING B — The Kitchen Disco ─────────────────────────
+
+  - id: end_disco                    # Ending B opening beat (10 s)
+    type: dialogue
+    scene: kitchen
+    background: images/eb-disco-morning.png
+    video: video/eb-disco-morning.mp4   # slippers and cats bounce in time on a loop
+    lines:
+      - who: narr
+        text: "Morning. The human plays music while making coffee, as always."
+        hold: 5.5
+        voice: voice/narr-eb-01.mp3
+        sfx: sfx/radio-swing-tune.mp3
+      - who: narr
+        text: "What's new is the choreography."
+        hold: 4.5
+        voice: voice/narr-eb-02.mp3
+    next: h1_dont_spin
+
+  - id: h1_dont_spin                 # Shot H.1 (8 s)
+    type: dialogue
+    scene: kitchen
+    background: images/h1-dont-spin.png
+    video: video/h1-dont-spin.mp4    # Belle's spin on a loop
+    lines:
+      - who: ray
+        text: "Left paw! Right paw! Spin!"
+        hold: 4
+        voice: voice/ray-h1-01.mp3
+      - who: belle
+        text: "I don't spin."
+        hold: 4
+        voice: voice/belle-h1-02.mp3
+    next: h2_fridge
+
+  - id: h2_fridge                    # Shot H.2 (7 s)
+    type: dialogue
+    scene: kitchen
+    background: images/h2-fridge.png
+    video: video/h2-fridge.mp4       # cats circle the slippers on a loop
+    lines:
+      - who: human
+        text: "Love this. Love it."
+        hold: 3
+        voice: voice/human-h2-01.mp3
+      - who: human
+        text: "I need the fridge, though."
+        hold: 4
+        voice: voice/human-h2-02.mp3
+    next: h3_everyones_feet
+
+  - id: h3_everyones_feet            # Shot H.3 (11 s)
+    type: dialogue
+    scene: kitchen
+    background: images/h3-everyones-feet.png
+    lines:
+      - who: narr
+        text: "Ray has found his place."
+        hold: 3.5
+        voice: voice/narr-h3-01.mp3
+      - who: narr
+        text: "It is loud, it moves, and it is right under everyone's feet."
+        hold: 7.5
+        voice: voice/narr-h3-02.mp3
+    next: fin_disco
+
+  - id: fin_disco
+    type: end
+    scene: kitchen
+    background: images/h3-everyones-feet.png
+    text: "Ending B: The Kitchen Disco"
+
+  # ───────────────────────── ENDING C — The Snuggle Shuffle ─────────────────────────
+
+  - id: end_shuffle                  # Ending C opening beat (9 s)
+    type: dialogue
+    scene: living_room
+    background: images/ec-shuffle-evening.png
+    video: video/ec-shuffle-evening.mp4   # Ray's hindquarters wiggle on a loop
+    lines:
+      - who: narr
+        text: "Some things settle. Some never quite will."
+        hold: 4
+        voice: voice/narr-ec-01.mp3
+      - who: narr
+        text: "Ray and Belle have arrived at a system."
+        hold: 5
+        voice: voice/narr-ec-02.mp3
+    next: j1_one_lap
+
+  - id: j1_one_lap                   # Shot J.1 (8 s)
+    type: dialogue
+    scene: living_room
+    background: images/j1-one-lap.png
+    lines:
+      - who: narr
+        text: "First, Ray runs one lap of the living room at full speed."
+        hold: 5
+        voice: voice/narr-j1-01.mp3
+        sfx: sfx/paws-skitter-rug.mp3
+      - who: narr
+        text: "For morale."
+        hold: 3
+        voice: voice/narr-j1-02.mp3
+    next: j2_the_deal
+
+  - id: j2_the_deal                  # Shot J.2 (13 s)
+    type: dialogue
+    scene: living_room
+    background: images/j2-the-deal.png
+    lines:
+      - who: narr
+        text: "Then he collapses into Belle, who allows it, and pretends not to."
+        hold: 5.5
+        voice: voice/narr-j2-01.mp3
+      - who: belle
+        text: "One lap. That was the deal."
+        hold: 3.5
+        voice: voice/belle-j2-02.mp3
+      - who: ray
+        text: "It was a very good lap."
+        hold: 4
+        voice: voice/ray-j2-03.mp3
+    next: j3_rest_of_the_time
+
+  - id: j3_rest_of_the_time          # Shot J.3 (13 s)
+    type: dialogue
+    scene: living_room
+    background: images/j3-rest-of-the-time.png
+    lines:
+      - who: narr
+        text: "Ray has found his place."
+        hold: 3.5
+        voice: voice/narr-j3-01.mp3
+      - who: narr
+        text: "Some of the time, it's the middle of the rug."
+        hold: 4.5
+        voice: voice/narr-j3-02.mp3
+      - who: narr
+        text: "The rest of the time, it's her."
+        hold: 5
+        voice: voice/narr-j3-03.mp3
+    next: fin_shuffle
+
+  - id: fin_shuffle
+    type: end
+    scene: living_room
+    background: images/j3-rest-of-the-time.png
+    text: "Ending C: The Snuggle Shuffle"

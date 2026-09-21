@@ -28,11 +28,8 @@ __pycache__/
 # project — the recipes, the ledger, every rejected take, and the reference
 # clips a cloning model was trained on — belongs in the author's workspace,
 # which is a separate product. Deploying is copying the finished half across.
-scenarios/*/project.yaml
 scenarios/*/.ledger.json
 scenarios/*/generated/
-scenarios/*/voices/
-scenarios/*/*storyboard.md
 
 # Written by the abort test in tests/show.test.ts and removed again. Listed
 # because if that test ever crashes the process -- which is exactly what it

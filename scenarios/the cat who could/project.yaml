@@ -1,0 +1,2207 @@
+# This project is inside a synced drive, so everything under generated/ will
+# be uploaded too. Voice takes are small; stills and video are not. Point
+# generated: at a path outside the drive if that becomes a problem.
+project: the-cat-who-could
+title: the cat who could
+scenario: scenario.yaml
+publish: assets
+generated: generated
+sections:
+  images:
+    backend: manual
+  video:
+    backend: manual
+  voice:
+    backend: manual
+  sfx:
+    backend: manual
+  ambience:
+    backend: manual
+  music:
+    backend: manual
+assets:
+  {
+    images/scene-front-hall.png:
+      {
+        prompt: "A small pet carrier with a wire grate door sits on a woven doormat in a
+          sunny front hall, honey-coloured hardwood floor, a coat hook and an
+          umbrella stand soft and blurred behind. Through the grate a tiny white
+          kitten peers out with huge sky-blue eyes, his fluff squashed against
+          the bars. Late-afternoon window light pools in butter yellow across
+          the floor. Low close shot; the carrier fills the right half of the
+          frame, open floor stretching away on the left. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: A.1 }
+      },
+    images/scene-kitchen.png:
+      {
+        prompt: "A bright kitchen seen from the floor: sage cabinet doors and an oatmeal
+          tile floor. A human hand in a sage knit sleeve lowers a small
+          dusty-rose ceramic food bowl to the tiles; grey wool slippers stand at
+          the edge of frame. Ray sits beside the bowl, looking up at the hand
+          with wide sky-blue eyes. Low medium shot, the hand entering from top
+          right. Style: warm painterly storybook illustration in gouache with
+          soft coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.3 }
+      },
+    images/scene-window-seat.png:
+      {
+        prompt: "A deep cushioned window seat in cream linen, a tall window behind it
+          pouring a thick bar of golden sunlight across the cushion. Belle lies
+          stretched full length in the exact centre of the sunbeam, glossy black
+          and luxurious, eyes closed except for one amber eye just barely
+          opening. Potted sage-green plants on the sill, soft and blurred. Low
+          shot from the floor looking up at the window seat, Belle framed like a
+          queen on a dais. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.4 }
+      },
+    images/scene-living-room.png:
+      {
+        prompt: "A cozy living room seen from the floor: a tall dusty-rose sofa towers
+          like a cliff. Ray stands on his hind legs at its base, front paws
+          stretched up against the fabric, nowhere near the cushion edge far
+          above him. A sage throw blanket hangs out of reach. Low wide shot
+          emphasising the height of the sofa. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.8 }
+      },
+    images/scene-dining-room-storm.png:
+      {
+        prompt: "Night in the dining room, lit by a sudden blue-white lightning flash
+          through tall rain-streaked windows. Ray stands frozen in the middle of
+          the floor, every strand of white fluff standing straight out so he
+          looks like a startled dandelion, eyes enormous. Sharp window-frame
+          shadows stretch across the floorboards. Low medium shot. Cool
+          slate-blue storm palette with deep plum shadows. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: D.2 }
+      },
+    ambience/storm-rain.mp3: { source: { shot: D.2 } },
+    images/a1-carrier.png:
+      {
+        prompt: "A small pet carrier with a wire grate door sits on a woven doormat in a
+          sunny front hall, honey-coloured hardwood floor, a coat hook and an
+          umbrella stand soft and blurred behind. Through the grate a tiny white
+          kitten peers out with huge sky-blue eyes, his fluff squashed against
+          the bars. Late-afternoon window light pools in butter yellow across
+          the floor. Low close shot; the carrier fills the right half of the
+          frame, open floor stretching away on the left. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: A.1, node: arrival }
+      },
+    voice/narr-a1-01.mp3:
+      {
+        prompt: 'calm, fond, a half-beat before "fluff."',
+        text: This is Ray.,
+        voice: narr,
+        source: { shot: A.1, node: arrival, line: 0 }
+      },
+    voice/narr-a1-02.mp3:
+      {
+        prompt: 'calm, fond, a half-beat before "fluff."',
+        text: "Ray weighs about as much as a large grapefruit, and half of that is
+          fluff.",
+        voice: narr,
+        source: { shot: A.1, node: arrival, line: 1 }
+      },
+    images/a2-first-steps.png:
+      {
+        prompt: "The carrier door hangs open. Ray has stepped one paw out onto the
+          enormous shining hardwood floor, the rest of him still inside, ears
+          forward, eyes enormous. The hallway stretches away ahead of him like a
+          vast golden plain, with a staircase rising in the far soft background.
+          Low wide shot from floor level beside the carrier, emphasising how
+          small he is. Style: warm painterly storybook illustration in gouache
+          with soft coloured-pencil texture and visible paper grain; gentle
+          rounded shapes; cozy, lightly comic mood. Palette of cream, oatmeal,
+          butter yellow, sage green and dusty rose, with deep plum in the
+          shadows. Soft, low-contrast light with glowing highlights. Camera at
+          cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.2, node: a2_first_steps }
+      },
+    video/a2-first-steps.mp4:
+      {
+        prompt: "Gentle parallax: the hallway slides slightly as if Ray is leaning out;
+          his whiskers twitch on a loop.",
+        size: 1920x1080,
+        source: { shot: A.2, node: a2_first_steps }
+      },
+    voice/narr-a2-01.mp3:
+      {
+        text: Today Ray was adopted.,
+        voice: narr,
+        source: { shot: A.2, node: a2_first_steps, line: 0 }
+      },
+    voice/narr-a2-02.mp3:
+      {
+        text: He has been given a whole house.,
+        voice: narr,
+        source: { shot: A.2, node: a2_first_steps, line: 1 }
+      },
+    voice/ray-a2-03.mp3:
+      {
+        prompt: "whispered, as if the house might hear.",
+        text: "Hello, house. I'm new.",
+        voice: ray,
+        source: { shot: A.2, node: a2_first_steps, line: 2 }
+      },
+    voice/ray-a2-04.mp3:
+      {
+        prompt: "whispered, as if the house might hear.",
+        text: Please don't be loud.,
+        voice: ray,
+        source: { shot: A.2, node: a2_first_steps, line: 3 }
+      },
+    images/a3-bowl.png:
+      {
+        prompt: "A bright kitchen seen from the floor: sage cabinet doors and an oatmeal
+          tile floor. A human hand in a sage knit sleeve lowers a small
+          dusty-rose ceramic food bowl to the tiles; grey wool slippers stand at
+          the edge of frame. Ray sits beside the bowl, looking up at the hand
+          with wide sky-blue eyes. Low medium shot, the hand entering from top
+          right. Style: warm painterly storybook illustration in gouache with
+          soft coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.3, node: a3_bowl }
+      },
+    voice/human-a3-01.mp3:
+      {
+        prompt: 'bright to Ray, then a warning tone for "Be nice," called toward another
+          room.',
+        text: "Welcome home, buddy.",
+        voice: human,
+        source: { shot: A.3, node: a3_bowl, line: 0 }
+      },
+    voice/human-a3-02.mp3:
+      {
+        prompt: 'bright to Ray, then a warning tone for "Be nice," called toward another
+          room.',
+        text: Belle? Belle. Be nice.,
+        voice: human,
+        source: { shot: A.3, node: a3_bowl, line: 1 }
+      },
+    images/a4-belle-sunbeam.png:
+      {
+        prompt: "A deep cushioned window seat in cream linen, a tall window behind it
+          pouring a thick bar of golden sunlight across the cushion. Belle lies
+          stretched full length in the exact centre of the sunbeam, glossy black
+          and luxurious, eyes closed except for one amber eye just barely
+          opening. Potted sage-green plants on the sill, soft and blurred. Low
+          shot from the floor looking up at the window seat, Belle framed like a
+          queen on a dais. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.4, node: a4_belle_sunbeam }
+      },
+    voice/narr-a4-01.mp3:
+      {
+        prompt: flat and factual; "did not request" read like a clause in a contract.,
+        text: This is Belle.,
+        voice: narr,
+        source: { shot: A.4, node: a4_belle_sunbeam, line: 0 }
+      },
+    voice/narr-a4-02.mp3:
+      {
+        prompt: flat and factual; "did not request" read like a clause in a contract.,
+        text: Belle has lived here for eleven years.,
+        voice: narr,
+        source: { shot: A.4, node: a4_belle_sunbeam, line: 1 }
+      },
+    voice/narr-a4-03.mp3:
+      {
+        prompt: flat and factual; "did not request" read like a clause in a contract.,
+        text: Belle did not request a kitten.,
+        voice: narr,
+        source: { shot: A.4, node: a4_belle_sunbeam, line: 2 }
+      },
+    images/a5-looking-up.png:
+      {
+        prompt: "Ray sits on the floor at the foot of the window seat, head tipped all
+          the way back, gazing up at Belle, who looms above at the top edge of
+          frame in silhouette against the golden window, huge from his angle.
+          His tail is up in a hopeful question mark. Low angle from just behind
+          and beside Ray, looking up past him. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.5, node: a5_looking_up }
+      },
+    video/a5-looking-up.mp4:
+      {
+        prompt: Ray's tail tip wiggles on a loop; slight parallax between Ray and the
+          window.,
+        size: 1920x1080,
+        source: { shot: A.5, node: a5_looking_up }
+      },
+    voice/ray-a5-01.mp3:
+      {
+        prompt: "delighted, tumbling over himself.",
+        text: Oh! A big one! Hi!,
+        voice: ray,
+        source: { shot: A.5, node: a5_looking_up, line: 0 }
+      },
+    voice/ray-a5-02.mp3:
+      {
+        prompt: "delighted, tumbling over himself.",
+        text: I'm the house's cat now too.,
+        voice: ray,
+        source: { shot: A.5, node: a5_looking_up, line: 1 }
+      },
+    voice/ray-a5-03.mp3:
+      {
+        prompt: "delighted, tumbling over himself.",
+        text: We match. Except opposite.,
+        voice: ray,
+        source: { shot: A.5, node: a5_looking_up, line: 2 }
+      },
+    images/a6-no.png:
+      {
+        prompt: "Close-up of Belle's face resting on her front paws at the edge of the
+          window seat, looking straight down at the camera with heavy-lidded
+          amber eyes, ears slightly flattened, whiskers pulled back. Her
+          expression is magnificently unimpressed. Warm sunlight rims the edge
+          of her black fur. Tight close-up, slightly low angle. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: A.6, node: a6_no }
+      },
+    voice/belle-a6-01.mp3:
+      {
+        prompt: a long pause after "No." The rest is slow and dry.,
+        text: No.,
+        voice: belle,
+        source: { shot: A.6, node: a6_no, line: 0 }
+      },
+    voice/belle-a6-02.mp3:
+      {
+        prompt: a long pause after "No." The rest is slow and dry.,
+        text: We don't match.,
+        voice: belle,
+        source: { shot: A.6, node: a6_no, line: 1 }
+      },
+    voice/belle-a6-03.mp3:
+      {
+        prompt: a long pause after "No." The rest is slow and dry.,
+        text: You're a dandelion that got lost.,
+        voice: belle,
+        source: { shot: A.6, node: a6_no, line: 2 }
+      },
+    images/a7-dinner.png:
+      {
+        prompt: "The kitchen floor. Belle crouches over Ray's small dusty-rose bowl,
+          eating from it, while staring sideways directly at Ray. Ray sits a
+          short distance away with his mouth slightly open in disbelief. Oatmeal
+          tiles, sage cabinet doors behind. Low medium two-shot, bowl in the
+          centre. Style: warm painterly storybook illustration in gouache with
+          soft coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.7, node: a7_dinner }
+      },
+    video/a7-dinner.mp4:
+      {
+        prompt: Belle's jaw moves in a slow chewing loop; her eyes never leave Ray.,
+        size: 1920x1080,
+        source: { shot: A.7, node: a7_dinner }
+      },
+    voice/narr-a7-01.mp3:
+      {
+        text: "Belle welcomes Ray properly, by eating his dinner.",
+        voice: narr,
+        source: { shot: A.7, node: a7_dinner, line: 0 }
+      },
+    sfx/slow-crunching.mp3:
+      {
+        prompt: "Slow, deliberate crunching.",
+        source: { shot: A.7, node: a7_dinner }
+      },
+    voice/narr-a7-02.mp3:
+      {
+        text: Slowly. While maintaining eye contact.,
+        voice: narr,
+        source: { shot: A.7, node: a7_dinner, line: 1 }
+      },
+    images/a8-couch.png:
+      {
+        prompt: "A cozy living room seen from the floor: a tall dusty-rose sofa towers
+          like a cliff. Ray stands on his hind legs at its base, front paws
+          stretched up against the fabric, nowhere near the cushion edge far
+          above him. A sage throw blanket hangs out of reach. Low wide shot
+          emphasising the height of the sofa. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.8, node: a8_couch }
+      },
+    voice/narr-a8-01.mp3:
+      {
+        text: Ray spends the afternoon auditioning places to belong.,
+        voice: narr,
+        source: { shot: A.8, node: a8_couch, line: 0 }
+      },
+    voice/narr-a8-02.mp3:
+      {
+        text: "The couch: too tall.",
+        voice: narr,
+        source: { shot: A.8, node: a8_couch, line: 1 }
+      },
+    images/a9-rug.png:
+      {
+        prompt: "A round oatmeal wool rug in the middle of the living room floor.
+          Squarely in its centre lies a single rumpled grey sock. Ray stands at
+          the rug's edge staring at the sock with suspicion, one paw raised
+          mid-step. Low medium shot, the sock in sharp focus in the foreground,
+          Ray just behind it. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.9, node: a9_rug }
+      },
+    voice/narr-a9-01.mp3:
+      {
+        prompt: completely serious.,
+        text: "The rug: already occupied by a sock.",
+        voice: narr,
+        source: { shot: A.9, node: a9_rug, line: 0 }
+      },
+    images/a10-basket.png:
+      {
+        prompt: "A woven wicker laundry basket full of warm, freshly folded cream
+          towels. Ray is nestled perfectly in the top towel, blissful, eyes
+          closed. Two human hands in sage knit sleeves are already gripping the
+          basket handles on either side, about to lift it. Low medium shot from
+          beside the basket. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.10, node: a10_basket }
+      },
+    voice/narr-a10-01.mp3:
+      {
+        text: "The laundry basket: perfect. Briefly.",
+        voice: narr,
+        source: { shot: A.10, node: a10_basket, line: 0 }
+      },
+    voice/narr-a10-02.mp3:
+      {
+        text: Until it was needed for laundry.,
+        voice: narr,
+        source: { shot: A.10, node: a10_basket, line: 1 }
+      },
+    images/a11-hiss.png:
+      {
+        prompt: "Ray has climbed onto the far end of the cream window seat and is
+          creeping toward the golden sunbeam. Belle is up on her feet in the
+          middle of the light, back arched, fur along her spine raised, mouth
+          open in a hiss, amber eyes wide. Ray freezes mid-step, ears back.
+          Medium two-shot along the length of the window seat, the band of
+          sunlight dividing them. Style: warm painterly storybook illustration
+          in gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.11, node: a11_hiss }
+      },
+    voice/belle-a11-01.mp3:
+      {
+        prompt: "icy and precise, after the hiss has fully finished.",
+        text: That is my sunbeam.,
+        voice: belle,
+        source: { shot: A.11, node: a11_hiss, line: 0 }
+      },
+    sfx/cat-hiss.mp3: { prompt: A sharp cat hiss., source: { shot: A.11, node: a11_hiss } },
+    voice/belle-a11-02.mp3:
+      {
+        prompt: "icy and precise, after the hiss has fully finished.",
+        text: I've had it since before you were a concept.,
+        voice: belle,
+        source: { shot: A.11, node: a11_hiss, line: 1 }
+      },
+    voice/ray-a11-03.mp3:
+      {
+        prompt: "small, sincere, a little crushed.",
+        text: ...It's a very good sunbeam.,
+        voice: ray,
+        source: { shot: A.11, node: a11_hiss, line: 2 }
+      },
+    images/a12-two-ideas.png:
+      {
+        prompt: "Ray sits alone at the very edge of the sunbeam on the window seat, half
+          of him in warm gold light and half in cool plum shadow, looking
+          thoughtfully off to one side. Belle is a soft dark blur settled back
+          into the light in the background. Medium close shot of Ray,
+          symmetrical, the light line running straight down the frame through
+          him. Style: warm painterly storybook illustration in gouache with soft
+          coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: A.12, node: a12_two_ideas }
+      },
+    voice/narr-a12-01.mp3:
+      {
+        text: Ray has two ideas.,
+        voice: narr,
+        source: { shot: A.12, node: a12_two_ideas, line: 0 }
+      },
+    voice/narr-a12-02.mp3:
+      {
+        text: Neither is great. Both are very Ray.,
+        voice: narr,
+        source: { shot: A.12, node: a12_two_ideas, line: 1 }
+      },
+    images/b1-one-paw.png:
+      {
+        prompt: "Along the cream window seat, Ray is creeping toward Belle at an
+          absurdly slow pace, low to the cushion, one front paw lifted and
+          hovering mid-step. Belle lies in the centre of the sunbeam with her
+          back half-turned to him. Ray is about a body length from the edge of
+          the light. Low side-on shot along the cushion, shallow focus on Ray's
+          lifted paw. Style: warm painterly storybook illustration in gouache
+          with soft coloured-pencil texture and visible paper grain; gentle
+          rounded shapes; cozy, lightly comic mood. Palette of cream, oatmeal,
+          butter yellow, sage green and dusty rose, with deep plum in the
+          shadows. Soft, low-contrast light with glowing highlights. Camera at
+          cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: B.1, node: p1_snuggle }
+      },
+    voice/narr-b1-01.mp3:
+      {
+        prompt: 'slow down to match him; real pauses between "One paw," "A pause,"
+          "Another paw."',
+        text: Ray chooses patience.,
+        voice: narr,
+        source: { shot: B.1, node: p1_snuggle, line: 0 }
+      },
+    voice/narr-b1-02.mp3:
+      {
+        prompt: 'slow down to match him; real pauses between "One paw," "A pause,"
+          "Another paw."',
+        text: He advances at the speed of a very polite glacier.,
+        voice: narr,
+        source: { shot: B.1, node: p1_snuggle, line: 1 }
+      },
+    voice/narr-b1-03.mp3:
+      {
+        prompt: 'slow down to match him; real pauses between "One paw," "A pause,"
+          "Another paw."',
+        text: One paw. A pause. Another paw.,
+        voice: narr,
+        source: { shot: B.1, node: p1_snuggle, line: 2 }
+      },
+    images/b2-cushion.png:
+      {
+        prompt: "Two-shot on the window seat: in the foreground Belle, facing away, with
+          one amber eye swivelled back toward the camera in a sidelong look. In
+          the background Ray has frozen into a tight round white loaf at the
+          edge of the sunbeam, eyes squeezed shut, trying very hard to look like
+          a cushion. Low medium shot. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: B.2, node: b2_cushion }
+      },
+    voice/belle-b2-01.mp3:
+      {
+        text: I can see you.,
+        voice: belle,
+        source: { shot: B.2, node: b2_cushion, line: 0 }
+      },
+    voice/ray-b2-02.mp3:
+      {
+        prompt: "whispered, eyes-shut earnestness.",
+        text: I'm not here. I'm a cushion.,
+        voice: ray,
+        source: { shot: B.2, node: b2_cushion, line: 1 }
+      },
+    images/b3-principle.png:
+      {
+        prompt: "Belle is half-risen in the sunbeam, front legs straightened, glancing
+          toward the floor as if about to jump down and leave. Ray remains a
+          small white loaf at the edge of the light, eyes still shut. Belle's
+          expression is torn between dignity and warmth. Medium shot, the window
+          glowing behind them. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: B.3, node: b3_principle }
+      },
+    voice/narr-b3-01.mp3:
+      {
+        text: Belle considers leaving on principle.,
+        voice: narr,
+        source: { shot: B.3, node: b3_principle, line: 0 }
+      },
+    voice/narr-b3-02.mp3:
+      {
+        text: She decides the principle can wait.,
+        voice: narr,
+        source: { shot: B.3, node: b3_principle, line: 1 }
+      },
+    images/b4-tail.png:
+      {
+        prompt: "Later, the sunbeam has shifted and turned deeper gold. Ray is fast
+          asleep in a small round white loaf at the edge of the light. Belle
+          lies beside him with her eyes closed, and her long black tail has
+          drifted across and rests gently over Ray's back like a scarf.
+          Top-down-leaning medium shot, still at low height, the tail as the
+          centre of the composition. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: B.4, node: b4_tail }
+      },
+    voice/narr-b4-01.mp3:
+      {
+        prompt: "hushed, as if not to wake him.",
+        text: "Twenty minutes later, the cushion is asleep.",
+        voice: narr,
+        source: { shot: B.4, node: b4_tail, line: 0 }
+      },
+    voice/narr-b4-02.mp3:
+      {
+        prompt: "hushed, as if not to wake him.",
+        text: "And Belle's tail, without permission from Belle, drifts over and rests
+          across his back.",
+        voice: narr,
+        source: { shot: B.4, node: b4_tail, line: 1 }
+      },
+    images/b5-independent.png:
+      {
+        prompt: "Close-up of Belle's face, eyes now open, glancing down and sideways at
+          her own tail lying across the sleeping white kitten, with an
+          expression of dignified denial. Golden light on her whiskers. Tight
+          close-up, Ray's white fluff soft and out of focus in the corner.
+          Style: warm painterly storybook illustration in gouache with soft
+          coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: B.5, node: b5_independent }
+      },
+    voice/belle-b5-01.mp3:
+      {
+        prompt: "murmured, not to wake him, but still dry.",
+        text: That tail acts independently.,
+        voice: belle,
+        source: { shot: B.5, node: b5_independent, line: 0 }
+      },
+    voice/belle-b5-02.mp3:
+      {
+        prompt: "murmured, not to wake him, but still dry.",
+        text: We've discussed it.,
+        voice: belle,
+        source: { shot: B.5, node: b5_independent, line: 1 }
+      },
+    images/b6-nobody-move.png:
+      {
+        prompt: "Wide shot of the window seat with both cats curled together in the gold
+          light. In the foreground, out of focus, a pair of grey wool slippers
+          has stopped dead on the floor mid-step, one heel lifted, as if frozen
+          in place. Low wide shot from behind the slippers. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: B.6, node: b6_nobody_move }
+      },
+    voice/human-b6-01.mp3:
+      {
+        prompt: a strangled whisper.,
+        text: Oh my gosh. Nobody move.,
+        voice: human,
+        source: { shot: B.6, node: b6_nobody_move, line: 0 }
+      },
+    voice/narr-b6-02.mp3:
+      {
+        text: The household holds its breath.,
+        voice: narr,
+        source: { shot: B.6, node: b6_nobody_move, line: 1 }
+      },
+    images/c1-zoomies.png:
+      {
+        prompt: "The living room floor: Ray is a streak of white fluff mid-sprint across
+          the oatmeal rug, all four paws off the ground, ears pinned back with
+          joy. The rug is rucked up behind him in a wave. Belle watches from the
+          window seat in the soft background. Low dynamic shot with motion-blur
+          brushwork on Ray's fur. Style: warm painterly storybook illustration
+          in gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: C.1, node: p1_dance }
+      },
+    voice/narr-c1-01.mp3:
+      {
+        text: Ray chooses charisma.,
+        voice: narr,
+        source: { shot: C.1, node: p1_dance, line: 0 }
+      },
+    sfx/paws-skitter-hardwood.mp3:
+      {
+        prompt: Tiny paws skittering on hardwood.,
+        source: { shot: C.1, node: p1_dance }
+      },
+    voice/narr-c1-02.mp3:
+      {
+        text: "If he cannot be tolerated, he will be spectacular.",
+        voice: narr,
+        source: { shot: C.1, node: p1_dance, line: 1 }
+      },
+    images/c2-sideways-hop.png:
+      {
+        prompt: "Ray mid sideways crab-hop in front of the window seat: back arched
+          high, tail puffed into a huge white bottlebrush, all four legs stiff,
+          eyes wide and proud. He is performing directly toward Belle, just
+          visible at the top of the frame on the window seat. Low medium shot,
+          Ray centred like a performer on stage in a pool of sunlight. Style:
+          warm painterly storybook illustration in gouache with soft
+          coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: C.2, node: c2_sideways_hop }
+      },
+    video/c2-sideways-hop.mp4:
+      {
+        prompt: Ray bobs sideways in a small hop loop.,
+        size: 1920x1080,
+        source: { shot: C.2, node: c2_sideways_hop }
+      },
+    voice/ray-c2-01.mp3:
+      {
+        prompt: "breathless showman, mid-hop.",
+        text: This is the sideways hop.,
+        voice: ray,
+        source: { shot: C.2, node: c2_sideways_hop, line: 0 }
+      },
+    voice/ray-c2-02.mp3:
+      {
+        prompt: "breathless showman, mid-hop.",
+        text: It's very advanced.,
+        voice: ray,
+        source: { shot: C.2, node: c2_sideways_hop, line: 1 }
+      },
+    voice/ray-c2-03.mp3:
+      {
+        prompt: "breathless showman, mid-hop.",
+        text: Please hold your applause.,
+        voice: ray,
+        source: { shot: C.2, node: c2_sideways_hop, line: 2 }
+      },
+    images/c3-belle-watches.png:
+      {
+        prompt: "Belle on the window seat, head turned sharply to follow something
+          moving past below her, amber eyes very wide, whiskers forward, a look
+          of total bewilderment. The sunbeam lights her from behind. Medium
+          close-up from floor level looking up. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: C.3, node: c3_belle_watches }
+      },
+    voice/belle-c3-01.mp3:
+      {
+        prompt: "flat, not quite a question.",
+        text: What is happening to your body.,
+        voice: belle,
+        source: { shot: C.3, node: c3_belle_watches, line: 0 }
+      },
+    images/c4-curtain.png:
+      {
+        prompt: "Tall sage-green linen curtains beside the window. Ray clings to the
+          fabric exactly halfway up, all claws hooked in, hanging there, looking
+          down at the floor far below with dawning concern. His fluff droops.
+          Low angle looking up the curtain. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: C.4, node: c4_curtain }
+      },
+    voice/narr-c4-01.mp3:
+      {
+        text: "For his second act, Ray climbs the curtains.",
+        voice: narr,
+        source: { shot: C.4, node: c4_curtain, line: 0 }
+      },
+    voice/narr-c4-02.mp3:
+      {
+        text: He gets exactly halfway.,
+        voice: narr,
+        source: { shot: C.4, node: c4_curtain, line: 1 }
+      },
+    images/c5-finale.png:
+      {
+        prompt: "A tumbled heap of dusty-rose and sage throw pillows on the floor below
+          the curtain, with only Ray's two sky-blue eyes and ear tips peeking
+          out from the top. In the upper background, on the window seat, Belle
+          sits upright watching, and her black tail is lifted mid-swish in a
+          neat curve, as if keeping a beat. Low medium shot, the pillow pile in
+          the foreground. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: C.5, node: c5_finale }
+      },
+    video/c5-finale.mp4:
+      {
+        prompt: Belle's tail swishes left-right in a steady rhythm on a loop.,
+        size: 1920x1080,
+        source: { shot: C.5, node: c5_finale }
+      },
+    voice/narr-c5-01.mp3:
+      {
+        text: The finale does not go as rehearsed.,
+        voice: narr,
+        source: { shot: C.5, node: c5_finale, line: 0 }
+      },
+    sfx/pillows-thump.mp3:
+      {
+        prompt: Soft thumps of pillows landing.,
+        source: { shot: C.5, node: c5_finale }
+      },
+    voice/narr-c5-02.mp3:
+      {
+        text: "But up on the window seat, very quietly, Belle's tail begins to keep
+          time.",
+        voice: narr,
+        source: { shot: C.5, node: c5_finale, line: 1 }
+      },
+    images/c6-white-fly.png:
+      {
+        prompt: "Grey wool slippers stand at the edge of the pillow pile. Ray has
+          emerged and sits on top of the pillows looking proud. Belle is now on
+          the floor beside him with one front paw still lifted in mid-bat toward
+          Ray's tail, caught in the act, eyes sliding away innocently. Low
+          medium three-element shot: slippers, Ray, Belle. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: C.6, node: c6_white_fly }
+      },
+    voice/human-c6-01.mp3:
+      {
+        text: Belle... were you just playing with him?,
+        voice: human,
+        source: { shot: C.6, node: c6_white_fly, line: 0 }
+      },
+    voice/belle-c6-02.mp3:
+      {
+        prompt: "instant, over-rehearsed denial.",
+        text: I was swatting a fly.,
+        voice: belle,
+        source: { shot: C.6, node: c6_white_fly, line: 1 }
+      },
+    voice/belle-c6-03.mp3:
+      {
+        prompt: "instant, over-rehearsed denial.",
+        text: A large white fly.,
+        voice: belle,
+        source: { shot: C.6, node: c6_white_fly, line: 2 }
+      },
+    images/d1-dinner-opposite-ends.png:
+      {
+        prompt: "Evening in the kitchen. The light has turned cool slate blue with rain
+          streaking the dark window above the counter, and one warm
+          under-cabinet glow. On the oatmeal tile floor, Ray eats from his
+          dusty-rose bowl at the far left edge of frame, and Belle eats from her
+          sage bowl at the far right edge, a wide empty stretch of floor between
+          them. Low wide shot. Style: warm painterly storybook illustration in
+          gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: D.1, node: storm }
+      },
+    video/d1-dinner-opposite-ends.mp4:
+      {
+        prompt: Rain runs down the window on a loop.,
+        size: 1920x1080,
+        source: { shot: D.1, node: storm }
+      },
+    voice/narr-d1-01.mp3:
+      {
+        text: "That evening, dinner is served at opposite ends of the kitchen.",
+        voice: narr,
+        source: { shot: D.1, node: storm, line: 0 }
+      },
+    sfx/rain-distant-thunder.mp3:
+      {
+        prompt: "Rain building against glass, with a distant low roll of thunder.",
+        source: { shot: D.1, node: storm }
+      },
+    voice/narr-d1-02.mp3:
+      {
+        text: "Outside, the weather arrives without being adopted by anyone.",
+        voice: narr,
+        source: { shot: D.1, node: storm, line: 1 }
+      },
+    images/d2-lightning.png:
+      {
+        prompt: "Night in the dining room, lit by a sudden blue-white lightning flash
+          through tall rain-streaked windows. Ray stands frozen in the middle of
+          the floor, every strand of white fluff standing straight out so he
+          looks like a startled dandelion, eyes enormous. Sharp window-frame
+          shadows stretch across the floorboards. Low medium shot. Cool
+          slate-blue storm palette with deep plum shadows. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: D.2, node: d2_lightning }
+      },
+    voice/ray-d2-01.mp3:
+      {
+        prompt: "high, fast, genuinely alarmed.",
+        text: The sky is broken!,
+        voice: ray,
+        source: { shot: D.2, node: d2_lightning, line: 0 }
+      },
+    sfx/thunder-crack.mp3:
+      {
+        prompt: "A sharp, close crack of thunder.",
+        source: { shot: D.2, node: d2_lightning }
+      },
+    images/d3-scared-too.png:
+      {
+        prompt: "Under the dining table, between the wooden chair legs, Belle is pressed
+          flat against the floor, body small and tight, ears flattened, amber
+          eyes huge and glinting in the dark. The table's underside forms a low
+          shadowy roof above her. Cool slate-blue storm light spills in from the
+          window side; a small warm lamp glows far in the background. Low shot
+          at floor level peering between chair legs. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: D.3, node: d3_scared_too }
+      },
+    voice/narr-d3-01.mp3:
+      {
+        prompt: the dryness drops away here; plain and gentle.,
+        text: Belle has lived through a hundred storms.,
+        voice: narr,
+        source: { shot: D.3, node: d3_scared_too, line: 0 }
+      },
+    voice/narr-d3-02.mp3:
+      {
+        prompt: the dryness drops away here; plain and gentle.,
+        text: She has not enjoyed one.,
+        voice: narr,
+        source: { shot: D.3, node: d3_scared_too, line: 1 }
+      },
+    voice/narr-d3-03.mp3:
+      {
+        prompt: the dryness drops away here; plain and gentle.,
+        text: It turns out the big one is scared too.,
+        voice: narr,
+        source: { shot: D.3, node: d3_scared_too, line: 2 }
+      },
+    images/d4-are-you-okay.png:
+      {
+        prompt: "Under the dining table: Ray has crept in at the left edge between two
+          chair legs, small and white, looking across at Belle, who is still
+          pressed flat on the right. A short stretch of dark floor separates
+          them. The table underside is a low ceiling above; cool blue storm
+          light from the side. Low two-shot at floor level. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: D.4, node: d4_are_you_okay }
+      },
+    voice/ray-d4-01.mp3:
+      {
+        prompt: small and careful.,
+        text: Belle? Are you okay?,
+        voice: ray,
+        source: { shot: D.4, node: d4_are_you_okay, line: 0 }
+      },
+    voice/belle-d4-02.mp3:
+      {
+        prompt: "a whisper, the joke barely holding.",
+        text: I'm fine. I live under here now.,
+        voice: belle,
+        source: { shot: D.4, node: d4_are_you_okay, line: 1 }
+      },
+    images/d5-lamp-flickers.png:
+      {
+        prompt: "Wider view of the dark dining room from floor level: the small warm
+          lamp in the corner is mid-flicker, dimmed. Grey wool slippers hurry
+          past in the foreground, blurred with movement. Under the table in the
+          middle distance, two pairs of eyes shine: one pair sky blue, one pair
+          amber. Cool slate-blue storm light. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: D.5, node: d5_lamp_flickers }
+      },
+    voice/human-d5-01.mp3:
+      {
+        prompt: "called from mid-stride, cheerful but distracted.",
+        text: "It's okay, you two! It'll pass!",
+        voice: human,
+        source: { shot: D.5, node: d5_lamp_flickers, line: 0 }
+      },
+    sfx/lights-flicker-buzz.mp3:
+      {
+        prompt: An electrical buzz as the lights flicker.,
+        source: { shot: D.5, node: d5_lamp_flickers }
+      },
+    images/d6-two-ideas-again.png:
+      {
+        prompt: "Close on Ray under the table, half his face lit cool blue by the window
+          and half warm gold by the distant lamp, looking with determination
+          toward Belle just out of frame. His fluff is still a little staticky
+          from the fright, but his ears are forward now. Medium close-up at
+          floor level. Style: warm painterly storybook illustration in gouache
+          with soft coloured-pencil texture and visible paper grain; gentle
+          rounded shapes; cozy, lightly comic mood. Palette of cream, oatmeal,
+          butter yellow, sage green and dusty rose, with deep plum in the
+          shadows. Soft, low-contrast light with glowing highlights. Camera at
+          cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: D.6, node: d6_two_ideas_again }
+      },
+    voice/narr-d6-01.mp3:
+      {
+        text: The storm is very big. Ray is very small.,
+        voice: narr,
+        source: { shot: D.6, node: d6_two_ideas_again, line: 0 }
+      },
+    voice/narr-d6-02.mp3:
+      {
+        text: "But Ray, once again, has two ideas.",
+        voice: narr,
+        source: { shot: D.6, node: d6_two_ideas_again, line: 1 }
+      },
+    images/e1-pressing-close.png:
+      {
+        prompt: "Under the dining table in the stormy dark, Ray has pressed himself
+          tight against Belle's side, a tiny white puff against a long black
+          shape, eyes half-closed, purring. Belle is still low and tense but no
+          longer flattened. Cool slate-blue storm light from the window, a warm
+          lamp glow reaching them faintly from behind. Low close two-shot.
+          Style: warm painterly storybook illustration in gouache with soft
+          coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: E.1, node: p2_snuggle }
+      },
+    video/e1-pressing-close.mp4:
+      {
+        prompt: Ray's fluff vibrates very slightly on a loop.,
+        size: 1920x1080,
+        source: { shot: E.1, node: p2_snuggle }
+      },
+    voice/narr-e1-01.mp3:
+      {
+        text: Ray does the only thing a kitten can do about weather.,
+        voice: narr,
+        source: { shot: E.1, node: p2_snuggle, line: 0 }
+      },
+    sfx/kitten-purr.mp3:
+      {
+        prompt: "A small, steady, surprisingly loud purr under the rain.",
+        source: { shot: E.1, node: p2_snuggle }
+      },
+    voice/narr-e1-02.mp3:
+      {
+        text: He presses close and purrs — a big engine in a very small vehicle.,
+        voice: narr,
+        source: { shot: E.1, node: p2_snuggle, line: 1 }
+      },
+    images/e2-keep-doing-it.png:
+      {
+        prompt: "Close-up of Belle's face, turned down toward the white fluff pressed
+          against her chest. Her ears are coming back up, and her amber eyes are
+          softening, half-lidded. Ray's head is just visible at the bottom of
+          frame, eyes closed in concentration. Warm lamp glow on Belle's cheek,
+          cool storm light behind. Style: warm painterly storybook illustration
+          in gouache with soft coloured-pencil texture and visible paper grain;
+          gentle rounded shapes; cozy, lightly comic mood. Palette of cream,
+          oatmeal, butter yellow, sage green and dusty rose, with deep plum in
+          the shadows. Soft, low-contrast light with glowing highlights. Camera
+          at cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: E.2, node: e2_keep_doing_it }
+      },
+    voice/belle-e2-01.mp3:
+      {
+        prompt: barely audible; the first unguarded thing she has said.,
+        text: You're vibrating.,
+        voice: belle,
+        source: { shot: E.2, node: e2_keep_doing_it, line: 0 }
+      },
+    voice/ray-e2-02.mp3:
+      {
+        text: It's on purpose.,
+        voice: ray,
+        source: { shot: E.2, node: e2_keep_doing_it, line: 1 }
+      },
+    voice/belle-e2-03.mp3:
+      {
+        prompt: barely audible; the first unguarded thing she has said.,
+        text: ...Keep doing it.,
+        voice: belle,
+        source: { shot: E.2, node: e2_keep_doing_it, line: 2 }
+      },
+    images/e3-paw.png:
+      {
+        prompt: "Under the table: Belle has lifted one black front paw and laid it
+          gently over the top of Ray, who is curled against her chest, so he is
+          half-covered. Both cats now lie relaxed on the floor. Low close shot,
+          the paw at the centre of the frame, lamp glow warming the scene
+          against the blue storm light. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: E.3, node: e3_paw }
+      },
+    voice/narr-e3-01.mp3:
+      {
+        text: "Belle lifts one paw, and sets it over him.",
+        voice: narr,
+        source: { shot: E.3, node: e3_paw, line: 0 }
+      },
+    voice/narr-e3-02.mp3:
+      {
+        text: Purely to keep him from blowing away.,
+        voice: narr,
+        source: { shot: E.3, node: e3_paw, line: 1 }
+      },
+    images/e4-barely-notices.png:
+      {
+        prompt: "Wide low shot of the dark dining room during a bright lightning flash.
+          Under the table the two cats are curled together, a black shape
+          wrapped around a white one, perfectly calm and unmoving, lit
+          blue-white for an instant. Rain streaks the tall windows. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: E.4, node: e4_barely_notices }
+      },
+    voice/narr-e4-01.mp3:
+      {
+        text: The next thunderclap arrives on schedule.,
+        voice: narr,
+        source: { shot: E.4, node: e4_barely_notices, line: 0 }
+      },
+    sfx/thunder-soft-distant.mp3:
+      {
+        prompt: "Thunder, softer and further away now.",
+        source: { shot: E.4, node: e4_barely_notices }
+      },
+    voice/narr-e4-02.mp3:
+      {
+        text: "For the first time in eleven years, Belle barely notices.",
+        voice: narr,
+        source: { shot: E.4, node: e4_barely_notices, line: 1 }
+      },
+    images/f1-sky-toy.png:
+      {
+        prompt: "The dark dining room floor during a lightning flash: crisp window-frame
+          shadows and rain-streak shadows are thrown across the floorboards, and
+          Ray is mid-pounce onto one of them, front paws spread wide, back legs
+          kicking, ears forward with delight. Cool slate-blue light, deep plum
+          shadows. Low dynamic shot. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: F.1, node: p2_dance }
+      },
+    voice/narr-f1-01.mp3:
+      {
+        text: Ray decides the lightning is not a threat.,
+        voice: narr,
+        source: { shot: F.1, node: p2_dance, line: 0 }
+      },
+    sfx/thunder-rumble.mp3: { prompt: Thunder rumble., source: { shot: F.1, node: p2_dance } },
+    voice/narr-f1-02.mp3:
+      {
+        text: It's a toy the sky keeps throwing.,
+        voice: narr,
+        source: { shot: F.1, node: p2_dance, line: 1 }
+      },
+    images/f2-got-it.png:
+      {
+        prompt: "Ray is in the air mid-leap after a sliding shadow, all four paws
+          outstretched, fluff flying. Behind him, under the dining table,
+          Belle's black head pokes out between two chair legs, amber eyes
+          tracking him with scepticism and a flicker of interest. Low wide shot,
+          cool blue storm light with a warm lamp glow at the back. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: F.2, node: f2_got_it }
+      },
+    voice/ray-f2-01.mp3:
+      {
+        prompt: "shouted with joy, completely over the storm.",
+        text: "Got it! No, wait — got THAT one!",
+        voice: ray,
+        source: { shot: F.2, node: f2_got_it, line: 0 }
+      },
+    voice/belle-f2-02.mp3:
+      {
+        text: You haven't got any of them.,
+        voice: belle,
+        source: { shot: F.2, node: f2_got_it, line: 1 }
+      },
+    images/f3-belle-gets-one.png:
+      {
+        prompt: "Belle has stepped out from under the table and is caught in a perfect
+          crisp pounce, one black paw slapped flat onto a window-frame shadow on
+          the floor, amber eyes blazing with surprise at herself. Ray sits
+          beside her, mouth open in admiration. Low medium two-shot, blue storm
+          light with the warm lamp behind. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: F.3, node: f3_belle_gets_one }
+      },
+    voice/narr-f3-01.mp3:
+      {
+        text: "And then, against every principle she holds, Belle gets one.",
+        voice: narr,
+        source: { shot: F.3, node: f3_belle_gets_one, line: 0 }
+      },
+    voice/belle-f3-02.mp3:
+      {
+        prompt: "quiet astonishment, with a flicker of pride she can't suppress.",
+        text: ...I got one.,
+        voice: belle,
+        source: { shot: F.3, node: f3_belle_gets_one, line: 1 }
+      },
+    images/f4-stage.png:
+      {
+        prompt: "Wide low shot of the dining room floor as a stage: lightning throws a
+          bright rectangle of window light across the boards like a spotlight,
+          and both cats are mid-leap inside it, the white kitten and the black
+          cat chasing the same shadow from opposite sides. The dining table and
+          chairs frame the scene like a proscenium arch. Cool blue light, deep
+          plum shadows, one warm lamp in the wings. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: F.4, node: f4_stage }
+      },
+    video/f4-stage.mp4:
+      {
+        prompt: The spotlight rectangle pulses with each flash; the two cats bob in a
+          loop.,
+        size: 1920x1080,
+        source: { shot: F.4, node: f4_stage }
+      },
+    voice/narr-f4-01.mp3:
+      {
+        text: "For the rest of the storm, the dining room is a stage,",
+        voice: narr,
+        source: { shot: F.4, node: f4_stage, line: 0 }
+      },
+    sfx/thunder-applause.mp3:
+      {
+        prompt: "Distant thunder, now almost like applause.",
+        source: { shot: F.4, node: f4_stage }
+      },
+    voice/narr-f4-02.mp3:
+      {
+        text: and the lightning is working for them.,
+        voice: narr,
+        source: { shot: F.4, node: f4_stage, line: 1 }
+      },
+    images/ea-loaf-morning.png:
+      {
+        prompt: "Final wide shot: the window seat from across the room, the two cats a
+          single small heap under a rose blanket in a pool of gold light, the
+          rest of the room soft and quiet. Morning sun fills the tall window.
+          Composition centred and calm, lots of warm negative space. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: G.3, node: end_loaf }
+      },
+    voice/narr-ea-01.mp3:
+      {
+        prompt: slowest line in the film. Let "underneath a cat" sit before the fade.,
+        text: Morning. The sunbeam is exactly where it always is.,
+        voice: narr,
+        source: { shot: G.3, node: end_loaf, line: 0 }
+      },
+    voice/narr-ea-02.mp3:
+      {
+        prompt: slowest line in the film. Let "underneath a cat" sit before the fade.,
+        text: "It is now shared — a temporary arrangement, Belle insists.",
+        voice: narr,
+        source: { shot: G.3, node: end_loaf, line: 1 }
+      },
+    images/g1-temporary.png:
+      {
+        prompt: "Close-up in the sunbeam: Belle's chin rests on top of Ray's fluffy
+          white head. Both have their eyes half-closed, content. Golden light
+          glows through Ray's fluff like a halo. Tight close two-shot. Style:
+          warm painterly storybook illustration in gouache with soft
+          coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: G.1, node: g1_temporary }
+      },
+    voice/belle-g1-01.mp3:
+      {
+        prompt: "warm, and she lets it show.",
+        text: This is temporary.,
+        voice: belle,
+        source: { shot: G.1, node: g1_temporary, line: 0 }
+      },
+    voice/ray-g1-02.mp3:
+      {
+        prompt: sleepy murmur.,
+        text: Okay.,
+        voice: ray,
+        source: { shot: G.1, node: g1_temporary, line: 1 }
+      },
+    voice/belle-g1-03.mp3:
+      {
+        prompt: "warm, and she lets it show.",
+        text: "About fifteen years, temporary.",
+        voice: belle,
+        source: { shot: G.1, node: g1_temporary, line: 2 }
+      },
+    images/g2-window-seat-gone.png:
+      {
+        prompt: "A human hand in a sage knit sleeve gently lays a small folded
+          dusty-rose blanket over the two sleeping cats in the sunbeam. Grey
+          wool slippers are visible on the floor below the window seat. Low
+          medium shot. Style: warm painterly storybook illustration in gouache
+          with soft coloured-pencil texture and visible paper grain; gentle
+          rounded shapes; cozy, lightly comic mood. Palette of cream, oatmeal,
+          butter yellow, sage green and dusty rose, with deep plum in the
+          shadows. Soft, low-contrast light with glowing highlights. Camera at
+          cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: G.2, node: g2_window_seat_gone }
+      },
+    voice/human-g2-01.mp3:
+      {
+        prompt: resigned and delighted.,
+        text: "I'm never getting that window seat back, am I.",
+        voice: human,
+        source: { shot: G.2, node: g2_window_seat_gone, line: 0 }
+      },
+    images/g3-underneath-a-cat.png:
+      {
+        prompt: "Final wide shot: the window seat from across the room, the two cats a
+          single small heap under a rose blanket in a pool of gold light, the
+          rest of the room soft and quiet. Morning sun fills the tall window.
+          Composition centred and calm, lots of warm negative space. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: G.3, node: g3_underneath_a_cat }
+      },
+    voice/narr-g3-01.mp3:
+      {
+        prompt: slowest line in the film. Let "underneath a cat" sit before the fade.,
+        text: Ray has found his place.,
+        voice: narr,
+        source: { shot: G.3, node: g3_underneath_a_cat, line: 0 }
+      },
+    voice/narr-g3-02.mp3:
+      {
+        prompt: slowest line in the film. Let "underneath a cat" sit before the fade.,
+        text: "It is small, and warm, and slightly underneath a cat.",
+        voice: narr,
+        source: { shot: G.3, node: g3_underneath_a_cat, line: 1 }
+      },
+    images/eb-disco-morning.png:
+      {
+        prompt: "Final wide shot of the sunny kitchen from floor level: the slippers,
+          the white kitten and the black cat all mid-hop together in a warm pool
+          of morning light, a steaming mug on the counter above. The composition
+          is joyful, balanced and full of movement. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: H.3, node: end_disco }
+      },
+    video/eb-disco-morning.mp4:
+      {
+        prompt: Slow pull back while the three keep bouncing; fade on the music's last
+          note.,
+        size: 1920x1080,
+        source: { shot: H.3, node: end_disco }
+      },
+    voice/narr-eb-01.mp3:
+      {
+        prompt: smiling; land "everyone's feet" on the music's final beat.,
+        text: "Morning. The human plays music while making coffee, as always.",
+        voice: narr,
+        source: { shot: H.3, node: end_disco, line: 0 }
+      },
+    voice/narr-eb-02.mp3:
+      {
+        prompt: smiling; land "everyone's feet" on the music's final beat.,
+        text: What's new is the choreography.,
+        voice: narr,
+        source: { shot: H.3, node: end_disco, line: 1 }
+      },
+    images/h1-dont-spin.png:
+      {
+        prompt: "A sage dish towel dangles from the oven handle. Ray is up on his hind
+          legs batting at it with both front paws. Beside him Belle is caught
+          mid-spin on her hind legs, body twisted, tail whipping around in a
+          circle, eyes half-closed with dignity. Low medium two-shot. Style:
+          warm painterly storybook illustration in gouache with soft
+          coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: H.1, node: h1_dont_spin }
+      },
+    video/h1-dont-spin.mp4:
+      {
+        prompt: The towel swings; Belle's spin completes on a loop.,
+        size: 1920x1080,
+        source: { shot: H.1, node: h1_dont_spin }
+      },
+    voice/ray-h1-01.mp3:
+      {
+        prompt: calling the steps like a dance instructor.,
+        text: Left paw! Right paw! Spin!,
+        voice: ray,
+        source: { shot: H.1, node: h1_dont_spin, line: 0 }
+      },
+    voice/belle-h1-02.mp3:
+      {
+        prompt: "completely deadpan, while very obviously spinning.",
+        text: I don't spin.,
+        voice: belle,
+        source: { shot: H.1, node: h1_dont_spin, line: 1 }
+      },
+    images/h2-fridge.png:
+      {
+        prompt: "Grey wool slippers tiptoe in an awkward high step between the two cats,
+          who weave around the feet in a figure-eight. A plain cream
+          refrigerator door looms in the background. Low shot from behind the
+          cats. Style: warm painterly storybook illustration in gouache with
+          soft coloured-pencil texture and visible paper grain; gentle rounded
+          shapes; cozy, lightly comic mood. Palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose, with deep plum in the shadows.
+          Soft, low-contrast light with glowing highlights. Camera at cat eye
+          level, about a foot off the floor, 35 mm lens feel, shallow depth of
+          field. If Ray appears he is a tiny, very fluffy, pure-white ragamuffin
+          kitten with a plush ruff, a plume tail and big round sky-blue eyes. If
+          Belle appears she is a lean, glossy, all-black adult cat with amber
+          eyes and a small notch in her left ear. If a human appears, show only
+          legs, grey wool slippers, or hands and forearms in sage knit sleeves —
+          never a face. Never include text, letters, numbers, logos, watermarks,
+          signatures, brand names, screens, speech bubbles, collars, tags, or
+          clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: H.2, node: h2_fridge }
+      },
+    video/h2-fridge.mp4:
+      {
+        prompt: Cats circle the slippers on a loop.,
+        size: 1920x1080,
+        source: { shot: H.2, node: h2_fridge }
+      },
+    voice/human-h2-01.mp3:
+      {
+        prompt: "laughing, stepping carefully.",
+        text: Love this. Love it.,
+        voice: human,
+        source: { shot: H.2, node: h2_fridge, line: 0 }
+      },
+    voice/human-h2-02.mp3:
+      {
+        prompt: "laughing, stepping carefully.",
+        text: "I need the fridge, though.",
+        voice: human,
+        source: { shot: H.2, node: h2_fridge, line: 1 }
+      },
+    images/h3-everyones-feet.png:
+      {
+        prompt: "Final wide shot of the sunny kitchen from floor level: the slippers,
+          the white kitten and the black cat all mid-hop together in a warm pool
+          of morning light, a steaming mug on the counter above. The composition
+          is joyful, balanced and full of movement. Style: warm painterly
+          storybook illustration in gouache with soft coloured-pencil texture
+          and visible paper grain; gentle rounded shapes; cozy, lightly comic
+          mood. Palette of cream, oatmeal, butter yellow, sage green and dusty
+          rose, with deep plum in the shadows. Soft, low-contrast light with
+          glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: H.3, node: h3_everyones_feet }
+      },
+    voice/narr-h3-01.mp3:
+      {
+        prompt: smiling; land "everyone's feet" on the music's final beat.,
+        text: Ray has found his place.,
+        voice: narr,
+        source: { shot: H.3, node: h3_everyones_feet, line: 0 }
+      },
+    voice/narr-h3-02.mp3:
+      {
+        prompt: smiling; land "everyone's feet" on the music's final beat.,
+        text: "It is loud, it moves, and it is right under everyone's feet.",
+        voice: narr,
+        source: { shot: H.3, node: h3_everyones_feet, line: 1 }
+      },
+    images/ec-shuffle-evening.png:
+      {
+        prompt: "Final wide shot of the living room at dusk from floor level: the two
+          cats curled together in the middle of the oatmeal rug, a warm lamp
+          just switched on nearby, rose and plum light fading in the window.
+          Calm, balanced composition with warm negative space. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: J.3, node: end_shuffle }
+      },
+    video/ec-shuffle-evening.mp4:
+      {
+        prompt: "Slow pull back; the lamp glow swells as the window darkens, then fade.",
+        size: 1920x1080,
+        source: { shot: J.3, node: end_shuffle }
+      },
+    voice/narr-ec-01.mp3:
+      {
+        prompt: slowest line in the ending; a real pause before "it's her.",
+        text: Some things settle. Some never quite will.,
+        voice: narr,
+        source: { shot: J.3, node: end_shuffle, line: 0 }
+      },
+    voice/narr-ec-02.mp3:
+      {
+        prompt: slowest line in the ending; a real pause before "it's her.",
+        text: Ray and Belle have arrived at a system.,
+        voice: narr,
+        source: { shot: J.3, node: end_shuffle, line: 1 }
+      },
+    images/j1-one-lap.png:
+      {
+        prompt: "Ray tearing around the edge of the oatmeal rug at full speed, a white
+          blur leaning into the curve, while Belle remains a still black loaf in
+          the centre of the rug, head turning to follow him. Low wide shot, rose
+          evening light. Style: warm painterly storybook illustration in gouache
+          with soft coloured-pencil texture and visible paper grain; gentle
+          rounded shapes; cozy, lightly comic mood. Palette of cream, oatmeal,
+          butter yellow, sage green and dusty rose, with deep plum in the
+          shadows. Soft, low-contrast light with glowing highlights. Camera at
+          cat eye level, about a foot off the floor, 35 mm lens feel, shallow
+          depth of field. If Ray appears he is a tiny, very fluffy, pure-white
+          ragamuffin kitten with a plush ruff, a plume tail and big round
+          sky-blue eyes. If Belle appears she is a lean, glossy, all-black adult
+          cat with amber eyes and a small notch in her left ear. If a human
+          appears, show only legs, grey wool slippers, or hands and forearms in
+          sage knit sleeves — never a face. Never include text, letters,
+          numbers, logos, watermarks, signatures, brand names, screens, speech
+          bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: J.1, node: j1_one_lap }
+      },
+    voice/narr-j1-01.mp3:
+      {
+        text: "First, Ray runs one lap of the living room at full speed.",
+        voice: narr,
+        source: { shot: J.1, node: j1_one_lap, line: 0 }
+      },
+    sfx/paws-skitter-rug.mp3:
+      {
+        prompt: Tiny paws skittering on the rug and hardwood.,
+        source: { shot: J.1, node: j1_one_lap }
+      },
+    voice/narr-j1-02.mp3:
+      {
+        text: For morale.,
+        voice: narr,
+        source: { shot: J.1, node: j1_one_lap, line: 1 }
+      },
+    images/j2-the-deal.png:
+      {
+        prompt: "Ray has flopped belly-up against Belle's side on the rug, paws in the
+          air, panting happily. Belle has curled around him with an expression
+          of long-suffering tolerance, one paw resting on his chest. Rose
+          evening light. Low close two-shot. Style: warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; gentle rounded shapes; cozy, lightly comic mood. Palette
+          of cream, oatmeal, butter yellow, sage green and dusty rose, with deep
+          plum in the shadows. Soft, low-contrast light with glowing highlights.
+          Camera at cat eye level, about a foot off the floor, 35 mm lens feel,
+          shallow depth of field. If Ray appears he is a tiny, very fluffy,
+          pure-white ragamuffin kitten with a plush ruff, a plume tail and big
+          round sky-blue eyes. If Belle appears she is a lean, glossy, all-black
+          adult cat with amber eyes and a small notch in her left ear. If a
+          human appears, show only legs, grey wool slippers, or hands and
+          forearms in sage knit sleeves — never a face. Never include text,
+          letters, numbers, logos, watermarks, signatures, brand names, screens,
+          speech bubbles, collars, tags, or clothing on the animals.",
+        size: 1920x1080,
+        source: { shot: J.2, node: j2_the_deal }
+      },
+    voice/narr-j2-01.mp3:
+      {
+        text: "Then he collapses into Belle, who allows it, and pretends not to.",
+        voice: narr,
+        source: { shot: J.2, node: j2_the_deal, line: 0 }
+      },
+    voice/belle-j2-02.mp3:
+      {
+        text: One lap. That was the deal.,
+        voice: belle,
+        source: { shot: J.2, node: j2_the_deal, line: 1 }
+      },
+    voice/ray-j2-03.mp3:
+      {
+        prompt: out of breath and completely satisfied.,
+        text: It was a very good lap.,
+        voice: ray,
+        source: { shot: J.2, node: j2_the_deal, line: 2 }
+      },
+    images/j3-rest-of-the-time.png:
+      {
+        prompt: "Final wide shot of the living room at dusk from floor level: the two
+          cats curled together in the middle of the oatmeal rug, a warm lamp
+          just switched on nearby, rose and plum light fading in the window.
+          Calm, balanced composition with warm negative space. Style: warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; gentle rounded shapes; cozy, lightly
+          comic mood. Palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose, with deep plum in the shadows. Soft, low-contrast light
+          with glowing highlights. Camera at cat eye level, about a foot off the
+          floor, 35 mm lens feel, shallow depth of field. If Ray appears he is a
+          tiny, very fluffy, pure-white ragamuffin kitten with a plush ruff, a
+          plume tail and big round sky-blue eyes. If Belle appears she is a
+          lean, glossy, all-black adult cat with amber eyes and a small notch in
+          her left ear. If a human appears, show only legs, grey wool slippers,
+          or hands and forearms in sage knit sleeves — never a face. Never
+          include text, letters, numbers, logos, watermarks, signatures, brand
+          names, screens, speech bubbles, collars, tags, or clothing on the
+          animals.",
+        size: 1920x1080,
+        source: { shot: J.3, node: j3_rest_of_the_time }
+      },
+    voice/narr-j3-01.mp3:
+      {
+        prompt: slowest line in the ending; a real pause before "it's her.",
+        text: Ray has found his place.,
+        voice: narr,
+        source: { shot: J.3, node: j3_rest_of_the_time, line: 0 }
+      },
+    voice/narr-j3-02.mp3:
+      {
+        prompt: slowest line in the ending; a real pause before "it's her.",
+        text: "Some of the time, it's the middle of the rug.",
+        voice: narr,
+        source: { shot: J.3, node: j3_rest_of_the_time, line: 1 }
+      },
+    voice/narr-j3-03.mp3:
+      {
+        prompt: slowest line in the ending; a real pause before "it's her.",
+        text: "The rest of the time, it's her.",
+        voice: narr,
+        source: { shot: J.3, node: j3_rest_of_the_time, line: 2 }
+      },
+    images/ray-sheet.png:
+      {
+        prompt: "Character reference sheet on a plain warm cream background. A male
+          ragamuffin kitten about four months old: pure white semi-long fur that
+          is extremely plush and fluffy, a fuller ruff around the neck, a big
+          soft plume of a tail, a round face, small rounded ears with white
+          tufts, large round sky-blue eyes, a pink nose and pink toe beans. Two
+          poses side by side: sitting upright in three-quarter view with a
+          bright, curious, slightly worried expression; and curled asleep in a
+          small round loaf. Even soft key light. Warm painterly storybook
+          illustration in gouache with soft coloured-pencil texture and visible
+          paper grain; palette of cream, oatmeal, butter yellow, sage green and
+          dusty rose with deep plum shadows. No text, letters, numbers, logos,
+          watermarks, signatures, collars, tags, or clothing.",
+        size: 832x1216
+      },
+    images/belle-sheet.png:
+      {
+        prompt: "Character reference sheet on a plain warm cream background. An adult
+          female domestic shorthair cat about twelve years old: an entirely
+          black, glossy coat with a faint warm sheen where the light hits, lean
+          and long-bodied, a narrow elegant face, large amber eyes with a
+          heavy-lidded unimpressed look, a small notch in the tip of her left
+          ear, a few pale whiskers. Two poses side by side: sitting upright in
+          three-quarter view with her tail wrapped neatly around her paws; and
+          lying in a sunbeam with one eye half-open. Even soft key light. Warm
+          painterly storybook illustration in gouache with soft coloured-pencil
+          texture and visible paper grain; palette of cream, oatmeal, butter
+          yellow, sage green and dusty rose with deep plum shadows. No text,
+          letters, numbers, logos, watermarks, signatures, collars, tags, or
+          clothing.",
+        size: 832x1216
+      }
+  }
+storyboard: storyboard.md
