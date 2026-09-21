@@ -435,9 +435,25 @@ made in whatever program you like and dropped into the takes folder; the board r
 you brought in, checks its format, its dimensions and its runtime against what the row asks
 for, plays it back to you, and publishes the take you chose to the name the projector opens.
 
+Because everything but voice is made somewhere else, every other section has a **Direction**
+box at the top of it: the sentence that goes in front of each brief on its way out to
+whatever is going to draw it. Each row then carries **Copy prompt** and **Copy prompt and
+direction** — the first for a chat that already knows what you are making, the second for a
+cold one that needs telling what kind of file this even is.
+
+Write the direction with tokens rather than numbers. `$size`, `$format`, `$cutout` and
+`$file` are answered by whichever row you copy, so one sentence is right for a 1920x1080
+still and the 832x1216 transparent cutout three rows below it — and right against the same
+numbers the board checks the finished file with. Nothing here is stored with the brief or
+folded into the recipe, so you can reword it as often as you like and nothing goes stale.
+Empty the box to go back to the default.
+
 Generating never publishes and never steals a selection, so re-rolling a line is free. The
 command centre is the list of what is left, and it is a projection of the board rather than a
-second opinion about it: when it is empty, the show is ready.
+second opinion about it: when it is empty, the show is ready. It keeps the work a button can
+do apart from the work it cannot: voice clips get a **Generate all**, and everything made by
+hand gets its own list with the copy buttons on each line and no one-click at the top,
+because there is nothing here that could make a still.
 
 ## Running a show
 

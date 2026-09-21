@@ -479,6 +479,36 @@ for. Adopting takes the *selected* take only — a folder with nothing picked re
 folder into an empty takes folder, is also the only one allowed to claim `published`, because
 the copy is what just made them the same file.
 
+**A section's direction is a clipboard, never a composition.** Every section but voice is
+made in another program, and the half of the instruction that is the same for all ninety rows
+— what kind of file, how big, what the projector does with it — was being retyped into each
+brief or left off. `sections.<name>.direction` in `project.yaml` says it once. This is
+`style:` returning and the difference is the whole of why it may: the old field was folded
+into what a generator received, so the box an author edited was not the text the model got
+and the board grew a preview to explain the gap. Nothing is folded into anything here. The
+row stores the brief exactly as typed, the direction is a separate sentence readable in full
+at the top of its section, and the only place the two are ever joined is on the clipboard.
+
+It is deliberately **not in the recipe hash**, and `tests/direction.test.ts` holds that.
+Everything in it that decides what the picture is — the size, the cutout, the format — is
+already hashed by way of `size` and `portrait`, so hashing the sentence that says those out
+loud would double-count them and make a wording change cost a re-make of every row in the
+section. That is the cost that made `style:` too expensive to edit and then too expensive to
+keep. Note that `direction` also names a *voice's* delivery note, which is a different field
+at a different path and **is** in the hash; folding the two together would re-record ninety
+lines for a typo in a sentence about PNGs.
+
+**A direction carries tokens because a section holds more than one size.** Arctic Sentinel's
+`images` is nine stills at 1920x1080 and four faces at 832x1216, so a typed "1920x1080" is
+wrong on four of thirteen rows and wrong silently — and the four it is wrong about are the
+portraits, which also have to be cutouts or they reach the projector as a bust card with a
+shadow on all four sides. `$size`, `$format`, `$cutout` and `$file` are answered by whichever
+row the button was pressed on, from the same `defaultSizeFor` the board checks the finished
+file against, so the sentence and the check cannot disagree. This is not the token machinery
+that was deleted: `expandDirection` runs over a sentence the author can read in full, and its
+output reaches a clipboard rather than a stored prompt or a hash. An unknown `$word` is left
+exactly as written, because prose is prose and a typo left visible is one somebody can see.
+
 **A dropped asset leaves disk behind, and only the folder still says what it was.**
 The board is built from the scenario, which is what stops it drifting — cut a line and its row
 goes with it. What goes nowhere is the clip in `assets/` and the six takes in `generated/`:
@@ -672,6 +702,17 @@ are stages rather than independent complaints: a file that was never made is not
 be published, and counting it twice makes the total useless as a measure of what is left.
 Quality is the exception and is additive — a clip can be finished, shipped, and still the wrong
 shape.
+
+**A group's one button is a promise that something can do the work.** `missing` and `stale`
+both carried `action: 'generate'` for every section, and only voice has a generator —
+permanently, since `generate.ts` throws for anything else. So nineteen stills nobody can
+generate sat under a "Generate all 19" that would have failed nineteen times. The split is on
+the section's own `backend`, which is the author's declaration in `project.yaml` rather than a
+guess about the kind of file: a voice section left on `manual` is as unmakeable as an images
+one. `missing-manual` and `stale-manual` offer nothing to press and carry the row's two copy
+buttons instead, because for those the work *is* the trip out to another program. The brief
+line says the shape and the format so that trip is one trip, and a row with no brief at all
+says so — it is the one item the copy buttons cannot help with.
 
 **The board knows where each row actually renders.** `rowsFor` gives voice clips to the
 Characters tab and portraits to a character's other sub-tab, so a link that sends somebody to
@@ -1008,6 +1049,7 @@ how "created — press Play" became "valid" with nothing to explain the change.
 | `client/app/nodes.ts` | Nodes as structure: reorder, add, remove, rename, retype, edit any field |
 | `client/app/reconcile.ts` | What the scenario owns on a recipe row, re-derived on every save |
 | `client/app/outstanding.ts` | The command centre — the board projected into one list of what is left |
+| `client/app/direction.ts` | What a section says in front of every brief in it, and the row facts that fill it in |
 | `client/app/duration.ts` | How long a clip runs, from its header — the other half of the `hold` check |
 | `client/app/timing.ts` | Clip + gap = beat, and writing it into `scenario.yaml` |
 | `client/app/migrate-recipes.ts` | A frozen copy of the old recipe shape, and the re-stamp |

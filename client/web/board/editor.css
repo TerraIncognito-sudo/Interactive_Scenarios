@@ -916,6 +916,55 @@ button.danger:hover:not(:disabled) {
   color: var(--text-dim);
 }
 
+/*
+ * The standing instruction in front of every brief in a section.
+ *
+ * Indented to the same rule as the model line above it, because it belongs to
+ * the section rather than to the first row under it — set flush with the rows
+ * it read as the first asset's own, which is the one thing it must not look
+ * like.
+ */
+.section-direction {
+  padding: 0.5rem 0.75rem 0.6rem 1.55rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-direction > label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+textarea.direction {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg-sunken);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  font: 0.82rem/1.45 var(--mono);
+}
+
+textarea.direction:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.direction-hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
+.direction-hint code {
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
 .section-root {
   font-family: var(--mono);
   font-size: 0.72rem;

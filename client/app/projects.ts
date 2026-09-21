@@ -812,7 +812,7 @@ export async function editVoiceField(
  */
 export async function editSectionField(
   name: string,
-  edit: { section: string; field: 'backend' | 'file'; value: string },
+  edit: { section: string; field: 'backend' | 'file' | 'direction'; value: string },
 ): Promise<void> {
   const file = join(projectDir(name), 'project.yaml');
   if (!/^[a-z]+$/.test(edit.section)) throw new ProjectError('Bad section');

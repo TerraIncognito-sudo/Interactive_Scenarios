@@ -25,6 +25,7 @@ import {
 } from '../../shared/scenario/load.ts';
 import type { Scenario } from '../../shared/scenario/schema.ts';
 import { asksForBackground } from './prompt.ts';
+import { SECTION_DIRECTIONS, expandDirection } from './direction.ts';
 import { defaultSizeFor, formatSize, isPortrait, parseSize, readImageInfo } from './size.ts';
 import { readDuration } from './duration.ts';
 import { extensionOf, misnamed, readFormat, renamedTo } from './format.ts';
@@ -63,6 +64,15 @@ export type AssetView = {
   /** True while a frozen asset is deliberately exempt from going stale. */
   frozen: boolean;
   hasPrompt: boolean;
+  /**
+   * This section's standing instruction, with this row's own facts filled in.
+   *
+   * The sentence that goes in front of the brief when somebody copies it — the
+   * size, the format and whether it is a cutout, resolved here so the board
+   * never has to work out what a model should be told. Absent for voice, which
+   * has no standing instruction and no brief to put one in front of.
+   */
+  direction?: string;
   row: AssetRow;
   /** Every place in the scenario that asks for this file. */
   origins: AssetOrigin[];
@@ -181,6 +191,17 @@ export type AssetView = {
 export type SectionView = {
   section: AssetSection;
   model?: SectionModel;
+  /**
+   * The standing instruction in front of every brief here, with the default
+   * already applied.
+   *
+   * Resolved server-side so the board never holds a second copy of what a
+   * section says when nobody has said anything — a default that lived in the
+   * page would be the one that fell behind, and the author would be reading a
+   * sentence no test had ever seen. Absent for a section that has no default,
+   * which is voice and only voice.
+   */
+  direction?: string;
   assets: AssetView[];
   counts: Record<AssetStatus, number>;
 };
@@ -636,6 +657,10 @@ export async function buildOverview(
 
   for (const section of ASSET_SECTIONS) {
     const model = project.sections[section];
+    // The author's, or the default, or nothing at all for voice. Undefined is
+    // what tells the board not to draw the box, so a section that has never
+    // needed one does not grow an empty control.
+    const direction = model?.direction ?? SECTION_DIRECTIONS[section];
     const assets: AssetView[] = [];
     const counts = emptyCounts();
 
@@ -752,6 +777,22 @@ export async function buildOverview(
         ...(targetHold !== undefined ? { targetHold } : {}),
         ...(targetHold !== undefined && holdMatches(hold, targetHold) ? { timed: true } : {}),
         ...(fresh ? { matchingTake: fresh.id } : {}),
+        // Resolved per row rather than per section, because the tokens in it
+        // are answered by the row: a portrait's `$size` is 832x1216 where the
+        // still beside it is 1920x1080, and `$cutout` has something to say on
+        // one of the two. That is the whole reason the section box holds a
+        // template instead of the numbers typed out.
+        ...(direction
+          ? {
+              direction: expandDirection(direction, {
+                file,
+                ...(size?.declared ?? size?.suggested
+                  ? { size: size?.declared ?? size?.suggested }
+                  : {}),
+                ...(size?.cutout ? { cutout: true } : {}),
+              }),
+            }
+          : {}),
         notes,
       };
 
@@ -761,7 +802,7 @@ export async function buildOverview(
       assets.push({ ...base, status });
     }
 
-    sections.push({ section, model, assets, counts });
+    sections.push({ section, model, ...(direction ? { direction } : {}), assets, counts });
   }
 
   const voices = sections.find((view) => view.section === 'voice')?.assets ?? [];

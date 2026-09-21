@@ -1173,6 +1173,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         if (typeof body.section !== 'string' || typeof body.field !== 'string') {
           return sendJson(response, 400, { error: 'Expected { section, field, value }' });
         }
+        // No allowlist on `field` here on purpose: `SectionModelSchema` is a
+        // strict object and `editSectionField` parses what it is about to
+        // write, so a key nothing declares is refused before the file moves.
+        // A second list of legal fields would be the one that fell behind the
+        // schema, and it would fall behind quietly.
         await editSectionField(name, {
           section: body.section,
           field: body.field as 'backend',

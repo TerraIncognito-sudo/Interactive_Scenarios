@@ -47,6 +47,15 @@ export const SectionModelSchema = z.strictObject({
   root: z.string().min(1).optional(),
   /** Which file in `root` to use. */
   file: z.string().min(1).optional(),
+  /**
+   * The standing instruction in front of every brief in this section.
+   *
+   * Never composed into anything and deliberately absent from `Recipe`, so
+   * editing it marks nothing stale — see `direction.ts` for why that is the
+   * right answer rather than the cheap one. Not to be confused with a voice's
+   * `direction`, which is a delivery note and *is* in the hash.
+   */
+  direction: z.string().optional(),
   defaults: ParamsSchema.prefault({}),
 });
 

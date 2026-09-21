@@ -25,9 +25,11 @@ import type { AssetView, Overview } from './sections.ts';
 
 export const OUTSTANDING_GROUPS = [
   'missing',
+  'missing-manual',
   'unselected',
   'reselect',
   'stale',
+  'stale-manual',
   'republish',
   'publish',
   'unmanaged',
@@ -108,6 +110,16 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
     level: 'error',
     action: 'generate',
   },
+  'missing-manual': {
+    label: 'Not made yet, and nothing here can make them',
+    hint:
+      'The scenario asks for these and there is no take on disk. This section has no ' +
+      'generator — voice is the only one that has ever had one — so each is a file somebody ' +
+      'makes in another program and drops into its takes folder. The brief is on the row, ' +
+      'and the buttons put it on the clipboard.',
+    level: 'error',
+    action: 'open',
+  },
   unselected: {
     label: 'Waiting on a choice',
     hint: 'Takes exist and none is picked. Nothing publishes until one is.',
@@ -127,6 +139,15 @@ const SPECS: Record<OutstandingGroup, GroupSpec> = {
     hint: 'The prompt, the size, the voice or the line itself moved after this take was generated. It no longer matches what the project asks for.',
     level: 'warning',
     action: 'generate',
+  },
+  'stale-manual': {
+    label: 'Changed since it was made, and nothing here can re-make it',
+    hint:
+      'The brief or the size moved after this file was made, so it no longer answers what ' +
+      'the row asks for. Re-making it is a trip back to whatever drew it — the row carries ' +
+      'what it now has to be, and the buttons copy it.',
+    level: 'warning',
+    action: 'open',
   },
   republish: {
     label: 'A newer take was chosen',
@@ -205,6 +226,33 @@ function megabytes(bytes: number): string {
   return bytes < 100_000 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
+/**
+ * What a hand-made row is asking for, in the few words a list line has.
+ *
+ * The shape and the format, because those are what somebody has to set up in
+ * the other program before they draw anything, and reading them off the line
+ * saves the trip to the row to find out. `$size` will put the same numbers in
+ * the paste, so the line and the clipboard cannot disagree about them.
+ *
+ * Only for the rows nobody here can make. A generated clip is about to be made
+ * by the button at the top of its own group, so "MP3" beside sixty-five of
+ * them is sixty-five lines of noise in the one list that is supposed to be
+ * read top to bottom.
+ *
+ * A row with no brief is called out rather than left looking ordinary. It is
+ * the one item in these two groups the copy buttons cannot help with — there
+ * is nothing to copy — and it is easy to arrive at, because seeding places a
+ * prompt only where the storyboard had something to say.
+ */
+function briefOf(asset: AssetView): { detail: string } {
+  if (!asset.hasPrompt) return { detail: 'no brief on this row yet — write one first' };
+
+  const shape = asset.size?.declared ?? asset.size?.suggested;
+  const format = asset.file.split('.').pop()?.toUpperCase();
+  const parts = [shape, format, asset.size?.cutout ? 'cutout' : undefined].filter(Boolean);
+  return { detail: parts.join(' ') };
+}
+
 /** A row's per-asset quality complaints, phrased for a one-line list. */
 function qualityOf(asset: AssetView): string[] {
   const found: string[] = [];
@@ -235,9 +283,11 @@ function qualityOf(asset: AssetView): string[] {
 export function outstandingOf(overview: Overview): Outstanding {
   const items: Record<OutstandingGroup, OutstandingItem[]> = {
     missing: [],
+    'missing-manual': [],
     unselected: [],
     reselect: [],
     stale: [],
+    'stale-manual': [],
     republish: [],
     publish: [],
     unmanaged: [],
@@ -250,12 +300,23 @@ export function outstandingOf(overview: Overview): Outstanding {
   };
 
   for (const view of overview.sections) {
+    // Whether a button here could make one of these, which is the author's own
+    // declaration in `project.yaml` rather than a guess. Voice is the only
+    // section that has ever had a generator and permanently so — `generate.ts`
+    // throws for anything else — so every other section reaches this as
+    // `manual` and its work is a trip to another program. Told apart because
+    // the one button on a group heading is the whole point of a group: a
+    // "Generate all 9" over nine stills nothing can generate is a button that
+    // answers a question by failing nine times.
+    const generable = (view.model?.backend ?? 'manual') === 'sidecar';
+
     for (const asset of view.assets) {
       const where = { section: asset.section, file: asset.file, label: asset.file };
 
       // The pipeline stages, first unmet one wins.
       if (asset.status === 'missing') {
-        items.missing.push({ group: 'missing', ...where });
+        const group = generable ? 'missing' : 'missing-manual';
+        items[group].push({ group, ...where, ...(generable ? {} : briefOf(asset)) });
       } else if (asset.status === 'unselected') {
         items.unselected.push({
           group: 'unselected',
@@ -272,7 +333,8 @@ export function outstandingOf(overview: Overview): Outstanding {
           detail: `${asset.matchingTake} matches the recipe`,
         });
       } else if (asset.status === 'stale') {
-        items.stale.push({ group: 'stale', ...where });
+        const group = generable ? 'stale' : 'stale-manual';
+        items[group].push({ group, ...where, ...(generable ? {} : briefOf(asset)) });
       } else if (asset.status === 'unmanaged') {
         items.unmanaged.push({ group: 'unmanaged', ...where });
       } else if (asset.republish) {

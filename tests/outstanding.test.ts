@@ -34,9 +34,49 @@ function asset(over: Partial<AssetView> & Pick<AssetView, 'file' | 'status'>): A
   } as AssetView;
 }
 
+/**
+ * A section with a generator behind it, which is what `voice` really has.
+ *
+ * Stated rather than left out, because leaving it out is now a different
+ * claim: a section whose backend is `manual` is one nothing on the board can
+ * make, and its unmade rows belong in the hand-made group with a copy button
+ * instead of a Generate all. Arctic Sentinel's `voice:` is `backend: sidecar`
+ * and every other section of it is `manual`, so this is the real shape.
+ */
+const SIDECAR = { backend: 'sidecar', defaults: {} } as SectionView['model'];
+
+/** What every section but voice is, and permanently: made somewhere else. */
+const MANUAL = { backend: 'manual', defaults: {} } as SectionView['model'];
+
+function sectionOf(
+  section: SectionView['section'],
+  assets: AssetView[],
+  model: SectionView['model'],
+): SectionView {
+  return {
+    section,
+    model,
+    assets,
+    counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
+  };
+}
+
+function withSections(sections: SectionView[], over: Partial<Overview> = {}): Overview {
+  return {
+    sections,
+    cast: [],
+    orphans: [],
+    strays: [],
+    counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
+    problems: [],
+    ...over,
+  };
+}
+
 function overview(assets: AssetView[], over: Partial<Overview> = {}): Overview {
   const section: SectionView = {
     section: 'voice',
+    model: SIDECAR,
     assets,
     counts: { missing: 0, unselected: 0, unmanaged: 0, stale: 0, ready: 0 },
   };
@@ -364,8 +404,21 @@ describe('the contract', () => {
     // A group in the list with no way to reach it is a promise the tab cannot
     // keep; one produced with no spec would render blank.
     const produced = outstandingOf(
-      overview(
+      withSections(
         [
+          sectionOf('images', [
+            // The two groups a section with no generator produces. They exist
+            // precisely because the section they are in cannot answer them.
+            asset({
+              file: 'images/jetty.png',
+              section: 'images',
+              status: 'missing',
+              published: false,
+              size: { declared: '1920x1080' },
+            }),
+            asset({ file: 'images/rook.png', section: 'images', status: 'stale' }),
+          ], MANUAL),
+          sectionOf('voice', [
           asset({ file: 'voice/missing.mp3', status: 'missing', published: false }),
           asset({ file: 'voice/pick.mp3', status: 'unselected', published: false }),
           asset({ file: 'voice/stale.mp3', status: 'stale' }),
@@ -404,6 +457,7 @@ describe('the contract', () => {
             publishedTake: 't1',
             format: { actual: 'PNG', declared: 'jpg', rename: 'images/lying.png' },
           }),
+          ], SIDECAR),
         ],
         {
           cast: [{ id: 'beau', name: 'Beau', lines: 2, ready: 0, referenceExists: false }],
@@ -424,5 +478,79 @@ describe('the contract', () => {
       assert.ok(group.label && group.hint, `${group.group} is described`);
       assert.ok(group.level, `${group.group} has a severity`);
     }
+  });
+});
+
+describe('a section nothing here can generate', () => {
+  test('its unmade rows are a separate group with no button on it', async () => {
+    // The complaint this answers: "Generate all 9" over nine stills, in a
+    // section whose backend is `manual` and whose generator has never existed.
+    // Pressing it would fail nine times and make nothing.
+    const result = outstandingOf(
+      withSections([
+        sectionOf('images', [
+          asset({ file: 'images/jetty.png', section: 'images', status: 'missing', published: false }),
+          asset({ file: 'images/deck.png', section: 'images', status: 'stale' }),
+        ], MANUAL),
+      ]),
+    );
+
+    assert.deepEqual(groupsOf(result), { 'missing-manual': 1, 'stale-manual': 1 });
+    for (const group of result.groups) {
+      assert.equal(group.action, 'open', `${group.group} offers nothing to press`);
+    }
+  });
+
+  test('the same rows in a section that has one keep their Generate', async () => {
+    // The determinant is the section's own backend, not the kind of file: a
+    // voice section left on `manual` is as unmakeable as an images one, and
+    // saying otherwise would offer a button that throws.
+    const generable = outstandingOf(
+      overview([asset({ file: 'voice/a.mp3', status: 'missing', published: false })]),
+    );
+    assert.deepEqual(groupsOf(generable), { missing: 1 });
+    assert.equal(generable.groups[0]!.action, 'generate');
+
+    const byHand = outstandingOf(
+      withSections([
+        sectionOf('voice', [asset({ file: 'voice/a.mp3', status: 'missing', published: false })], MANUAL),
+      ]),
+    );
+    assert.deepEqual(groupsOf(byHand), { 'missing-manual': 1 });
+    assert.equal(byHand.groups[0]!.action, 'open');
+  });
+
+  test('each line says the shape and the format, so the trip out is one trip', async () => {
+    const result = outstandingOf(
+      withSections([
+        sectionOf('images', [
+          asset({
+            file: 'images/rook.png',
+            section: 'images',
+            status: 'missing',
+            published: false,
+            size: { suggested: '832x1216', cutout: true },
+          }),
+        ], MANUAL),
+      ]),
+    );
+    assert.equal(result.groups[0]!.items[0]!.detail, '832x1216 PNG cutout');
+  });
+
+  test('a row with no brief says so, because the copy buttons cannot help it', async () => {
+    const result = outstandingOf(
+      withSections([
+        sectionOf('images', [
+          asset({
+            file: 'images/jetty.png',
+            section: 'images',
+            status: 'missing',
+            published: false,
+            hasPrompt: false,
+          }),
+        ], MANUAL),
+      ]),
+    );
+    assert.match(result.groups[0]!.items[0]!.detail!, /no brief/);
   });
 });

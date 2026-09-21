@@ -1221,6 +1221,10 @@ function assetActions(asset, generable) {
   const busy = state.busy.has(asset.file);
   const actions = [];
 
+  // First, because for a section with no generator this is the action — the
+  // rest of the row's buttons are about a file that already exists.
+  actions.push(...briefButtons(asset));
+
   if (generable) {
     actions.push(
       h(
@@ -1469,6 +1473,75 @@ async function copyText(text, what) {
   } catch {
     state.onStatus('bad', 'the browser would not let the page write to the clipboard');
   }
+}
+
+/**
+ * The brief on a row, on its way to whatever is going to make the file.
+ *
+ * Every section but voice is made somewhere else, which for months meant
+ * selecting the text in a box and hoping the triple-click caught all of it.
+ * Two buttons rather than one because the trip is two different trips: back to
+ * a conversation that already knows what is being made, where the brief alone
+ * is the whole message, and out to a cold one that needs telling what kind of
+ * file this even is.
+ *
+ * Nothing is composed into anything stored. The joined text exists for as long
+ * as it takes to reach the clipboard, and the row keeps the brief exactly as
+ * it was typed — which is what keeps the hash honest and is the difference
+ * between this and the prompt machinery that was deleted.
+ */
+function briefText(asset, withDirection) {
+  const brief = (asset.row?.prompt ?? '').trim();
+  if (!withDirection || !asset.direction) return brief;
+  return `${asset.direction}\n\n${brief}`;
+}
+
+/**
+ * True when there is a brief here worth copying.
+ *
+ * Seeding places a prompt only where the storyboard had something to say about
+ * that shot, so an empty one is ordinary rather than broken — and a button
+ * that copied an empty string would report success and put nothing anywhere.
+ */
+function copyable(asset) {
+  return Boolean(asset.direction) && Boolean((asset.row?.prompt ?? '').trim());
+}
+
+/** The two copy buttons, for anywhere a hand-made row is listed. */
+function briefButtons(asset) {
+  if (!copyable(asset)) return [];
+  return [
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        title: 'Copy the brief on this row, on its own',
+        onclick: (event) => {
+          event.stopPropagation();
+          void copyText(briefText(asset, false), `brief for ${asset.file} copied`);
+        },
+      },
+      'Copy prompt',
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        title:
+          `Copy the brief with this section's direction in front of it:\n\n${asset.direction}`,
+        onclick: (event) => {
+          event.stopPropagation();
+          void copyText(
+            briefText(asset, true),
+            `brief for ${asset.file} copied, with the section direction in front`,
+          );
+        },
+      },
+      'Copy prompt and direction',
+    ),
+  ];
 }
 
 /**
@@ -1721,6 +1794,65 @@ function sectionActions(section, generable) {
   );
 }
 
+/**
+ * What this section says in front of every brief in it.
+ *
+ * At the top of the section rather than on each row, because it is the half of
+ * the instruction that is the same for all of them — a thing said ninety times
+ * is a thing that ends up said ninety slightly different ways.
+ *
+ * The tokens are the point. An author who typed "1920x1080" here would be
+ * wrong on every portrait in the same section, and wrong quietly: Arctic
+ * Sentinel's images hold nine stills at 1920x1080 and four faces at 832x1216.
+ * `$size` is answered by the row, off the same `defaultSizeFor` the board
+ * checks the finished file against, so the sentence and the check cannot
+ * disagree.
+ *
+ * Nothing here reaches the recipe hash — edit it freely, nothing goes stale.
+ */
+function directionField(section) {
+  if (!section.direction) return null;
+
+  const value = section.direction;
+  const box = h('textarea', {
+    class: 'direction',
+    rows: 2,
+    spellcheck: 'false',
+    placeholder: 'What every brief in this section should be read with',
+    // On blur like every other box that rewrites project.yaml: a save per
+    // keystroke is a file rewritten per keystroke, and somebody mid-sentence
+    // has not decided anything yet.
+    onblur: (event) => {
+      if (event.target.value === value) return;
+      void editSection(section.section, 'direction', event.target.value);
+    },
+  });
+  box.value = value;
+
+  return h(
+    'div',
+    { class: 'section-direction' },
+    h('label', {}, 'Direction'),
+    box,
+    // Named in full, because a token nobody can discover is a token nobody
+    // uses. `tests/direction.test.ts` reads this file and insists every one of
+    // them is here, so a token added on the server cannot go unmentioned.
+    h(
+      'p',
+      { class: 'direction-hint' },
+      'Copied in front of a row’s brief, never stored with it and never in the hash. ',
+      h('code', {}, '$size'),
+      ', ',
+      h('code', {}, '$format'),
+      ', ',
+      h('code', {}, '$cutout'),
+      ' and ',
+      h('code', {}, '$file'),
+      ' are answered by whichever row you copy. Empty it to go back to the default.',
+    ),
+  );
+}
+
 function sectionBlock(section) {
   const collapsed = state.collapsed.has(section.section);
   const model = section.model;
@@ -1825,6 +1957,7 @@ function sectionBlock(section) {
     { class: `section${collapsed ? ' collapsed' : ''}` },
     head,
     collapsed ? null : modelLine,
+    collapsed ? null : directionField(section),
     collapsed ? null : elsewhere(section),
     collapsed
       ? null
@@ -2456,6 +2589,16 @@ async function onPublishActor(section, group, assets) {
 /** How many of a group to show before it folds. Enough to see the shape of it. */
 const COMMAND_PEEK = 6;
 
+/**
+ * The groups whose items are made somewhere else.
+ *
+ * Kept as a list here rather than inferred from the absence of a runner: half
+ * the action-less groups are things a person has to go and *edit* — a part
+ * with no voice, a clip in a beat that is too short — and a brief on the
+ * clipboard is no use to any of those.
+ */
+const HANDMADE_GROUPS = new Set(['missing-manual', 'stale-manual']);
+
 function rowId(file) {
   return `row-${String(file).replace(/[^A-Za-z0-9]+/g, '-')}`;
 }
@@ -2742,6 +2885,15 @@ function reachable(item) {
 
 function commandItem(group, item) {
   const run = COMMAND_RUNNERS[group.action];
+  // The same two buttons the row carries, on the line that sent you looking
+  // for it. Only the two groups whose work is a trip to another program: those
+  // have no button on their heading — nothing here can make a still — so
+  // without this the digest could name nine outstanding pictures and do
+  // nothing about any of them but point. A picture waiting to be *published*
+  // is past the stage where its brief is the useful thing.
+  const brief = HANDMADE_GROUPS.has(group.group)
+    ? briefButtons(assetsByFile().get(item.file) ?? {})
+    : [];
   return h(
     'li',
     { class: 'command-item' },
@@ -2759,6 +2911,7 @@ function commandItem(group, item) {
       : h('code', { class: 'command-gone' }, item.label),
     item.detail ? h('span', { class: 'command-detail' }, item.detail) : null,
     h('span', { class: 'spacer' }),
+    ...brief,
     run
       ? h(
           'button',
